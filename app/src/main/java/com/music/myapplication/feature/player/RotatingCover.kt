@@ -1,23 +1,21 @@
 package com.music.myapplication.feature.player
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import kotlinx.coroutines.isActive
 
 @Composable
 fun RotatingCover(
@@ -25,32 +23,36 @@ fun RotatingCover(
     isPlaying: Boolean,
     modifier: Modifier = Modifier
 ) {
-    var pausedAngle by remember { mutableFloatStateOf(0f) }
+    val rotation = remember { Animatable(0f) }
+    val context = LocalContext.current
 
-    val infiniteTransition = rememberInfiniteTransition(label = "cover_rotation")
-    val angle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 10000, easing = LinearEasing)
-        ),
-        label = "rotation"
-    )
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (isActive) {
+                rotation.animateTo(
+                    targetValue = rotation.value + 360f,
+                    animationSpec = tween(durationMillis = 10000, easing = LinearEasing)
+                )
+                rotation.snapTo(rotation.value % 360f)
+            }
+        }
+    }
 
-    val displayAngle = if (isPlaying) {
-        pausedAngle = angle
-        angle
-    } else {
-        pausedAngle
+    val imageRequest = remember(coverUrl) {
+        ImageRequest.Builder(context)
+            .data(coverUrl)
+            .crossfade(200)
+            .memoryCachePolicy(CachePolicy.ENABLED)
+            .diskCachePolicy(CachePolicy.ENABLED)
+            .build()
     }
 
     AsyncImage(
-        model = coverUrl,
+        model = imageRequest,
         contentDescription = "专辑封面",
         modifier = modifier
-            .size(280.dp)
             .clip(CircleShape)
-            .graphicsLayer { rotationZ = displayAngle },
+            .graphicsLayer { rotationZ = rotation.value },
         contentScale = ContentScale.Crop
     )
 }

@@ -19,13 +19,13 @@ import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.LoadingView
 import com.music.myapplication.feature.components.MediaListItem
@@ -38,7 +38,7 @@ fun SearchScreen(
     searchViewModel: SearchViewModel = hiltViewModel(),
     playerViewModel: PlayerViewModel
 ) {
-    val state by searchViewModel.state.collectAsState()
+    val state by searchViewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
 
     val shouldLoadMore by remember {
@@ -119,7 +119,11 @@ fun SearchScreen(
             }
             else -> {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(state.tracks, key = { _, t -> "${t.platform.id}:${t.id}" }) { index, track ->
+                    itemsIndexed(
+                        state.tracks,
+                        key = { _, t -> "${t.platform.id}:${t.id}" },
+                        contentType = { _, _ -> "track" }
+                    ) { index, track ->
                         MediaListItem(
                             track = track,
                             index = index,
@@ -129,7 +133,7 @@ fun SearchScreen(
                         )
                     }
                     if (state.isLoading) {
-                        item {
+                        item(contentType = "loading") {
                             LoadingView(modifier = Modifier.padding(16.dp))
                         }
                     }

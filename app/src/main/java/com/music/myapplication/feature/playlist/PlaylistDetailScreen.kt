@@ -17,11 +17,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.LoadingView
 import com.music.myapplication.feature.components.MediaListItem
@@ -37,7 +37,7 @@ fun PlaylistDetailScreen(
     viewModel: PlaylistDetailViewModel = hiltViewModel(),
     playerViewModel: PlayerViewModel
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(playlistId) {
         viewModel.loadPlaylist(playlistId, platform, title)
@@ -75,7 +75,8 @@ fun PlaylistDetailScreen(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     itemsIndexed(
                         state.tracks,
-                        key = { _, t -> "${t.platform.id}:${t.id}" }
+                        key = { _, t -> "${t.platform.id}:${t.id}" },
+                        contentType = { _, _ -> "track" }
                     ) { index, track ->
                         MediaListItem(
                             track = track,

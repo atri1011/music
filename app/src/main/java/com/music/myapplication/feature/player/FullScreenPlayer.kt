@@ -15,11 +15,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.music.myapplication.domain.model.PlaybackState
 
 @Composable
 fun FullScreenPlayer(
-    state: PlaybackState,
+    staticState: PlayerStaticUiState,
+    progress: PlaybackProgressUiState,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -29,7 +29,7 @@ fun FullScreenPlayer(
     onQualityChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val track = state.currentTrack ?: return
+    val track = staticState.currentTrack ?: return
 
     Column(
         modifier = modifier
@@ -41,7 +41,7 @@ fun FullScreenPlayer(
 
         RotatingCover(
             coverUrl = track.coverUrl,
-            isPlaying = state.isPlaying,
+            isPlaying = staticState.isPlaying,
             modifier = Modifier.size(280.dp)
         )
 
@@ -69,7 +69,8 @@ fun FullScreenPlayer(
         Spacer(modifier = Modifier.height(24.dp))
 
         PlayerControlsSection(
-            state = state,
+            staticState = staticState,
+            progress = progress,
             onPlayPause = onPlayPause,
             onNext = onNext,
             onPrevious = onPrevious,

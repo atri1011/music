@@ -20,7 +20,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -29,7 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.music.myapplication.domain.model.PlaybackState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Track
 
 @Composable
@@ -38,9 +37,10 @@ fun PlayerLyricsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val playbackState by playerViewModel.playbackState.collectAsState()
-    val lyricsState by playerViewModel.lyricsUiState.collectAsState()
-    val currentTrack = playbackState.currentTrack
+    val staticState by playerViewModel.staticUiState.collectAsStateWithLifecycle()
+    val progress by playerViewModel.progressState.collectAsStateWithLifecycle()
+    val lyricsState by playerViewModel.lyricsUiState.collectAsStateWithLifecycle()
+    val currentTrack = staticState.currentTrack
 
     LaunchedEffect(Unit) {
         playerViewModel.showLyricsPanel()
@@ -54,9 +54,9 @@ fun PlayerLyricsScreen(
 
     if (currentTrack == null) return
 
-    val currentLyricIndex by remember(lyricsState.lyrics, playbackState.positionMs) {
+    val currentLyricIndex by remember(lyricsState.lyrics) {
         derivedStateOf {
-            LyricsParser.findCurrentIndex(lyricsState.lyrics, playbackState.positionMs)
+            LyricsParser.findCurrentIndex(lyricsState.lyrics, progress.positionMs)
         }
     }
 
@@ -107,8 +107,8 @@ fun PlayerLyricsScreen(
                 )
 
                 LyricsPanelMode.COVER -> CoverPanel(
-                    state = playbackState,
                     track = currentTrack,
+                    isPlaying = staticState.isPlaying,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -117,7 +117,8 @@ fun PlayerLyricsScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         PlayerControlsSection(
-            state = playbackState,
+            staticState = staticState,
+            progress = progress,
             onPlayPause = playerViewModel::togglePlayPause,
             onNext = playerViewModel::skipNext,
             onPrevious = playerViewModel::skipPrevious,
@@ -182,8 +183,8 @@ private fun LyricsPanelContent(
 
 @Composable
 private fun CoverPanel(
-    state: PlaybackState,
     track: Track,
+    isPlaying: Boolean,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -193,7 +194,7 @@ private fun CoverPanel(
     ) {
         RotatingCover(
             coverUrl = track.coverUrl,
-            isPlaying = state.isPlaying,
+            isPlaying = isPlaying,
             modifier = Modifier.size(260.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))

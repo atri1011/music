@@ -8,11 +8,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import com.music.myapplication.domain.model.PlaybackState
 
 @Composable
 fun PlayerBottomSheet(
-    state: PlaybackState,
+    staticState: PlayerStaticUiState,
+    progress: PlaybackProgressUiState,
     sheetFraction: Float,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -32,9 +32,9 @@ fun PlayerBottomSheet(
             // MiniPlayerBar: visible when sheet is mostly collapsed
             if (sheetFraction < 0.5f) {
                 MiniPlayerBar(
-                    track = state.currentTrack,
-                    isPlaying = state.isPlaying,
-                    quality = state.quality,
+                    track = staticState.currentTrack,
+                    isPlaying = staticState.isPlaying,
+                    quality = staticState.quality,
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onClick = onExpandClick,
@@ -45,7 +45,8 @@ fun PlayerBottomSheet(
             // FullScreenPlayer: visible when sheet is expanding
             if (sheetFraction > 0.0f) {
                 FullScreenPlayer(
-                    state = state,
+                    staticState = staticState,
+                    progress = progress,
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onPrevious = onPrevious,

@@ -1,9 +1,11 @@
 package com.music.myapplication.feature.player
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -18,12 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -66,22 +64,11 @@ fun LyricsView(
         }
     }
 
+    val bgColor = MaterialTheme.colorScheme.background
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.15f to Color.Black,
-                        0.85f to Color.Black,
-                        1f to Color.Transparent
-                    ),
-                    blendMode = BlendMode.DstIn
-                )
-            }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { userDragging = true },
@@ -93,7 +80,7 @@ fun LyricsView(
             state = listState,
             modifier = Modifier.fillMaxSize()
         ) {
-            itemsIndexed(lyrics) { index, line ->
+            itemsIndexed(lyrics, key = { index, _ -> index }) { index, line ->
                 val isCurrent = index == currentIndex
                 Text(
                     text = line.text,
@@ -107,5 +94,29 @@ fun LyricsView(
                 )
             }
         }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(bgColor, Color.Transparent)
+                    )
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, bgColor)
+                    )
+                )
+        )
     }
 }

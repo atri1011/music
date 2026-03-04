@@ -13,10 +13,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 
 @Composable
 fun PlaylistCard(
@@ -32,13 +30,12 @@ fun PlaylistCard(
             .clickable(onClick = onClick)
             .padding(4.dp)
     ) {
-        AsyncImage(
-            model = coverUrl,
+        CoverImage(
+            url = coverUrl,
             contentDescription = name,
             modifier = Modifier
                 .size(120.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            contentScale = ContentScale.Crop
+                .clip(RoundedCornerShape(8.dp))
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(

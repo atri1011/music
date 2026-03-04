@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.PlaybackState
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
@@ -33,6 +34,20 @@ data class MiniPlayerUiState(
     val quality: String = "128k"
 )
 
+data class PlayerStaticUiState(
+    val currentTrack: Track? = null,
+    val isPlaying: Boolean = false,
+    val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
+    val queue: List<Track> = emptyList(),
+    val currentIndex: Int = -1,
+    val quality: String = "128k"
+)
+
+data class PlaybackProgressUiState(
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L
+)
+
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val stateStore: PlaybackStateStore,
@@ -57,6 +72,35 @@ class PlayerViewModel @Inject constructor(
         }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, MiniPlayerUiState())
+
+    val staticUiState: StateFlow<PlayerStaticUiState> = stateStore.state
+        .map { s ->
+            PlayerStaticUiState(
+                currentTrack = s.currentTrack,
+                isPlaying = s.isPlaying,
+                playbackMode = s.playbackMode,
+                queue = s.queue,
+                currentIndex = s.currentIndex,
+                quality = s.quality
+            )
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            stateStore.state.value.let { s ->
+                PlayerStaticUiState(s.currentTrack, s.isPlaying, s.playbackMode, s.queue, s.currentIndex, s.quality)
+            }
+        )
+
+    val progressState: StateFlow<PlaybackProgressUiState> = stateStore.state
+        .map { s -> PlaybackProgressUiState(s.positionMs, s.durationMs) }
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            stateStore.state.value.let { s -> PlaybackProgressUiState(s.positionMs, s.durationMs) }
+        )
 
     private val _lyricsUiState = MutableStateFlow(LyricsUiState())
     val lyricsUiState: StateFlow<LyricsUiState> = _lyricsUiState.asStateFlow()

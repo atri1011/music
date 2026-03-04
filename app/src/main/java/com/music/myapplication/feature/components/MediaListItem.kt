@@ -19,10 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.music.myapplication.domain.model.Track
 
 @Composable
@@ -49,13 +47,12 @@ fun MediaListItem(
             )
         }
 
-        AsyncImage(
-            model = track.coverUrl,
+        CoverImage(
+            url = track.coverUrl,
             contentDescription = track.title,
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(6.dp)),
-            contentScale = ContentScale.Crop
+                .clip(RoundedCornerShape(6.dp))
         )
 
         Spacer(modifier = Modifier.width(12.dp))

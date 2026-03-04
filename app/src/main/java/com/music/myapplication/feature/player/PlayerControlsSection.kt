@@ -32,13 +32,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.PlaybackMode
-import com.music.myapplication.domain.model.PlaybackState
 import com.music.myapplication.feature.components.QualitySelector
 import com.music.myapplication.feature.components.formatDuration
 
 @Composable
 fun PlayerControlsSection(
-    state: PlaybackState,
+    staticState: PlayerStaticUiState,
+    progress: PlaybackProgressUiState,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -48,33 +48,33 @@ fun PlayerControlsSection(
     onQualityChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val track = state.currentTrack ?: return
+    val track = staticState.currentTrack ?: return
     var sliderDragging by remember { mutableStateOf(false) }
     var sliderPosition by remember { mutableFloatStateOf(0f) }
 
-    val progress = if (state.durationMs > 0) {
-        if (sliderDragging) sliderPosition else state.positionMs.toFloat() / state.durationMs
+    val progressFraction = if (progress.durationMs > 0) {
+        if (sliderDragging) sliderPosition else progress.positionMs.toFloat() / progress.durationMs
     } else {
         0f
     }
 
     androidx.compose.foundation.layout.Column(modifier = modifier) {
         QualitySelector(
-            currentQuality = state.quality,
+            currentQuality = staticState.quality,
             onQualitySelected = onQualityChange
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Slider(
-            value = progress.coerceIn(0f, 1f),
+            value = progressFraction.coerceIn(0f, 1f),
             onValueChange = {
                 sliderDragging = true
                 sliderPosition = it
             },
             onValueChangeFinished = {
                 sliderDragging = false
-                onSeek((sliderPosition * state.durationMs).toLong())
+                onSeek((sliderPosition * progress.durationMs).toLong())
             },
             modifier = Modifier.fillMaxWidth(),
             colors = SliderDefaults.colors(
@@ -89,13 +89,13 @@ fun PlayerControlsSection(
         ) {
             Text(
                 text = formatDuration(
-                    if (sliderDragging) (sliderPosition * state.durationMs).toLong() else state.positionMs
+                    if (sliderDragging) (sliderPosition * progress.durationMs).toLong() else progress.positionMs
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = formatDuration(state.durationMs),
+                text = formatDuration(progress.durationMs),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -110,7 +110,7 @@ fun PlayerControlsSection(
         ) {
             IconButton(onClick = onToggleMode) {
                 Icon(
-                    imageVector = when (state.playbackMode) {
+                    imageVector = when (staticState.playbackMode) {
                         PlaybackMode.SEQUENTIAL -> Icons.Default.Repeat
                         PlaybackMode.SHUFFLE -> Icons.Default.Shuffle
                         PlaybackMode.REPEAT_ONE -> Icons.Default.RepeatOne
@@ -128,8 +128,8 @@ fun PlayerControlsSection(
             }
             IconButton(onClick = onPlayPause, modifier = Modifier.size(64.dp)) {
                 Icon(
-                    imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (state.isPlaying) "暂停" else "播放",
+                    imageVector = if (staticState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (staticState.isPlaying) "暂停" else "播放",
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )

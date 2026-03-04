@@ -25,13 +25,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.feature.components.CoverImage
 
 @Composable
 fun MiniPlayerBar(
@@ -49,9 +47,9 @@ fun MiniPlayerBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
-            .shadow(elevation = 6.dp, shape = RoundedCornerShape(26.dp), clip = false)
             .clickable(onClick = onClick),
+        shape = RoundedCornerShape(26.dp),
+        shadowElevation = 6.dp,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
     ) {
         Row(
@@ -60,14 +58,13 @@ fun MiniPlayerBar(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AsyncImage(
-                model = currentTrack.coverUrl,
+            CoverImage(
+                url = currentTrack.coverUrl,
                 contentDescription = currentTrack.title,
                 modifier = Modifier
                     .size(50.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface),
-                contentScale = ContentScale.Crop
+                    .background(MaterialTheme.colorScheme.surface)
             )
             Spacer(modifier = Modifier.width(10.dp))
             Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {

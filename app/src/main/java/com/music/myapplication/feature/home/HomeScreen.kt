@@ -27,16 +27,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil.compose.AsyncImage
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.LoadingView
 import com.music.myapplication.feature.components.PlatformFilterChips
@@ -48,7 +47,7 @@ fun HomeScreen(
     onNavigateToSearch: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
@@ -86,7 +85,11 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(state.toplists) { toplist ->
+                    items(
+                        state.toplists,
+                        key = { it.id },
+                        contentType = { "toplist" }
+                    ) { toplist ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -97,14 +100,13 @@ fun HomeScreen(
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Column {
-                                AsyncImage(
-                                    model = toplist.coverUrl,
+                                CoverImage(
+                                    url = toplist.coverUrl,
                                     contentDescription = toplist.name,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(120.dp)
-                                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                                    contentScale = ContentScale.Crop
+                                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                                 )
                                 Text(
                                     text = toplist.name,

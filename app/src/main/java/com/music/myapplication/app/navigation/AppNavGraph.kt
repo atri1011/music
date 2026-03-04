@@ -1,5 +1,8 @@
 package com.music.myapplication.app.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -22,7 +25,11 @@ fun AppNavGraph(
     NavHost(
         navController = navController,
         startDestination = Routes.Home,
-        modifier = modifier
+        modifier = modifier,
+        enterTransition = { fadeIn(animationSpec = tween(200)) },
+        exitTransition = { fadeOut(animationSpec = tween(150)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+        popExitTransition = { fadeOut(animationSpec = tween(150)) }
     ) {
         composable<Routes.Home> {
             HomeScreen(
