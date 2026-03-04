@@ -116,7 +116,7 @@ class TransformEngine @Inject constructor(private val json: Json) {
     }
 
     private fun mapWithAliases(obj: JsonObject, platform: Platform): Track? {
-        val id = findStringByKeys(obj, ID_KEYS) ?: return null
+        val id = resolveAliasId(obj, platform) ?: return null
         val title = findStringByKeys(obj, TITLE_KEYS) ?: ""
         val artist = findStringByKeys(obj, ARTIST_KEYS) ?: ""
         val album = findStringByKeys(obj, ALBUM_KEYS) ?: ""
@@ -133,6 +133,37 @@ class TransformEngine @Inject constructor(private val json: Json) {
         )
     }
 
+    private fun resolveAliasId(obj: JsonObject, platform: Platform): String? {
+        val hasArtist = findStringByKeys(obj, ARTIST_KEYS) != null
+
+        val topId = getElementByPath(obj, "topId")?.toText()
+        if (!topId.isNullOrBlank() && !hasArtist) {
+            return topId
+        }
+
+        if (platform == Platform.QQ) {
+            val qqSongMid = getElementByPath(obj, "mid")?.toText()
+                ?: getElementByPath(obj, "songmid")?.toText()
+                ?: getElementByPath(obj, "songMid")?.toText()
+                ?: getElementByPath(obj, "file.media_mid")?.toText()
+            if (!qqSongMid.isNullOrBlank()) {
+                return qqSongMid
+            }
+        }
+
+        val sourceId = getElementByPath(obj, "sourceid")?.toText()
+        val hasToplistShape = !hasArtist && (
+            getElementByPath(obj, "source") != null ||
+                getElementByPath(obj, "disname") != null ||
+                getElementByPath(obj, "info") != null
+            )
+        if (!sourceId.isNullOrBlank() && hasToplistShape) {
+            return sourceId
+        }
+
+        return findStringByKeys(obj, ID_KEYS)
+    }
+
     private fun navigateToRoot(element: JsonElement, path: String): JsonElement {
         if (path.isBlank()) return element
         var current = element
@@ -146,7 +177,8 @@ class TransformEngine @Inject constructor(private val json: Json) {
     }
 
     private fun mapToTrack(obj: JsonObject, fields: Map<String, String>, platform: Platform): Track? {
-        val id = extractString(obj, fields["id"] ?: "id") ?: return null
+        val mappedId = extractString(obj, fields["id"] ?: "id") ?: return null
+        val id = resolveAliasId(obj, platform) ?: mappedId
         return Track(
             id = id,
             platform = platform,
@@ -223,13 +255,14 @@ class TransformEngine @Inject constructor(private val json: Json) {
             "title", "name", "songName", "songname", "topTitle", "dissname", "playlistName"
         )
         val ARTIST_KEYS = listOf(
-            "artist", "singer", "artistName", "singerName", "author", "ar.name"
+            "artist", "singer", "singerList", "artistName", "singerName", "author", "ar.name"
         )
         val ALBUM_KEYS = listOf(
             "album", "albumName", "albumname", "al.name"
         )
         val COVER_KEYS = listOf(
-            "cover", "coverUrl", "coverImgUrl", "pic", "picUrl", "img", "imgurl", "logo", "album.picUrl", "al.picUrl"
+            "cover", "coverUrl", "coverImgUrl", "pic", "picUrl", "img", "imgurl", "logo",
+            "album.picUrl", "al.picUrl", "headPicUrl", "frontPicUrl", "web_albumpic_short", "web_albumpic_big"
         )
         val DURATION_KEYS = listOf(
             "durationMs", "duration", "dt", "interval", "songTimeMinutes"

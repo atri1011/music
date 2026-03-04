@@ -6,12 +6,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class TemplateRenderer @Inject constructor() {
     private val placeholderRegex = Regex("""\{\{\s*([^{}]+?)\s*\}\}""")
+    private val functionRegex = Regex("""^([A-Za-z_]\w*)\((.*)\)$""")
 
     fun renderUrl(
         urlTemplate: String,
@@ -60,7 +63,26 @@ class TemplateRenderer @Inject constructor() {
         if (token == "null" || token == "undefined") return null
         if (token.matches(Regex("""-?\d+(\.\d+)?"""))) return token
         if (token == "true" || token == "false") return token
+        resolveFunctionCall(token, params)?.let { return it }
         return params[token.removePrefix("$")]
+    }
+
+    private fun resolveFunctionCall(token: String, params: Map<String, String>): String? {
+        val match = functionRegex.matchEntire(token.trim()) ?: return null
+        val functionName = match.groupValues[1]
+        val argExpression = match.groupValues[2].split(",").firstOrNull()?.trim().orEmpty()
+        if (argExpression.isBlank()) return null
+
+        val argValue = resolveToken(argExpression, params) ?: return null
+        return when (functionName) {
+            "parseInt" -> argValue.toDoubleOrNull()?.toLong()?.toString()
+                ?: argValue.toLongOrNull()?.toString()
+            "parseFloat", "Number" -> argValue.toDoubleOrNull()?.toString()
+            "String" -> argValue
+            "encodeURIComponent" -> URLEncoder.encode(argValue, StandardCharsets.UTF_8.toString())
+                .replace("+", "%20")
+            else -> null
+        }
     }
 
     private fun renderJsonElement(element: JsonElement, params: Map<String, String>): JsonElement {

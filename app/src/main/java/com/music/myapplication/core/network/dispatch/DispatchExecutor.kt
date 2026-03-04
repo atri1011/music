@@ -1,6 +1,7 @@
 package com.music.myapplication.core.network.dispatch
 
 import com.music.myapplication.core.common.AppError
+import com.music.myapplication.core.common.DispatchersProvider
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.domain.model.Platform
@@ -9,6 +10,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -28,19 +30,20 @@ class DispatchExecutor @Inject constructor(
     private val templateCache: DispatchTemplateCache,
     private val renderer: TemplateRenderer,
     private val validator: RequestValidator,
-    private val transformEngine: TransformEngine
+    private val transformEngine: TransformEngine,
+    private val dispatchersProvider: DispatchersProvider
 ) {
 
     suspend fun executeByMethod(
         platform: Platform,
         function: String,
         args: Map<String, String>
-    ): Result<List<Track>> {
-        return try {
+    ): Result<List<Track>> = withContext(dispatchersProvider.io) {
+        try {
             val template = when (val templateResult = getTemplate(platform, function)) {
                 is Result.Success -> templateResult.data
-                is Result.Error -> return Result.Error(templateResult.error)
-                is Result.Loading -> return Result.Error(
+                is Result.Error -> return@withContext Result.Error(templateResult.error)
+                is Result.Loading -> return@withContext Result.Error(
                     AppError.Template("Template loading state is unexpected for ${platform.id}/$function")
                 )
             }
@@ -49,7 +52,7 @@ class DispatchExecutor @Inject constructor(
             val renderedUrl = renderer.renderUrl(data.url, args, data.params)
 
             if (!validator.validate(renderedUrl)) {
-                return Result.Error(AppError.Template("URL validation failed: $renderedUrl"))
+                return@withContext Result.Error(AppError.Template("URL validation failed: $renderedUrl"))
             }
 
             val renderedBody = renderer.renderBody(data.body, args)
