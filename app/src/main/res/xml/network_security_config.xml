@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <!-- 播放直链由上游返回，部分平台仅提供 http 链接。 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">music.163.com</domain>
+        <domain includeSubdomains="true">interface.music.163.com</domain>
+        <domain includeSubdomains="true">interface3.music.163.com</domain>
+        <domain includeSubdomains="true">music.126.net</domain>
+        <domain includeSubdomains="true">y.qq.com</domain>
+        <domain includeSubdomains="true">u.y.qq.com</domain>
+        <domain includeSubdomains="true">c.y.qq.com</domain>
+        <domain includeSubdomains="true">qqmusic.qq.com</domain>
+        <domain includeSubdomains="true">api.kuwo.cn</domain>
+        <domain includeSubdomains="true">nmobi.kuwo.cn</domain>
+        <domain includeSubdomains="true">artistpicserver.kuwo.cn</domain>
+        <domain includeSubdomains="true">kuwo.cn</domain>
+    </domain-config>
+</network-security-config>
