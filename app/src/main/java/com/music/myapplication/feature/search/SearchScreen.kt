@@ -36,7 +36,7 @@ import com.music.myapplication.feature.player.PlayerViewModel
 @Composable
 fun SearchScreen(
     searchViewModel: SearchViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel = hiltViewModel()
+    playerViewModel: PlayerViewModel
 ) {
     val state by searchViewModel.state.collectAsState()
     val listState = rememberLazyListState()

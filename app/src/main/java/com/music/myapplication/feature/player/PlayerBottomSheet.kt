@@ -32,7 +32,9 @@ fun PlayerBottomSheet(
             // MiniPlayerBar: visible when sheet is mostly collapsed
             if (sheetFraction < 0.5f) {
                 MiniPlayerBar(
-                    state = state,
+                    track = state.currentTrack,
+                    isPlaying = state.isPlaying,
+                    quality = state.quality,
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onClick = onExpandClick,

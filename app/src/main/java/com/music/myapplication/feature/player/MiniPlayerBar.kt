@@ -31,18 +31,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.music.myapplication.domain.model.PlaybackState
+import com.music.myapplication.domain.model.Track
 
 @Composable
 fun MiniPlayerBar(
-    state: PlaybackState,
+    track: Track?,
+    isPlaying: Boolean,
+    quality: String,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onToggleFavorite: () -> Unit = {},
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val track = state.currentTrack ?: return
+    val currentTrack = track ?: return
 
     Surface(
         modifier = modifier
@@ -59,8 +61,8 @@ fun MiniPlayerBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
-                model = track.coverUrl,
-                contentDescription = track.title,
+                model = currentTrack.coverUrl,
+                contentDescription = currentTrack.title,
                 modifier = Modifier
                     .size(50.dp)
                     .clip(CircleShape)
@@ -70,21 +72,21 @@ fun MiniPlayerBar(
             Spacer(modifier = Modifier.width(10.dp))
             Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "${track.title} - ${track.artist}",
+                    text = "${currentTrack.title} - ${currentTrack.artist}",
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                if (isVipTrack(trackQuality = state.quality)) {
+                if (isVipTrack(trackQuality = quality)) {
                     VipBadge(modifier = Modifier.padding(start = 6.dp))
                 }
             }
             IconButton(onClick = onToggleFavorite) {
                 Icon(
-                    imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = if (track.isFavorite) "取消收藏" else "收藏",
-                    tint = if (track.isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    imageVector = if (currentTrack.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = if (currentTrack.isFavorite) "取消收藏" else "收藏",
+                    tint = if (currentTrack.isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                 )
             }
             IconButton(
@@ -95,8 +97,8 @@ fun MiniPlayerBar(
                     .background(MaterialTheme.colorScheme.surface)
             ) {
                 Icon(
-                    imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (state.isPlaying) "暂停" else "播放",
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "暂停" else "播放",
                     modifier = Modifier.size(22.dp)
                 )
             }

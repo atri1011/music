@@ -17,7 +17,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -44,11 +43,11 @@ fun AppRoot(
     playerViewModel: PlayerViewModel = hiltViewModel()
 ) {
     val navController = rememberNavController()
-    val playbackState by playerViewModel.playbackState.collectAsState()
+    val miniPlayerState by playerViewModel.miniPlayerState.collectAsState()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
 
-    val hasCurrentTrack by remember {
-        derivedStateOf { playbackState.currentTrack != null }
-    }
+    val hasCurrentTrack = miniPlayerState.currentTrack != null
+    val isPlayerLyricsRoute = navBackStackEntry?.destination?.hasRoute(Routes.PlayerLyrics::class) == true
 
     val bottomNavItems = remember {
         listOf(
@@ -59,44 +58,53 @@ fun AppRoot(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        val navBackStackEntry by navController.currentBackStackEntryAsState()
-
         Column(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.weight(1f)) {
-                AppNavGraph(navController = navController)
+                AppNavGraph(
+                    navController = navController,
+                    playerViewModel = playerViewModel
+                )
             }
 
-            if (hasCurrentTrack) {
+            if (hasCurrentTrack && !isPlayerLyricsRoute) {
                 MiniPlayerBar(
-                    state = playbackState,
+                    track = miniPlayerState.currentTrack,
+                    isPlaying = miniPlayerState.isPlaying,
+                    quality = miniPlayerState.quality,
                     onPlayPause = playerViewModel::togglePlayPause,
                     onNext = playerViewModel::skipNext,
                     onToggleFavorite = playerViewModel::toggleFavorite,
-                    onClick = {},
+                    onClick = {
+                        navController.navigate(Routes.PlayerLyrics) {
+                            launchSingleTop = true
+                        }
+                    },
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
 
-            NavigationBar {
-                bottomNavItems.forEach { item ->
-                    val selected = navBackStackEntry?.destination?.hasRoute(item.route::class) == true
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            navController.navigate(item.route) {
-                                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                                contentDescription = item.label
-                            )
-                        },
-                        label = { Text(item.label) }
-                    )
+            if (!isPlayerLyricsRoute) {
+                NavigationBar {
+                    bottomNavItems.forEach { item ->
+                        val selected = navBackStackEntry?.destination?.hasRoute(item.route::class) == true
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                navController.navigate(item.route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                    contentDescription = item.label
+                                )
+                            },
+                            label = { Text(item.label) }
+                        )
+                    }
                 }
             }
         }

@@ -35,7 +35,7 @@ fun PlaylistDetailScreen(
     title: String,
     onBack: () -> Unit,
     viewModel: PlaylistDetailViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel = hiltViewModel()
+    playerViewModel: PlayerViewModel
 ) {
     val state by viewModel.state.collectAsState()
 

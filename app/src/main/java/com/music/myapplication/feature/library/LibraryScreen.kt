@@ -47,7 +47,7 @@ import com.music.myapplication.feature.player.PlayerViewModel
 fun LibraryScreen(
     onNavigateToPlaylist: (id: String, name: String) -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel = hiltViewModel()
+    playerViewModel: PlayerViewModel
 ) {
     val state by viewModel.state.collectAsState()
     val tabs = listOf("收藏", "最近播放", "歌单")
