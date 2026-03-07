@@ -1,35 +1,40 @@
 package com.music.myapplication.feature.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
+import com.music.myapplication.ui.theme.LocalGlassColors
 
 @Composable
 fun MiniPlayerBar(
@@ -40,72 +45,120 @@ fun MiniPlayerBar(
     onNext: () -> Unit,
     onToggleFavorite: () -> Unit = {},
     onClick: () -> Unit,
+    progressFraction: Float = 0f,
     modifier: Modifier = Modifier
 ) {
     val currentTrack = track ?: return
+    val shape = RoundedCornerShape(20.dp)
+    val glassColors = LocalGlassColors.current
 
-    Surface(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(26.dp),
-        shadowElevation = 6.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+            .clip(shape)
+            .background(glassColors.surface, shape)
+            .border(0.5.dp, glassColors.border, shape)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            CoverImage(
-                url = currentTrack.coverUrl,
-                contentDescription = currentTrack.title,
+            Row(
                 modifier = Modifier
-                    .size(50.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "${currentTrack.title} - ${currentTrack.artist}",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onClick)
+                    .padding(end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Album cover — rounded square, more modern than circle
+                CoverImage(
+                    url = currentTrack.coverUrl,
+                    contentDescription = currentTrack.title,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(10.dp))
                 )
-                if (isVipTrack(trackQuality = quality)) {
-                    VipBadge(modifier = Modifier.padding(start = 6.dp))
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Song info
+                Column {
+                    Text(
+                        text = currentTrack.title,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = currentTrack.artist,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
-            IconButton(onClick = onToggleFavorite) {
+
+            // Favorite
+            IconButton(
+                onClick = onToggleFavorite,
+                modifier = Modifier.size(36.dp)
+            ) {
                 Icon(
                     imageVector = if (currentTrack.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     contentDescription = if (currentTrack.isFavorite) "取消收藏" else "收藏",
-                    tint = if (currentTrack.isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    tint = if (currentTrack.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
             }
+
+            // Play/Pause
             IconButton(
                 onClick = onPlayPause,
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(MaterialTheme.colorScheme.primary)
             ) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "暂停" else "播放",
-                    modifier = Modifier.size(22.dp)
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
                 )
             }
-            IconButton(onClick = onNext) {
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // Next
+            IconButton(
+                onClick = onNext,
+                modifier = Modifier.size(36.dp)
+            ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                    imageVector = Icons.Default.SkipNext,
                     contentDescription = "下一首",
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+
+        // Mini progress bar at bottom
+        val progress = progressFraction
+        if (progress > 0f) {
+            LinearProgressIndicator(
+                progress = { progress.coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.Transparent
+            )
         }
     }
 }

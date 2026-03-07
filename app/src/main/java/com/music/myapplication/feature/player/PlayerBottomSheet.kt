@@ -24,6 +24,12 @@ fun PlayerBottomSheet(
     onExpandClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val miniProgress = if (progress.durationMs > 0L) {
+        (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface
@@ -38,6 +44,7 @@ fun PlayerBottomSheet(
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onClick = onExpandClick,
+                    progressFraction = miniProgress,
                     modifier = Modifier.alpha(1f - sheetFraction * 2)
                 )
             }

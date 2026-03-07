@@ -3,6 +3,10 @@ package com.music.myapplication.app.navigation
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -26,10 +30,10 @@ fun AppNavGraph(
         navController = navController,
         startDestination = Routes.Home,
         modifier = modifier,
-        enterTransition = { fadeIn(animationSpec = tween(200)) },
-        exitTransition = { fadeOut(animationSpec = tween(150)) },
-        popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-        popExitTransition = { fadeOut(animationSpec = tween(150)) }
+        enterTransition = { fadeIn(animationSpec = tween(250)) },
+        exitTransition = { fadeOut(animationSpec = tween(200)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(250)) },
+        popExitTransition = { fadeOut(animationSpec = tween(200)) }
     ) {
         composable<Routes.Home> {
             HomeScreen(
@@ -54,7 +58,28 @@ fun AppNavGraph(
                 playerViewModel = playerViewModel
             )
         }
-        composable<Routes.PlaylistDetail> { backStackEntry ->
+
+        // Detail page: slide in from right
+        composable<Routes.PlaylistDetail>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) { backStackEntry ->
             val route = backStackEntry.toRoute<Routes.PlaylistDetail>()
             PlaylistDetailScreen(
                 playlistId = route.id,
@@ -64,7 +89,28 @@ fun AppNavGraph(
                 playerViewModel = playerViewModel
             )
         }
-        composable<Routes.PlayerLyrics> {
+
+        // Player: slide up from bottom
+        composable<Routes.PlayerLyrics>(
+            enterTransition = {
+                slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(400)
+                ) + fadeIn(animationSpec = tween(350))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(350)
+                ) + fadeOut(animationSpec = tween(300))
+            }
+        ) {
             PlayerLyricsScreen(
                 playerViewModel = playerViewModel,
                 onBack = { navController.popBackStack() }

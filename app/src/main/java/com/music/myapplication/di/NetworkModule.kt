@@ -42,7 +42,11 @@ object NetworkModule {
         .addInterceptor(UserAgentInterceptor())
         .addInterceptor(ApiKeyInterceptor(preferences, BuildConfig.TUNEHUB_API_KEY))
         .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         })
         .build()
 

@@ -1,7 +1,7 @@
 package com.music.myapplication.app
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -12,8 +12,11 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +32,7 @@ import androidx.navigation.compose.rememberNavController
 import com.music.myapplication.app.navigation.AppNavGraph
 import com.music.myapplication.app.navigation.Routes
 import com.music.myapplication.feature.player.MiniPlayerBar
+import com.music.myapplication.feature.player.MiniPlayerUiState
 import com.music.myapplication.feature.player.PlayerViewModel
 
 data class BottomNavItem(
@@ -44,6 +48,7 @@ fun AppRoot(
 ) {
     val navController = rememberNavController()
     val miniPlayerState by playerViewModel.miniPlayerState.collectAsStateWithLifecycle()
+    val trackActionState by playerViewModel.trackActionState.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
 
     val hasCurrentTrack = miniPlayerState.currentTrack != null
@@ -67,24 +72,28 @@ fun AppRoot(
             }
 
             if (hasCurrentTrack && !isPlayerLyricsRoute) {
-                MiniPlayerBar(
-                    track = miniPlayerState.currentTrack,
-                    isPlaying = miniPlayerState.isPlaying,
-                    quality = miniPlayerState.quality,
-                    onPlayPause = playerViewModel::togglePlayPause,
-                    onNext = playerViewModel::skipNext,
-                    onToggleFavorite = playerViewModel::toggleFavorite,
+                MiniPlayerContainer(
+                    playerViewModel = playerViewModel,
+                    miniPlayerState = miniPlayerState,
                     onClick = {
-                        navController.navigate(Routes.PlayerLyrics) {
-                            launchSingleTop = true
-                        }
+                        navController.navigate(Routes.PlayerLyrics) { launchSingleTop = true }
                     },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+
+            if (trackActionState.isResolving && !isPlayerLyricsRoute) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
                 )
             }
 
             if (!isPlayerLyricsRoute) {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                    tonalElevation = 0.dp
+                ) {
                     bottomNavItems.forEach { item ->
                         val selected = navBackStackEntry?.destination?.hasRoute(item.route::class) == true
                         NavigationBarItem(
@@ -102,11 +111,44 @@ fun AppRoot(
                                     contentDescription = item.label
                                 )
                             },
-                            label = { Text(item.label) }
+                            label = {
+                                Text(
+                                    text = item.label,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun MiniPlayerContainer(
+    playerViewModel: PlayerViewModel,
+    miniPlayerState: MiniPlayerUiState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val miniProgress by playerViewModel.miniProgressState.collectAsStateWithLifecycle()
+    MiniPlayerBar(
+        track = miniPlayerState.currentTrack,
+        isPlaying = miniPlayerState.isPlaying,
+        quality = miniPlayerState.quality,
+        onPlayPause = playerViewModel::togglePlayPause,
+        onNext = playerViewModel::skipNext,
+        onToggleFavorite = playerViewModel::toggleFavorite,
+        onClick = onClick,
+        progressFraction = miniProgress,
+        modifier = modifier
+    )
 }

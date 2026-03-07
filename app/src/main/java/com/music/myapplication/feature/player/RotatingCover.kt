@@ -3,28 +3,29 @@ package com.music.myapplication.feature.player
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import coil.compose.AsyncImage
-import coil.request.CachePolicy
-import coil.request.ImageRequest
+import com.music.myapplication.feature.components.CoverImage
 import kotlinx.coroutines.isActive
 
 @Composable
 fun RotatingCover(
     coverUrl: String,
     isPlaying: Boolean,
+    glowColor: Color = Color.Transparent,
     modifier: Modifier = Modifier
 ) {
     val rotation = remember { Animatable(0f) }
-    val context = LocalContext.current
 
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
@@ -38,21 +39,37 @@ fun RotatingCover(
         }
     }
 
-    val imageRequest = remember(coverUrl) {
-        ImageRequest.Builder(context)
-            .data(coverUrl)
-            .crossfade(200)
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .build()
-    }
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        // Glow effect behind cover
+        if (glowColor != Color.Transparent) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        scaleX = 1.15f
+                        scaleY = 1.15f
+                        alpha = if (isPlaying) 0.6f else 0.25f
+                    }
+                    .drawBehind {
+                        drawCircle(
+                            color = glowColor.copy(alpha = 0.45f),
+                            radius = size.minDimension / 2f
+                        )
+                    }
+            )
+        }
 
-    AsyncImage(
-        model = imageRequest,
-        contentDescription = "专辑封面",
-        modifier = modifier
-            .clip(CircleShape)
-            .graphicsLayer { rotationZ = rotation.value },
-        contentScale = ContentScale.Crop
-    )
+        CoverImage(
+            url = coverUrl,
+            contentDescription = "专辑封面",
+            modifier = Modifier
+                .matchParentSize()
+                .clip(CircleShape)
+                .graphicsLayer { rotationZ = rotation.value },
+            contentScale = ContentScale.Crop
+        )
+    }
 }

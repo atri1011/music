@@ -2,6 +2,7 @@ package com.music.myapplication.feature.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.music.myapplication.core.common.DispatchersProvider
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.PlaybackMode
@@ -26,7 +27,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 data class MiniPlayerUiState(
     val currentTrack: Track? = null,
@@ -48,6 +51,11 @@ data class PlaybackProgressUiState(
     val durationMs: Long = 0L
 )
 
+data class TrackActionUiState(
+    val isResolving: Boolean = false,
+    val resolvingTrackKey: String? = null
+)
+
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val stateStore: PlaybackStateStore,
@@ -56,7 +64,8 @@ class PlayerViewModel @Inject constructor(
     private val modeManager: PlaybackModeManager,
     private val onlineRepo: OnlineMusicRepository,
     private val localRepo: LocalLibraryRepository,
-    private val preferences: PlayerPreferences
+    private val preferences: PlayerPreferences,
+    private val dispatchers: DispatchersProvider
 ) : ViewModel() {
 
     val playbackState: StateFlow<PlaybackState> = stateStore.state
@@ -87,7 +96,7 @@ class PlayerViewModel @Inject constructor(
         .distinctUntilChanged()
         .stateIn(
             viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
+            SharingStarted.Eagerly,
             stateStore.state.value.let { s ->
                 PlayerStaticUiState(s.currentTrack, s.isPlaying, s.playbackMode, s.queue, s.currentIndex, s.quality)
             }
@@ -102,8 +111,22 @@ class PlayerViewModel @Inject constructor(
             stateStore.state.value.let { s -> PlaybackProgressUiState(s.positionMs, s.durationMs) }
         )
 
+    val miniProgressState: StateFlow<Float> = progressState
+        .map { progress ->
+            if (progress.durationMs > 0L) {
+                (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+        }
+        .map { fraction -> (fraction * 100f).roundToInt() / 100f }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
     private val _lyricsUiState = MutableStateFlow(LyricsUiState())
     val lyricsUiState: StateFlow<LyricsUiState> = _lyricsUiState.asStateFlow()
+    private val _trackActionState = MutableStateFlow(TrackActionUiState())
+    val trackActionState: StateFlow<TrackActionUiState> = _trackActionState.asStateFlow()
     @Volatile
     private var currentQuality: String = "128k"
 
@@ -125,9 +148,22 @@ class PlayerViewModel @Inject constructor(
 
     fun playTrack(track: Track, queue: List<Track>, index: Int) {
         viewModelScope.launch {
-            val playable = resolveTrackForPlayback(track, currentQuality) ?: return@launch
-            connector.playTrack(playable, queue, index)
-            localRepo.recordRecentPlay(playable)
+            if (_trackActionState.value.isResolving) return@launch
+            _trackActionState.value = TrackActionUiState(
+                isResolving = true,
+                resolvingTrackKey = track.lyricsSongKey()
+            )
+            try {
+                val playable = withContext(dispatchers.io) {
+                    resolveTrackForPlayback(track, currentQuality)
+                } ?: return@launch
+                connector.playTrack(playable, queue, index)
+                withContext(dispatchers.io) {
+                    localRepo.recordRecentPlay(playable)
+                }
+            } finally {
+                _trackActionState.value = TrackActionUiState()
+            }
         }
     }
 
@@ -139,19 +175,45 @@ class PlayerViewModel @Inject constructor(
 
     fun skipNext() {
         viewModelScope.launch {
+            if (_trackActionState.value.isResolving) return@launch
             val next = modeManager.getNextTrack() ?: return@launch
-            val playable = resolveTrackForPlayback(next, currentQuality) ?: return@launch
-            connector.skipToNext(playable)
-            localRepo.recordRecentPlay(playable)
+            _trackActionState.value = TrackActionUiState(
+                isResolving = true,
+                resolvingTrackKey = next.lyricsSongKey()
+            )
+            try {
+                val playable = withContext(dispatchers.io) {
+                    resolveTrackForPlayback(next, currentQuality)
+                } ?: return@launch
+                connector.skipToNext(playable)
+                withContext(dispatchers.io) {
+                    localRepo.recordRecentPlay(playable)
+                }
+            } finally {
+                _trackActionState.value = TrackActionUiState()
+            }
         }
     }
 
     fun skipPrevious() {
         viewModelScope.launch {
+            if (_trackActionState.value.isResolving) return@launch
             val prev = modeManager.getPreviousTrack() ?: return@launch
-            val playable = resolveTrackForPlayback(prev, currentQuality) ?: return@launch
-            connector.skipToPrevious(playable)
-            localRepo.recordRecentPlay(playable)
+            _trackActionState.value = TrackActionUiState(
+                isResolving = true,
+                resolvingTrackKey = prev.lyricsSongKey()
+            )
+            try {
+                val playable = withContext(dispatchers.io) {
+                    resolveTrackForPlayback(prev, currentQuality)
+                } ?: return@launch
+                connector.skipToPrevious(playable)
+                withContext(dispatchers.io) {
+                    localRepo.recordRecentPlay(playable)
+                }
+            } finally {
+                _trackActionState.value = TrackActionUiState()
+            }
         }
     }
 
