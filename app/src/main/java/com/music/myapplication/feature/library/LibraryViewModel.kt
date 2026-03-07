@@ -2,7 +2,6 @@ package com.music.myapplication.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
@@ -10,7 +9,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -19,42 +17,48 @@ import javax.inject.Inject
 
 data class LibraryUiState(
     val favorites: List<Track> = emptyList(),
-    val recentPlays: List<Track> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
-    val selectedTab: Int = 0,
+    val topPlayedTracks: List<Pair<Track, Int>> = emptyList(),
+    val totalPlayCount: Int = 0,
+    val totalListenDurationMs: Long = 0L,
     val showCreateDialog: Boolean = false,
-    val showApiKeyDialog: Boolean = false,
-    val apiKey: String = ""
+    val showImportDialog: Boolean = false
 )
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
-    private val localRepo: LocalLibraryRepository,
-    private val preferences: PlayerPreferences
+    private val localRepo: LocalLibraryRepository
 ) : ViewModel() {
 
     private val _uiExtras = MutableStateFlow(LibraryExtras())
+
+    private val statsFlow = combine(
+        localRepo.getTotalPlayCount(),
+        localRepo.getTotalListenDurationMs()
+    ) { count, duration ->
+        StatsBundle(count, duration)
+    }
+
     val state: StateFlow<LibraryUiState> = combine(
         localRepo.getFavorites(),
-        localRepo.getRecentPlays(),
+        localRepo.getTopPlayedTracks(),
         localRepo.getPlaylists(),
-        preferences.apiKey,
+        statsFlow,
         _uiExtras
-    ) { favorites, recents, playlists, apiKey, extras ->
+    ) { favorites, topPlayed, playlists, stats, extras ->
         LibraryUiState(
             favorites = favorites,
-            recentPlays = recents,
             playlists = playlists,
-            selectedTab = extras.selectedTab,
+            topPlayedTracks = topPlayed,
+            totalPlayCount = stats.totalPlayCount,
+            totalListenDurationMs = stats.totalListenDurationMs,
             showCreateDialog = extras.showCreateDialog,
-            showApiKeyDialog = extras.showApiKeyDialog,
-            apiKey = apiKey
+            showImportDialog = extras.showImportDialog
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LibraryUiState())
 
-    fun selectTab(index: Int) = _uiExtras.update { it.copy(selectedTab = index) }
     fun showCreateDialog(show: Boolean) = _uiExtras.update { it.copy(showCreateDialog = show) }
-    fun showApiKeyDialog(show: Boolean) = _uiExtras.update { it.copy(showApiKeyDialog = show) }
+    fun showImportDialog(show: Boolean) = _uiExtras.update { it.copy(showImportDialog = show) }
 
     fun createPlaylist(name: String) {
         viewModelScope.launch {
@@ -63,20 +67,17 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun saveApiKey(apiKey: String) {
-        viewModelScope.launch {
-            preferences.setApiKey(apiKey)
-            _uiExtras.update { it.copy(showApiKeyDialog = false) }
-        }
-    }
-
     fun deletePlaylist(playlistId: String) {
         viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
     }
 
     private data class LibraryExtras(
-        val selectedTab: Int = 0,
         val showCreateDialog: Boolean = false,
-        val showApiKeyDialog: Boolean = false
+        val showImportDialog: Boolean = false
+    )
+
+    private data class StatsBundle(
+        val totalPlayCount: Int,
+        val totalListenDurationMs: Long
     )
 }

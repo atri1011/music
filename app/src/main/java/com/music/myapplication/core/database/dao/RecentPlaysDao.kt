@@ -34,6 +34,15 @@ interface RecentPlaysDao {
     @Query("SELECT played_at FROM recent_plays WHERE song_id = :songId AND platform = :platform")
     suspend fun getFirstPlayDate(songId: String, platform: String): Long?
 
+    @Query("SELECT * FROM recent_plays ORDER BY play_count DESC LIMIT :limit")
+    fun getTopPlayed(limit: Int = 10): Flow<List<RecentPlayEntity>>
+
+    @Query("SELECT COALESCE(SUM(play_count), 0) FROM recent_plays")
+    fun getTotalPlayCount(): Flow<Int>
+
+    @Query("SELECT COALESCE(SUM(CAST(play_count AS INTEGER) * CAST(duration_ms AS INTEGER)), 0) FROM recent_plays")
+    fun getTotalListenDurationMs(): Flow<Long>
+
     @Query("SELECT * FROM recent_plays ORDER BY RANDOM() LIMIT 1")
     suspend fun getRandomTrack(): RecentPlayEntity?
 

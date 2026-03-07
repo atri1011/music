@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 interface LocalLibraryRepository {
     fun getFavorites(): Flow<List<Track>>
     suspend fun isFavorite(songId: String, platform: String): Boolean
+    suspend fun applyFavoriteState(tracks: List<Track>): List<Track>
     suspend fun toggleFavorite(track: Track)
     fun getRecentPlays(limit: Int = 50): Flow<List<Track>>
     suspend fun recordRecentPlay(track: Track, positionMs: Long = 0L)
@@ -19,7 +20,12 @@ interface LocalLibraryRepository {
     suspend fun removeFromPlaylist(playlistId: String, songId: String, platform: String)
     suspend fun getCachedLyrics(platform: String, songId: String): String?
     suspend fun cacheLyrics(platform: String, songId: String, lyrics: String)
+    suspend fun getCachedTranslation(platform: String, songId: String): String?
+    suspend fun cacheTranslation(platform: String, songId: String, translation: String)
     suspend fun getTrackPlayCount(songId: String, platform: String): Int
     suspend fun getFirstPlayDate(songId: String, platform: String): Long?
     suspend fun getRandomRecentTrack(): Track?
+    fun getTopPlayedTracks(limit: Int = 10): Flow<List<Pair<Track, Int>>>
+    fun getTotalPlayCount(): Flow<Int>
+    fun getTotalListenDurationMs(): Flow<Long>
 }

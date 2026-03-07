@@ -17,6 +17,9 @@ interface FavoritesDao {
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE song_id = :songId AND platform = :platform)")
     suspend fun isFavorite(songId: String, platform: String): Boolean
 
+    @Query("SELECT platform || ':' || song_id FROM favorites WHERE platform || ':' || song_id IN (:keys)")
+    suspend fun getFavoriteKeys(keys: List<String>): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: FavoriteEntity)
 

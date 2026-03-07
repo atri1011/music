@@ -28,6 +28,20 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     override suspend fun isFavorite(songId: String, platform: String): Boolean =
         favoritesDao.isFavorite(songId, platform)
 
+    override suspend fun applyFavoriteState(tracks: List<Track>): List<Track> {
+        if (tracks.isEmpty()) return tracks
+
+        val trackKeys = tracks.map(::favoriteKeyOf).distinct()
+        val favoriteKeys = favoritesDao.getFavoriteKeys(trackKeys).toHashSet()
+        if (favoriteKeys.isEmpty()) {
+            return tracks.map { it.copy(isFavorite = false) }
+        }
+
+        return tracks.map { track ->
+            track.copy(isFavorite = favoriteKeyOf(track) in favoriteKeys)
+        }
+    }
+
     override suspend fun toggleFavorite(track: Track) {
         if (favoritesDao.isFavorite(track.id, track.platform.id)) {
             favoritesDao.delete(track.id, track.platform.id)
@@ -106,6 +120,16 @@ class LocalLibraryRepositoryImpl @Inject constructor(
         lyricsCacheDao.insert(LyricsCacheEntity(cacheKey = key, lyricText = lyrics))
     }
 
+    override suspend fun getCachedTranslation(platform: String, songId: String): String? {
+        val key = "$platform:$songId:trans"
+        return lyricsCacheDao.get(key)?.lyricText
+    }
+
+    override suspend fun cacheTranslation(platform: String, songId: String, translation: String) {
+        val key = "$platform:$songId:trans"
+        lyricsCacheDao.insert(LyricsCacheEntity(cacheKey = key, lyricText = translation))
+    }
+
     override suspend fun getTrackPlayCount(songId: String, platform: String): Int =
         recentPlaysDao.getPlayCount(songId, platform) ?: 0
 
@@ -114,4 +138,17 @@ class LocalLibraryRepositoryImpl @Inject constructor(
 
     override suspend fun getRandomRecentTrack(): Track? =
         recentPlaysDao.getRandomTrack()?.toTrack()
+
+    override fun getTopPlayedTracks(limit: Int): Flow<List<Pair<Track, Int>>> =
+        recentPlaysDao.getTopPlayed(limit).map { list ->
+            list.map { entity -> entity.toTrack() to entity.playCount }
+        }
+
+    override fun getTotalPlayCount(): Flow<Int> =
+        recentPlaysDao.getTotalPlayCount()
+
+    override fun getTotalListenDurationMs(): Flow<Long> =
+        recentPlaysDao.getTotalListenDurationMs()
+
+    private fun favoriteKeyOf(track: Track): String = "${track.platform.id}:${track.id}"
 }
