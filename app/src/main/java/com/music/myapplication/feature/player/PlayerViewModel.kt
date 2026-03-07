@@ -11,6 +11,7 @@ import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
+import com.music.myapplication.domain.repository.RecommendationRepository
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.MediaControllerConnector
@@ -56,6 +57,12 @@ data class TrackActionUiState(
     val resolvingTrackKey: String? = null
 )
 
+data class TrackInfoUiState(
+    val firstPlayDate: Long? = null,
+    val totalPlayCount: Int = 0,
+    val similarTracks: List<Track> = emptyList()
+)
+
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val stateStore: PlaybackStateStore,
@@ -64,6 +71,7 @@ class PlayerViewModel @Inject constructor(
     private val modeManager: PlaybackModeManager,
     private val onlineRepo: OnlineMusicRepository,
     private val localRepo: LocalLibraryRepository,
+    private val recommendationRepo: RecommendationRepository,
     private val preferences: PlayerPreferences,
     private val dispatchers: DispatchersProvider
 ) : ViewModel() {
@@ -127,6 +135,8 @@ class PlayerViewModel @Inject constructor(
     val lyricsUiState: StateFlow<LyricsUiState> = _lyricsUiState.asStateFlow()
     private val _trackActionState = MutableStateFlow(TrackActionUiState())
     val trackActionState: StateFlow<TrackActionUiState> = _trackActionState.asStateFlow()
+    private val _trackInfoState = MutableStateFlow(TrackInfoUiState())
+    val trackInfoState: StateFlow<TrackInfoUiState> = _trackInfoState.asStateFlow()
     @Volatile
     private var currentQuality: String = "128k"
 
@@ -144,6 +154,7 @@ class PlayerViewModel @Inject constructor(
             }
         }
         observeCurrentTrackLyrics()
+        observeCurrentTrackInfo()
     }
 
     fun playTrack(track: Track, queue: List<Track>, index: Int) {
@@ -243,7 +254,7 @@ class PlayerViewModel @Inject constructor(
         _lyricsUiState.update { it.copy(viewMode = mode) }
     }
 
-    fun showLyricsPanel() = setLyricsPanelMode(LyricsPanelMode.LYRICS)
+    fun showLyricsPanel() = setLyricsPanelMode(LyricsPanelMode.COVER)
 
     private fun observeCurrentTrackLyrics() {
         viewModelScope.launch {
@@ -259,6 +270,39 @@ class PlayerViewModel @Inject constructor(
                     loadLyrics(track = track, viewMode = preservedMode)
                 }
         }
+    }
+
+    private fun observeCurrentTrackInfo() {
+        viewModelScope.launch {
+            stateStore.state
+                .map { it.currentTrack }
+                .distinctUntilChangedBy { track -> track?.lyricsSongKey() }
+                .collectLatest { track ->
+                    if (track == null) {
+                        _trackInfoState.value = TrackInfoUiState()
+                        return@collectLatest
+                    }
+                    loadTrackInfo(track)
+                }
+        }
+    }
+
+    private suspend fun loadTrackInfo(track: Track) {
+        val playCount = withContext(dispatchers.io) {
+            localRepo.getTrackPlayCount(track.id, track.platform.id)
+        }
+        val firstPlayDate = withContext(dispatchers.io) {
+            localRepo.getFirstPlayDate(track.id, track.platform.id)
+        }
+        _trackInfoState.value = TrackInfoUiState(
+            firstPlayDate = firstPlayDate,
+            totalPlayCount = playCount
+        )
+        // Load similar tracks in background
+        val similar = withContext(dispatchers.io) {
+            recommendationRepo.getSimilarTracks(track)
+        }
+        _trackInfoState.update { it.copy(similarTracks = similar) }
     }
 
     private suspend fun loadLyrics(track: Track, viewMode: LyricsPanelMode) {

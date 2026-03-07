@@ -2,8 +2,10 @@ package com.music.myapplication.di
 
 import com.music.myapplication.data.repository.LocalLibraryRepositoryImpl
 import com.music.myapplication.data.repository.OnlineMusicRepositoryImpl
+import com.music.myapplication.data.repository.RecommendationRepositoryImpl
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
+import com.music.myapplication.domain.repository.RecommendationRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -25,4 +27,10 @@ abstract class RepositoryModule {
     abstract fun bindLocalLibraryRepository(
         impl: LocalLibraryRepositoryImpl
     ): LocalLibraryRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindRecommendationRepository(
+        impl: RecommendationRepositoryImpl
+    ): RecommendationRepository
 }

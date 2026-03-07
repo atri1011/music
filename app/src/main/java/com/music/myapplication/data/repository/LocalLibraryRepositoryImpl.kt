@@ -105,4 +105,13 @@ class LocalLibraryRepositoryImpl @Inject constructor(
         val key = "$platform:$songId"
         lyricsCacheDao.insert(LyricsCacheEntity(cacheKey = key, lyricText = lyrics))
     }
+
+    override suspend fun getTrackPlayCount(songId: String, platform: String): Int =
+        recentPlaysDao.getPlayCount(songId, platform) ?: 0
+
+    override suspend fun getFirstPlayDate(songId: String, platform: String): Long? =
+        recentPlaysDao.getFirstPlayDate(songId, platform)
+
+    override suspend fun getRandomRecentTrack(): Track? =
+        recentPlaysDao.getRandomTrack()?.toTrack()
 }

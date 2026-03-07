@@ -21,5 +21,6 @@ data class RecentPlayEntity(
     @ColumnInfo(name = "cover_url") val coverUrl: String = "",
     @ColumnInfo(name = "duration_ms") val durationMs: Long = 0L,
     @ColumnInfo(name = "played_at") val playedAt: Long = System.currentTimeMillis(),
-    @ColumnInfo(name = "position_ms") val positionMs: Long = 0L
+    @ColumnInfo(name = "position_ms") val positionMs: Long = 0L,
+    @ColumnInfo(name = "play_count", defaultValue = "1") val playCount: Int = 1
 )

@@ -7,10 +7,11 @@ data class LyricsUiState(
     val lyrics: List<LyricLine> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val viewMode: LyricsPanelMode = LyricsPanelMode.LYRICS
+    val viewMode: LyricsPanelMode = LyricsPanelMode.COVER
 )
 
 enum class LyricsPanelMode {
+    COVER,
     LYRICS,
-    COVER
+    INFO
 }

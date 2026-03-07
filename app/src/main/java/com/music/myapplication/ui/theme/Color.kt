@@ -33,3 +33,8 @@ val GlassBorderDark = Color.White.copy(alpha = 0.10f)
 // Player overlay
 val PlayerScrimDark = Color.Black.copy(alpha = 0.55f)
 val PlayerScrimLight = Color.Black.copy(alpha = 0.30f)
+
+// Player gradient
+val PlayerBgTop = Color(0xFFE8ECF4)
+val PlayerBgMiddle = Color(0xFFDDE3ED)
+val PlayerBgBottom = Color(0xFFD8DFE9)

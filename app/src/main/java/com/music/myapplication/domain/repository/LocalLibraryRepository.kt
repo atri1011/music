@@ -19,4 +19,7 @@ interface LocalLibraryRepository {
     suspend fun removeFromPlaylist(playlistId: String, songId: String, platform: String)
     suspend fun getCachedLyrics(platform: String, songId: String): String?
     suspend fun cacheLyrics(platform: String, songId: String, lyrics: String)
+    suspend fun getTrackPlayCount(songId: String, platform: String): Int
+    suspend fun getFirstPlayDate(songId: String, platform: String): Long?
+    suspend fun getRandomRecentTrack(): Track?
 }

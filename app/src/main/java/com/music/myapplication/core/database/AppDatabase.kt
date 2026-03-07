@@ -13,7 +13,7 @@ import com.music.myapplication.core.database.entity.*
         PlaylistSongEntity::class,
         LyricsCacheEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
