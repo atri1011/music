@@ -1,0 +1,252 @@
+{
+  "timestamp": "2026-03-08T03:25:00+08:00",
+  "project": "My Application - Android Music Player",
+  "rootModule": "app",
+  "language": "Kotlin",
+  "framework": "Jetpack Compose + Media3 + Hilt",
+  "modules": [
+    {
+      "path": "app/src/main/java/com/music/myapplication/app",
+      "name": "app (entry)",
+      "description": "Application, MainActivity, AppRoot, Navigation",
+      "entryFiles": ["MusicApplication.kt", "AppRoot.kt", "MainActivity.kt"],
+      "interfaces": ["navigation/Routes.kt", "navigation/AppNavGraph.kt"],
+      "tests": [],
+      "importantPaths": ["app/src/main/AndroidManifest.xml"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/core/common",
+      "name": "core/common",
+      "description": "Result wrapper, AppError types, DispatchersProvider",
+      "entryFiles": ["Result.kt", "AppError.kt", "DispatchersProvider.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": ["CoverImageCacheKey.kt"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/core/database",
+      "name": "core/database",
+      "description": "Room database, DAOs, Entities, Mappers",
+      "entryFiles": ["AppDatabase.kt"],
+      "interfaces": ["dao/FavoritesDao.kt", "dao/RecentPlaysDao.kt", "dao/PlaylistsDao.kt", "dao/PlaylistSongsDao.kt", "dao/LyricsCacheDao.kt"],
+      "tests": [],
+      "importantPaths": ["entity/", "mapper/EntityMappers.kt"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/core/datastore",
+      "name": "core/datastore",
+      "description": "DataStore preferences and home content cache",
+      "entryFiles": ["PlayerPreferences.kt", "HomeContentCacheStore.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": []
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/core/network",
+      "name": "core/network",
+      "description": "Retrofit API, Dispatch engine (TemplateRenderer, TransformEngine, DispatchExecutor), interceptors",
+      "entryFiles": ["retrofit/TuneHubApi.kt", "dispatch/DispatchExecutor.kt"],
+      "interfaces": ["retrofit/TuneHubApi.kt"],
+      "tests": ["TemplateRendererTest.kt", "TransformEngineTest.kt"],
+      "importantPaths": ["dispatch/TemplateRenderer.kt", "dispatch/TransformEngine.kt", "dispatch/DispatchModels.kt"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/data",
+      "name": "data",
+      "description": "Repository implementations (Online, Local, Recommendation) and DTOs",
+      "entryFiles": ["repository/OnlineMusicRepositoryImpl.kt", "repository/LocalLibraryRepositoryImpl.kt", "repository/RecommendationRepositoryImpl.kt"],
+      "interfaces": [],
+      "tests": ["OnlineMusicRepositoryImplTest.kt", "RecommendationRepositoryImplTest.kt"],
+      "importantPaths": ["remote/dto/ParseDto.kt", "remote/dto/MethodsTemplateDto.kt"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/domain",
+      "name": "domain",
+      "description": "Domain models (Track, Playlist, Platform, etc.) and repository interfaces",
+      "entryFiles": [],
+      "interfaces": ["repository/OnlineMusicRepository.kt", "repository/LocalLibraryRepository.kt", "repository/RecommendationRepository.kt"],
+      "tests": [],
+      "importantPaths": ["model/Track.kt", "model/Platform.kt", "model/PlaybackState.kt"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/feature/home",
+      "name": "feature/home",
+      "description": "Home page: toplists + daily recommendations",
+      "entryFiles": ["HomeScreen.kt", "HomeViewModel.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": []
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/feature/search",
+      "name": "feature/search",
+      "description": "Cross-platform search with debounce and pagination",
+      "entryFiles": ["SearchScreen.kt", "SearchViewModel.kt"],
+      "interfaces": [],
+      "tests": ["SearchViewModelTest.kt"],
+      "importantPaths": []
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/feature/library",
+      "name": "feature/library",
+      "description": "My library: favorites, playlists, play stats",
+      "entryFiles": ["LibraryScreen.kt", "LibraryViewModel.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": []
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/feature/player",
+      "name": "feature/player",
+      "description": "Player: full-screen, mini bar, lyrics, controls (globally shared ViewModel)",
+      "entryFiles": ["PlayerViewModel.kt", "FullScreenPlayer.kt", "MiniPlayerBar.kt", "PlayerLyricsScreen.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": ["LyricsParser.kt", "LyricsView.kt", "RotatingCover.kt"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/feature/playlist",
+      "name": "feature/playlist",
+      "description": "Playlist/toplist detail page",
+      "entryFiles": ["PlaylistDetailScreen.kt", "PlaylistDetailViewModel.kt"],
+      "interfaces": [],
+      "tests": ["PlaylistDetailViewModelTest.kt"],
+      "importantPaths": []
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/feature/discover",
+      "name": "feature/discover",
+      "description": "Discover page",
+      "entryFiles": ["DiscoverScreen.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": []
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/feature/more",
+      "name": "feature/more",
+      "description": "Settings page (API key management)",
+      "entryFiles": ["MoreScreen.kt", "MoreViewModel.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": []
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/feature/components",
+      "name": "feature/components",
+      "description": "Shared UI components (MediaListItem, PlaylistCard, CoverImage, etc.)",
+      "entryFiles": [],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": ["MediaListItem.kt", "PlaylistCard.kt", "CoverImage.kt", "ShimmerEffect.kt"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/media",
+      "name": "media",
+      "description": "Media playback engine (ExoPlayer, Service, Session, State, Queue)",
+      "entryFiles": ["service/MusicPlaybackService.kt", "session/MediaControllerConnector.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": ["player/QueueManager.kt", "player/PlaybackModeManager.kt", "state/PlaybackStateStore.kt"]
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/di",
+      "name": "di",
+      "description": "Hilt DI modules (Network, Database, Repository, Media)",
+      "entryFiles": ["NetworkModule.kt", "DatabaseModule.kt", "RepositoryModule.kt", "MediaModule.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": []
+    },
+    {
+      "path": "app/src/main/java/com/music/myapplication/ui/theme",
+      "name": "ui/theme",
+      "description": "Theme, colors, typography, glassmorphism modifiers",
+      "entryFiles": ["Theme.kt"],
+      "interfaces": [],
+      "tests": [],
+      "importantPaths": ["Color.kt", "GlassModifiers.kt", "Type.kt", "DynamicThemeExtractor.kt"]
+    }
+  ],
+  "coverage": {
+    "totalSourceFiles": 89,
+    "scannedFiles": 89,
+    "coveragePercent": 100,
+    "totalTestFiles": 7,
+    "testFileDetails": [
+      "app/src/test/java/com/music/myapplication/ExampleUnitTest.kt",
+      "app/src/androidTest/java/com/music/myapplication/ExampleInstrumentedTest.kt",
+      "app/src/test/java/com/music/myapplication/core/network/dispatch/TemplateRendererTest.kt",
+      "app/src/test/java/com/music/myapplication/core/network/dispatch/TransformEngineTest.kt",
+      "app/src/test/java/com/music/myapplication/feature/search/SearchViewModelTest.kt",
+      "app/src/test/java/com/music/myapplication/feature/playlist/PlaylistDetailViewModelTest.kt",
+      "app/src/test/java/com/music/myapplication/data/repository/OnlineMusicRepositoryImplTest.kt",
+      "app/src/test/java/com/music/myapplication/data/repository/RecommendationRepositoryImplTest.kt"
+    ]
+  },
+  "gaps": [
+    {
+      "module": "feature/player",
+      "missing": ["tests"],
+      "priority": "high",
+      "reason": "PlayerViewModel is the most complex and globally shared component, no tests exist"
+    },
+    {
+      "module": "feature/home",
+      "missing": ["tests"],
+      "priority": "medium",
+      "reason": "HomeViewModel handles multi-source data loading with no test coverage"
+    },
+    {
+      "module": "feature/library",
+      "missing": ["tests"],
+      "priority": "medium",
+      "reason": "LibraryViewModel combines 5 flows, no test coverage"
+    },
+    {
+      "module": "data/repository (Local)",
+      "missing": ["tests"],
+      "priority": "medium",
+      "reason": "LocalLibraryRepositoryImpl wraps 5 DAOs with business logic, untested"
+    },
+    {
+      "module": "media",
+      "missing": ["tests"],
+      "priority": "medium",
+      "reason": "QueueManager and PlaybackModeManager are pure logic, easy to unit test but currently untested"
+    },
+    {
+      "module": "core/network/dispatch",
+      "missing": ["tests (DispatchExecutor)"],
+      "priority": "low",
+      "reason": "DispatchExecutor orchestrates the template->request->transform pipeline, partially covered by Renderer+Engine tests"
+    }
+  ],
+  "ignoredDirectories": [
+    {
+      "path": "app/build/",
+      "reason": "Build output (generated code, resources, caches)"
+    },
+    {
+      "path": ".gradle/",
+      "reason": "Gradle cache"
+    },
+    {
+      "path": ".idea/",
+      "reason": "IDE configuration"
+    },
+    {
+      "path": "gradle/",
+      "reason": "Gradle wrapper"
+    }
+  ],
+  "truncated": false,
+  "claudeMdFiles": [
+    "CLAUDE.md",
+    "app/src/main/java/com/music/myapplication/core/CLAUDE.md",
+    "app/src/main/java/com/music/myapplication/domain/CLAUDE.md",
+    "app/src/main/java/com/music/myapplication/data/CLAUDE.md",
+    "app/src/main/java/com/music/myapplication/feature/CLAUDE.md",
+    "app/src/main/java/com/music/myapplication/media/CLAUDE.md"
+  ]
+}
