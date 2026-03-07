@@ -1,6 +1,7 @@
 package com.music.myapplication.data.repository
 
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
@@ -21,7 +22,8 @@ import javax.inject.Singleton
 class RecommendationRepositoryImpl @Inject constructor(
     private val api: TuneHubApi,
     private val onlineRepo: OnlineMusicRepository,
-    private val localRepo: LocalLibraryRepository
+    private val localRepo: LocalLibraryRepository,
+    private val homeContentCacheStore: HomeContentCacheStore
 ) : RecommendationRepository {
 
     override suspend fun getDailyRecommendedTracks(limit: Int): List<Track> {
@@ -43,9 +45,7 @@ class RecommendationRepositoryImpl @Inject constructor(
             for (candidate in similarTracks) {
                 val key = candidate.uniqueKey()
                 if (key in knownTrackKeys || key in recommended) continue
-                recommended[key] = candidate.copy(
-                    isFavorite = localRepo.isFavorite(candidate.id, candidate.platform.id)
-                )
+                recommended[key] = candidate
                 if (recommended.size >= limit) break
             }
         }
@@ -60,7 +60,7 @@ class RecommendationRepositoryImpl @Inject constructor(
         }
 
         if (recommended.isNotEmpty()) {
-            return recommended.values.take(limit)
+            return localRepo.applyFavoriteState(recommended.values.take(limit))
         }
 
         return tasteSeeds
@@ -77,12 +77,20 @@ class RecommendationRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getRecommendedPlaylists(): List<ToplistInfo> {
+        homeContentCacheStore.getCachedRecommendedPlaylists()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return it }
+
         val response = runCatching {
             api.getNeteaseRecommendedPlaylists(limit = RECOMMENDED_PLAYLIST_LIMIT)
         }.getOrElse { return emptyList() }
 
-        return extractNeteaseRecommendedPlaylists(response)
+        val playlists = extractNeteaseRecommendedPlaylists(response)
             .take(RECOMMENDED_PLAYLIST_LIMIT)
+        if (playlists.isNotEmpty()) {
+            homeContentCacheStore.cacheRecommendedPlaylists(playlists)
+        }
+        return playlists
     }
 
     override suspend fun getSimilarTracks(track: Track, limit: Int): List<Track> {

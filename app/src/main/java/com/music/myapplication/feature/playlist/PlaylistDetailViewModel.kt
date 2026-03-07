@@ -40,22 +40,41 @@ class PlaylistDetailViewModel @Inject constructor(
                 }
             } else {
                 val p = Platform.fromId(platform)
-                val result = when (source) {
-                    "playlist" -> onlineRepo.getPlaylistDetail(p, id)
-                    else -> onlineRepo.getToplistDetail(p, id)
-                }
-                when (result) {
-                    is Result.Success -> {
-                        val enriched = result.data.map { track ->
-                            val isFav = localRepo.isFavorite(track.id, track.platform.id)
-                            track.copy(isFavorite = isFav)
+                when (source) {
+                    "playlist" -> {
+                        when (val result = onlineRepo.getPlaylistDetail(p, id)) {
+                            is Result.Success -> {
+                                val enriched = localRepo.applyFavoriteState(result.data)
+                                _state.update { it.copy(tracks = enriched, isLoading = false) }
+                            }
+                            is Result.Error -> {
+                                _state.update { it.copy(error = result.error.message, isLoading = false) }
+                            }
+                            is Result.Loading -> {}
                         }
-                        _state.update { it.copy(tracks = enriched, isLoading = false) }
                     }
-                    is Result.Error -> {
-                        _state.update { it.copy(error = result.error.message, isLoading = false) }
+                    else -> {
+                        when (val result = onlineRepo.getToplistDetailFast(p, id)) {
+                            is Result.Success -> {
+                                val baseTracks = localRepo.applyFavoriteState(result.data)
+                                _state.update { it.copy(tracks = baseTracks, isLoading = false) }
+
+                                if (p == Platform.QQ || p == Platform.KUWO) {
+                                    launch {
+                                        val hydrated = onlineRepo.enrichToplistTracks(p, id, result.data)
+                                        val hydratedTracks = localRepo.applyFavoriteState(hydrated)
+                                        if (hydratedTracks != baseTracks) {
+                                            _state.update { it.copy(tracks = hydratedTracks) }
+                                        }
+                                    }
+                                }
+                            }
+                            is Result.Error -> {
+                                _state.update { it.copy(error = result.error.message, isLoading = false) }
+                            }
+                            is Result.Loading -> {}
+                        }
                     }
-                    is Result.Loading -> {}
                 }
             }
         }

@@ -1,13 +1,125 @@
 package com.music.myapplication.data.repository
 
+import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.datastore.HomeContentCacheStore
+import com.music.myapplication.core.network.dispatch.DispatchExecutor
+import com.music.myapplication.core.network.retrofit.TuneHubApi
+import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.Track
+import com.music.myapplication.domain.repository.ToplistInfo
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.test.runTest
 
 class OnlineMusicRepositoryImplTest {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    @Test
+    fun getToplists_returnsCachedDataWithoutDispatch() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val dispatchExecutor = mockk<DispatchExecutor>()
+        val cacheStore = mockk<HomeContentCacheStore>()
+        val cached = listOf(ToplistInfo(id = "19723756", name = "飙升榜"))
+        coEvery { cacheStore.getCachedToplists(Platform.NETEASE) } returns cached
+
+        val repository = OnlineMusicRepositoryImpl(api, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getToplists(Platform.NETEASE)
+
+        assertEquals(cached, (result as Result.Success).data)
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
+    fun getToplistDetailFast_returnsCachedTracksWithoutNetwork() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val dispatchExecutor = mockk<DispatchExecutor>()
+        val cacheStore = mockk<HomeContentCacheStore>()
+        val cachedTracks = listOf(
+            Track(
+                id = "123",
+                platform = Platform.NETEASE,
+                title = "缓存歌曲",
+                artist = "缓存歌手"
+            ),
+            Track(
+                id = "456",
+                platform = Platform.NETEASE,
+                title = "缓存歌曲2",
+                artist = "缓存歌手2"
+            )
+        )
+        coEvery { cacheStore.getCachedToplistDetail(Platform.NETEASE, "19723756") } returns cachedTracks
+
+        val repository = OnlineMusicRepositoryImpl(api, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getToplistDetailFast(Platform.NETEASE, "19723756")
+
+        assertEquals(cachedTracks, (result as Result.Success).data)
+        coVerify(exactly = 0) { api.getNeteasePlaylistDetailV6(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
+    fun getToplistDetailFast_bypassesBrokenSingleTrackCacheForNetease() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>()
+        val brokenCache = listOf(
+            Track(
+                id = "123",
+                platform = Platform.NETEASE,
+                title = "缓存歌曲",
+                artist = "缓存歌手"
+            )
+        )
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "playlist": {
+                "tracks": [
+                  {
+                    "id": 123,
+                    "name": "第一首",
+                    "dt": 210000,
+                    "ar": [{ "name": "歌手A" }],
+                    "al": { "name": "专辑A", "picUrl": "https://example.com/a.jpg" }
+                  },
+                  {
+                    "id": 456,
+                    "name": "第二首",
+                    "dt": 220000,
+                    "ar": [{ "name": "歌手B" }],
+                    "al": { "name": "专辑B", "picUrl": "https://example.com/b.jpg" }
+                  }
+                ],
+                "trackIds": [
+                  { "id": 123 },
+                  { "id": 456 }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { cacheStore.getCachedToplistDetail(Platform.NETEASE, "19723756") } returns brokenCache
+        coEvery { api.getNeteasePlaylistDetailV6("19723756", any(), any(), any()) } returns payload
+        coEvery { cacheStore.cacheToplistDetail(Platform.NETEASE, "19723756", any()) } returns Unit
+
+        val repository = OnlineMusicRepositoryImpl(api, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getToplistDetailFast(Platform.NETEASE, "19723756")
+
+        assertEquals(listOf("123", "456"), (result as Result.Success).data.map { it.id })
+        coVerify(exactly = 1) { api.getNeteasePlaylistDetailV6("19723756", any(), any(), any()) }
+        coVerify(exactly = 1) { cacheStore.cacheToplistDetail(Platform.NETEASE, "19723756", any()) }
+    }
 
     @Test
     fun extractNeteaseSongCoverMap_readsAlbumPicUrl() {
@@ -94,6 +206,62 @@ class OnlineMusicRepositoryImplTest {
         assertEquals("叶惠美", tracks.first().album)
         assertEquals("https://example.com/qingtian.jpg", tracks.first().coverUrl)
         assertEquals(269000L, tracks.first().durationMs)
+    }
+
+    @Test
+    fun extractNeteasePlaylistTrackIds_readsTrackIdsWhenTracksAreIncomplete() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "playlist": {
+                "trackIds": [
+                  { "id": 123 },
+                  { "id": 456 },
+                  { "id": 123 }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val trackIds = extractNeteasePlaylistTrackIds(payload)
+
+        assertEquals(listOf("123", "456"), trackIds)
+    }
+
+    @Test
+    fun extractNeteaseSongTracks_readsSongDetailStructure() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "songs": [
+                {
+                  "id": 321,
+                  "name": "稻香",
+                  "dt": 223000,
+                  "artists": [
+                    { "name": "周杰伦" }
+                  ],
+                  "album": {
+                    "name": "魔杰座",
+                    "picUrl": "https://example.com/daoxiang.jpg"
+                  }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val tracks = extractNeteaseSongTracks(payload)
+
+        assertEquals(1, tracks.size)
+        assertEquals("321", tracks.first().id)
+        assertEquals("稻香", tracks.first().title)
+        assertEquals("周杰伦", tracks.first().artist)
+        assertEquals("魔杰座", tracks.first().album)
+        assertEquals("https://example.com/daoxiang.jpg", tracks.first().coverUrl)
+        assertEquals(223000L, tracks.first().durationMs)
     }
 
     @Test

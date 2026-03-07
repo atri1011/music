@@ -123,10 +123,7 @@ class SearchViewModel @Inject constructor(
             }
             when (val result = onlineRepo.search(platform, query, page)) {
                 is Result.Success -> {
-                    val enriched = result.data.map { track ->
-                        val isFav = localRepo.isFavorite(track.id, track.platform.id)
-                        track.copy(isFavorite = isFav)
-                    }
+                    val enriched = localRepo.applyFavoriteState(result.data)
                     _state.update { s ->
                         s.copy(
                             tracks = if (page == 1) enriched else s.tracks + enriched,

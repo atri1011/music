@@ -2,11 +2,13 @@ package com.music.myapplication.data.repository
 
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.data.remote.dto.ParseRequestDto
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.domain.repository.LyricsResult
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import com.music.myapplication.domain.repository.ToplistInfo
 import kotlinx.serialization.json.JsonArray
@@ -26,7 +28,8 @@ import javax.inject.Singleton
 class OnlineMusicRepositoryImpl @Inject constructor(
     private val api: TuneHubApi,
     private val dispatchExecutor: DispatchExecutor,
-    private val json: Json
+    private val json: Json,
+    private val homeContentCacheStore: HomeContentCacheStore
 ) : OnlineMusicRepository {
 
     private val neteaseCoverCache = ConcurrentHashMap<String, String>()
@@ -52,6 +55,44 @@ class OnlineMusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getToplists(platform: Platform): Result<List<ToplistInfo>> {
+        homeContentCacheStore.getCachedToplists(platform)
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return Result.Success(it) }
+
+        val result = fetchToplistsFromNetwork(platform)
+        if (result is Result.Success && result.data.isNotEmpty()) {
+            homeContentCacheStore.cacheToplists(platform, result.data)
+        }
+        return result
+    }
+
+    override suspend fun getToplistDetail(platform: Platform, id: String): Result<List<Track>> {
+        val rawResult = getToplistDetailFast(platform, id)
+        return when (rawResult) {
+            is Result.Success -> Result.Success(enrichToplistTracks(platform, id, rawResult.data))
+            is Result.Error -> rawResult
+            is Result.Loading -> rawResult
+        }
+    }
+
+    override suspend fun getToplistDetailFast(platform: Platform, id: String): Result<List<Track>> {
+        homeContentCacheStore.getCachedToplistDetail(platform, id)
+            ?.takeIf { isUsableToplistDetailCache(platform, it) }
+            ?.let { return Result.Success(it) }
+
+        val result = fetchToplistDetailFastFromNetwork(platform, id)
+        if (result is Result.Success && isUsableToplistDetailCache(platform, result.data)) {
+            homeContentCacheStore.cacheToplistDetail(platform, id, result.data)
+        }
+        return result
+    }
+
+    private fun isUsableToplistDetailCache(platform: Platform, tracks: List<Track>): Boolean {
+        if (tracks.isEmpty()) return false
+        return !(platform == Platform.NETEASE && tracks.size == 1)
+    }
+
+    private suspend fun fetchToplistsFromNetwork(platform: Platform): Result<List<ToplistInfo>> {
         if (platform == Platform.QQ) {
             val directToplists = runCatching { fetchQqToplistsDirect() }.getOrDefault(emptyList())
             if (directToplists.isNotEmpty()) {
@@ -88,24 +129,33 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getToplistDetail(platform: Platform, id: String): Result<List<Track>> {
-        val result = dispatchExecutor.executeByMethod(
+    private suspend fun fetchToplistDetailFastFromNetwork(platform: Platform, id: String): Result<List<Track>> {
+        if (platform == Platform.NETEASE) {
+            return fetchNeteasePlaylistDetailDirect(id)
+        }
+        return dispatchExecutor.executeByMethod(
             platform = platform,
             function = "toplist",
             args = mapOf("id" to id)
         )
-        val enrichedResult = enrichTrackCoverIfNeeded(platform, result)
-        if (platform != Platform.QQ || enrichedResult !is Result.Success) return enrichedResult
+    }
 
-        val tracks = enrichedResult.data
-        if (tracks.none { it.coverUrl.isBlank() }) return enrichedResult
+    override suspend fun enrichToplistTracks(
+        platform: Platform,
+        id: String,
+        tracks: List<Track>
+    ): List<Track> {
+        val enrichedTracks = enrichTrackCoverIfNeeded(platform, tracks)
+        if (platform != Platform.QQ || enrichedTracks.none { it.coverUrl.isBlank() }) {
+            return enrichedTracks
+        }
 
         val coverMap = runCatching {
             fetchQqToplistSongCoverMap(id)
         }.getOrDefault(emptyMap())
 
-        if (coverMap.isEmpty()) return enrichedResult
-        return Result.Success(fillMissingTrackCovers(tracks, coverMap))
+        if (coverMap.isEmpty()) return enrichedTracks
+        return fillMissingTrackCovers(enrichedTracks, coverMap)
     }
 
     override suspend fun getPlaylistDetail(platform: Platform, id: String): Result<List<Track>> {
@@ -152,7 +202,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getLyrics(platform: Platform, songId: String): Result<String> {
+    override suspend fun getLyrics(platform: Platform, songId: String): Result<LyricsResult> {
         return try {
             val response = api.parse(
                 apiKey = "",
@@ -168,7 +218,10 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             } else {
                 val lyric = extractLyric(response.data)
                 if (lyric.isNullOrBlank()) Result.Error(AppError.Parse(message = "歌词为空"))
-                else Result.Success(lyric)
+                else {
+                    val translation = extractTranslation(response.data)
+                    Result.Success(LyricsResult(lyric = lyric, translation = translation))
+                }
             }
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
@@ -183,6 +236,10 @@ class OnlineMusicRepositoryImpl @Inject constructor(
 
     private fun extractLyric(data: JsonElement?): String? {
         return findFirstMatch(data, listOf("lyric", "lrc", "lyrics", "lyricText"))
+    }
+
+    private fun extractTranslation(data: JsonElement?): String? {
+        return findFirstMatch(data, listOf("tlyric", "trans", "translation", "translateLyric", "transLyric"))
     }
 
     private fun findFirstMatch(element: JsonElement?, keys: List<String>): String? {
@@ -350,11 +407,52 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                 )
             }
 
-            val tracks = extractNeteasePlaylistTracks(response)
+            val tracks = resolveNeteasePlaylistTracks(response)
+            if (tracks.isEmpty()) {
+                return Result.Error(AppError.Parse(message = "解析网易歌单详情失败"))
+            }
+
             Result.Success(enrichTrackCoverIfNeeded(Platform.NETEASE, tracks))
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
         }
+    }
+
+    private suspend fun resolveNeteasePlaylistTracks(response: JsonElement): List<Track> {
+        val playlistTracks = extractNeteasePlaylistTracks(response)
+        val trackIds = extractNeteasePlaylistTrackIds(response)
+        if (trackIds.isEmpty()) return playlistTracks
+
+        val resolvedTracks = LinkedHashMap<String, Track>()
+        playlistTracks.forEach { track ->
+            if (track.id.isNotBlank()) {
+                resolvedTracks.putIfAbsent(track.id, track)
+            }
+        }
+
+        val missingTrackIds = trackIds.filterNot(resolvedTracks::containsKey)
+        if (missingTrackIds.isNotEmpty()) {
+            fetchNeteaseSongs(missingTrackIds).forEach { track ->
+                if (track.id.isNotBlank()) {
+                    resolvedTracks.putIfAbsent(track.id, track)
+                }
+            }
+        }
+
+        return trackIds.mapNotNull(resolvedTracks::get)
+            .ifEmpty { playlistTracks }
+    }
+
+    private suspend fun fetchNeteaseSongs(songIds: List<String>): List<Track> {
+        if (songIds.isEmpty()) return emptyList()
+
+        val tracks = mutableListOf<Track>()
+        songIds.chunked(NETEASE_DETAIL_BATCH_SIZE).forEach { chunk ->
+            val idsParam = chunk.joinToString(prefix = "[", postfix = "]")
+            val response = api.getNeteaseSongDetail(ids = idsParam)
+            tracks += extractNeteaseSongTracks(response)
+        }
+        return tracks
     }
 
     private suspend fun fetchQqSongCovers(songMids: List<String>): Map<String, String> {
@@ -501,20 +599,27 @@ internal fun extractNeteasePlaylistTracks(data: JsonElement?): List<Track> {
     val tracks = playlist.getIgnoreCase("tracks") as? JsonArray ?: return emptyList()
 
     return tracks.mapNotNull { itemElement ->
-        val item = itemElement as? JsonObject ?: return@mapNotNull null
-        val id = item.firstStringOf("id").orEmpty()
-        if (id.isBlank()) return@mapNotNull null
+        extractNeteaseTrack(itemElement as? JsonObject)
+    }
+}
 
-        val album = (item.getIgnoreCase("al") ?: item.getIgnoreCase("album")) as? JsonObject
-        Track(
-            id = id,
-            platform = Platform.NETEASE,
-            title = item.firstStringOf("name", "title").orEmpty(),
-            artist = extractNeteaseArtistText(item),
-            album = album?.firstStringOf("name").orEmpty(),
-            coverUrl = album?.firstStringOf("picUrl", "blurPicUrl").orEmpty(),
-            durationMs = item.firstLongOf("dt", "duration", "durationMs") ?: 0L
-        )
+internal fun extractNeteasePlaylistTrackIds(data: JsonElement?): List<String> {
+    val root = data as? JsonObject ?: return emptyList()
+    val playlist = (root.getIgnoreCase("playlist") ?: root.getIgnoreCase("result")) as? JsonObject
+        ?: return emptyList()
+    val trackIds = playlist.getIgnoreCase("trackIds") as? JsonArray ?: return emptyList()
+
+    return trackIds.mapNotNull { itemElement ->
+        (itemElement as? JsonObject)
+            ?.firstStringOf("id")
+            ?.takeIf { it.isNotBlank() }
+    }.distinct()
+}
+
+internal fun extractNeteaseSongTracks(data: JsonElement?): List<Track> {
+    val songs = ((data as? JsonObject)?.getIgnoreCase("songs") as? JsonArray) ?: return emptyList()
+    return songs.mapNotNull { itemElement ->
+        extractNeteaseTrack(itemElement as? JsonObject)
     }
 }
 
@@ -637,6 +742,23 @@ private fun extractNeteaseArtistText(track: JsonObject): String {
     return artists.mapNotNull { artistElement ->
         (artistElement as? JsonObject)?.firstStringOf("name")
     }.joinToString("/")
+}
+
+private fun extractNeteaseTrack(track: JsonObject?): Track? {
+    val item = track ?: return null
+    val id = item.firstStringOf("id").orEmpty()
+    if (id.isBlank()) return null
+
+    val album = (item.getIgnoreCase("al") ?: item.getIgnoreCase("album")) as? JsonObject
+    return Track(
+        id = id,
+        platform = Platform.NETEASE,
+        title = item.firstStringOf("name", "title").orEmpty(),
+        artist = extractNeteaseArtistText(item),
+        album = album?.firstStringOf("name").orEmpty(),
+        coverUrl = album?.firstStringOf("picUrl", "blurPicUrl").orEmpty(),
+        durationMs = item.firstLongOf("dt", "duration", "durationMs") ?: 0L
+    )
 }
 
 private fun extractApiCode(data: JsonElement?): Int? {

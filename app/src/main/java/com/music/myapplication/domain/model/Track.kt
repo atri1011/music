@@ -1,5 +1,8 @@
 package com.music.myapplication.domain.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class Track(
     val id: String,
     val platform: Platform,

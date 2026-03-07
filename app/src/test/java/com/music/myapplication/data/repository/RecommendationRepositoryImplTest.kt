@@ -2,6 +2,7 @@ package com.music.myapplication.data.repository
 
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
@@ -79,6 +80,7 @@ class RecommendationRepositoryImplTest {
         val api = mockk<TuneHubApi>(relaxed = true)
         val onlineRepo = mockk<OnlineMusicRepository>()
         val localRepo = mockk<LocalLibraryRepository>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
         val favorite = testTrack(id = "fav-1", artist = "周杰伦")
         val recent = testTrack(id = "recent-1", artist = "林俊杰", platform = Platform.QQ)
         val recommendation = testTrack(id = "new-1", artist = "周杰伦")
@@ -89,7 +91,7 @@ class RecommendationRepositoryImplTest {
         coEvery { localRepo.getTrackPlayCount(favorite.id, favorite.platform.id) } returns 5
         coEvery { localRepo.getTrackPlayCount(recent.id, recent.platform.id) } returns 3
         coEvery { localRepo.getFirstPlayDate(any(), any()) } returns System.currentTimeMillis() - (40L * 24 * 60 * 60 * 1000)
-        coEvery { localRepo.isFavorite(any(), any()) } returns false
+        coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
         coEvery { onlineRepo.search(Platform.NETEASE, "周杰伦", 1, any()) } returns Result.Success(
             listOf(favorite, recommendation)
         )
@@ -97,7 +99,7 @@ class RecommendationRepositoryImplTest {
             listOf(recent, recentRecommendation)
         )
 
-        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo)
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo, cacheStore)
 
         val tracks = repository.getDailyRecommendedTracks(limit = 5)
 
@@ -112,6 +114,7 @@ class RecommendationRepositoryImplTest {
         val api = mockk<TuneHubApi>(relaxed = true)
         val onlineRepo = mockk<OnlineMusicRepository>()
         val localRepo = mockk<LocalLibraryRepository>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
         val favorite = testTrack(id = "fav-1", artist = "Aimer")
         val recent = testTrack(id = "recent-1", artist = "宇多田ヒカル")
 
@@ -119,9 +122,10 @@ class RecommendationRepositoryImplTest {
         every { localRepo.getRecentPlays(any()) } returns flowOf(listOf(recent))
         coEvery { localRepo.getTrackPlayCount(any(), any()) } returns 2
         coEvery { localRepo.getFirstPlayDate(any(), any()) } returns null
+        coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
         coEvery { onlineRepo.search(any(), any(), any(), any()) } returns Result.Success(emptyList())
 
-        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo)
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo, cacheStore)
 
         val tracks = repository.getDailyRecommendedTracks(limit = 5)
 
@@ -134,6 +138,7 @@ class RecommendationRepositoryImplTest {
         val api = mockk<TuneHubApi>(relaxed = true)
         val onlineRepo = mockk<OnlineMusicRepository>()
         val localRepo = mockk<LocalLibraryRepository>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
         val toplistTrack = testTrack(id = "top-1", artist = "歌手")
 
         every { localRepo.getFavorites() } returns flowOf(emptyList())
@@ -145,12 +150,73 @@ class RecommendationRepositoryImplTest {
             listOf(toplistTrack)
         )
 
-        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo)
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo, cacheStore)
 
         val tracks = repository.getDailyRecommendedTracks(limit = 5)
 
         assertEquals(listOf("top-1"), tracks.map { it.id })
         coVerify(exactly = 1) { onlineRepo.getToplists(Platform.NETEASE) }
+    }
+
+    @Test
+    fun getRecommendedPlaylists_returnsCachedDataWithoutRequest() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val onlineRepo = mockk<OnlineMusicRepository>(relaxed = true)
+        val localRepo = mockk<LocalLibraryRepository>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>()
+        val cached = listOf(ToplistInfo(id = "1", name = "今日推荐"))
+        coEvery { cacheStore.getCachedRecommendedPlaylists() } returns cached
+
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo, cacheStore)
+
+        val playlists = repository.getRecommendedPlaylists()
+
+        assertEquals(cached, playlists)
+        coVerify(exactly = 0) { api.getNeteaseRecommendedPlaylists(any(), any()) }
+    }
+
+    @Test
+    fun getRecommendedPlaylists_cachesFreshResponse() = runTest {
+        val api = mockk<TuneHubApi>()
+        val onlineRepo = mockk<OnlineMusicRepository>(relaxed = true)
+        val localRepo = mockk<LocalLibraryRepository>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>()
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "result": [
+                {
+                  "id": 748209731,
+                  "name": "今日推荐",
+                  "picUrl": "https://p2.music.126.net/cover.jpg",
+                  "copywriter": "按你的口味精选"
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        coEvery { cacheStore.getCachedRecommendedPlaylists() } returns null
+        coEvery { api.getNeteaseRecommendedPlaylists(any(), any()) } returns payload
+        coEvery { cacheStore.cacheRecommendedPlaylists(any()) } returns Unit
+
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo, cacheStore)
+
+        val playlists = repository.getRecommendedPlaylists()
+
+        assertEquals(1, playlists.size)
+        coVerify(exactly = 1) {
+            cacheStore.cacheRecommendedPlaylists(
+                listOf(
+                    ToplistInfo(
+                        id = "748209731",
+                        name = "今日推荐",
+                        coverUrl = "https://p2.music.126.net/cover.jpg",
+                        description = "按你的口味精选"
+                    )
+                )
+            )
+        }
     }
 
     private fun testTrack(

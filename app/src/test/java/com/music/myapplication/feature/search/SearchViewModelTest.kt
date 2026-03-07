@@ -66,7 +66,7 @@ class SearchViewModelTest {
                 emit(Platform.KUWO.id)
             }
             coEvery { preferences.setPlatform(any()) } returns Unit
-            coEvery { localRepo.isFavorite(any(), any()) } returns false
+            coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
             coEvery { onlineRepo.search(any(), any(), any(), any()) } answers {
                 val platform = firstArg<Platform>()
                 val keyword = secondArg<String>()
