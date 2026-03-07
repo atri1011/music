@@ -46,11 +46,18 @@ class SearchViewModel @Inject constructor(
 
     private val queryFlow = MutableStateFlow("")
     private var searchJob: Job? = null
+    private var hasUserSelectedPlatform = false
 
     init {
         viewModelScope.launch {
             val savedPlatform = Platform.fromId(preferences.platform.first())
-            _state.update { it.copy(platform = savedPlatform) }
+            _state.update { currentState ->
+                if (hasUserSelectedPlatform || currentState.platform == savedPlatform) {
+                    currentState
+                } else {
+                    currentState.copy(platform = savedPlatform)
+                }
+            }
         }
         viewModelScope.launch {
             queryFlow
@@ -62,6 +69,10 @@ class SearchViewModel @Inject constructor(
     }
 
     fun onQueryChange(query: String) {
+        if (query.isBlank()) {
+            searchJob?.cancel()
+            searchJob = null
+        }
         _state.update {
             if (query.isBlank()) {
                 it.copy(query = query, tracks = emptyList(), error = null, page = 1, hasMore = true, isLoading = false)
@@ -80,10 +91,17 @@ class SearchViewModel @Inject constructor(
     }
 
     fun onPlatformChange(platform: Platform) {
-        _state.update { it.copy(platform = platform, tracks = emptyList(), page = 1, hasMore = true) }
+        hasUserSelectedPlatform = true
+        val currentState = _state.value
+        if (currentState.platform == platform) {
+            viewModelScope.launch { preferences.setPlatform(platform.id) }
+            return
+        }
+
+        _state.update { it.copy(platform = platform, tracks = emptyList(), error = null, page = 1, hasMore = true) }
         viewModelScope.launch { preferences.setPlatform(platform.id) }
-        if (_state.value.query.isNotBlank()) {
-            performSearch(_state.value.query, platform, 1)
+        if (currentState.query.isNotBlank()) {
+            performSearch(currentState.query, platform, 1)
         }
     }
 

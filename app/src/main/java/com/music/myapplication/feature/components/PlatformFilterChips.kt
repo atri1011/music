@@ -1,8 +1,8 @@
 package com.music.myapplication.feature.components
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
@@ -18,12 +18,16 @@ fun PlatformFilterChips(
     onPlatformSelected: (Platform) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(Platform.entries) { platform ->
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        for (platform in Platform.entries) {
             FilterChip(
                 selected = platform == selectedPlatform,
                 onClick = { onPlatformSelected(platform) },
-                label = { Text(platform.displayName) },
+                label = { Text(platform.displayName, maxLines = 1) },
+                modifier = Modifier.weight(1f),
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimary
