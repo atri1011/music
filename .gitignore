@@ -14,3 +14,5 @@
 .cxx
 local.properties
 .ace-tool/
+/.claude/plan/
+/app/release/
