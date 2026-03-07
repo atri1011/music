@@ -25,9 +25,9 @@ val DarkOnSurfaceVariant = Color(0xFF98989D)
 val DarkOutline = Color(0xFF48484A)
 
 // Glassmorphism
-val GlassSurfaceLight = Color.White.copy(alpha = 0.78f)
+val GlassSurfaceLight = Color(0xFFF2F4F7).copy(alpha = 0.96f)
 val GlassSurfaceDark = Color(0xFF1C1C1E).copy(alpha = 0.70f)
-val GlassBorderLight = Color.White.copy(alpha = 0.35f)
+val GlassBorderLight = LightOutline.copy(alpha = 0.65f)
 val GlassBorderDark = Color.White.copy(alpha = 0.10f)
 
 // Player overlay

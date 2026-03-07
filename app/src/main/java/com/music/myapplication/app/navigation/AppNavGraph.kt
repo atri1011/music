@@ -65,11 +65,7 @@ fun AppNavGraph(
             DiscoverScreen(
                 onNavigateToSearch = {
                     navController.navigate(Routes.Search) { launchSingleTop = true }
-                },
-                onNavigateToPlaylist = { id, platform, name, source ->
-                    navController.navigate(Routes.PlaylistDetail(id, platform, name, source))
-                },
-                playerViewModel = playerViewModel
+                }
             )
         }
         composable<Routes.More> {

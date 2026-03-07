@@ -54,6 +54,7 @@ fun AppRoot(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
 
     val hasCurrentTrack = miniPlayerState.currentTrack != null
+    val isSearchRoute = navBackStackEntry?.destination?.hasRoute(Routes.Search::class) == true
     val isPlayerLyricsRoute = navBackStackEntry?.destination?.hasRoute(Routes.PlayerLyrics::class) == true
 
     val bottomNavItems = remember {
@@ -92,7 +93,7 @@ fun AppRoot(
                 )
             }
 
-            if (!isPlayerLyricsRoute) {
+            if (!isPlayerLyricsRoute && !isSearchRoute) {
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                     tonalElevation = 0.dp

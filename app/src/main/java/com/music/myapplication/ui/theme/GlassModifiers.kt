@@ -1,45 +1,27 @@
 package com.music.myapplication.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-
-/**
- * Applies blur on API 31+ (Android 12), no-op on lower versions.
- */
-fun Modifier.adaptiveBlur(radius: Dp): Modifier {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        this.blur(radius)
-    } else {
-        this
-    }
-}
 
 /**
  * Glassmorphism surface: semi-transparent background + border + optional blur.
  */
 @Composable
 fun Modifier.glassSurface(
-    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
-    blurRadius: Dp = 24.dp,
-    isDark: Boolean = isSystemInDarkTheme()
+    shape: RoundedCornerShape = RoundedCornerShape(16.dp)
 ): Modifier {
     val glassColors = LocalGlassColors.current
     return this
         .clip(shape)
-        .adaptiveBlur(blurRadius)
         .background(glassColors.surface, shape)
         .border(0.5.dp, glassColors.border, shape)
 }
