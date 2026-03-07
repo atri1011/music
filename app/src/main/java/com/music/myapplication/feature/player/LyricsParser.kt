@@ -26,6 +26,19 @@ object LyricsParser {
         return lines.sortedBy { it.timeMs }
     }
 
+    fun parseMerged(originalLrc: String, translationLrc: String?): List<LyricLine> {
+        val originalLines = parse(originalLrc)
+        if (translationLrc.isNullOrBlank()) return originalLines
+
+        val translationLines = parse(translationLrc)
+        val translationMap = translationLines.associateBy { it.timeMs }
+
+        return originalLines.map { line ->
+            val transLine = translationMap[line.timeMs]
+            if (transLine != null) line.copy(translation = transLine.text) else line
+        }
+    }
+
     fun findCurrentIndex(lyrics: List<LyricLine>, positionMs: Long): Int {
         if (lyrics.isEmpty()) return -1
         var result = 0

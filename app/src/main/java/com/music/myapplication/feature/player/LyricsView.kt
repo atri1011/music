@@ -1,7 +1,11 @@
 package com.music.myapplication.feature.player
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,9 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,9 +39,10 @@ import kotlin.math.abs
 fun LyricsView(
     lyrics: List<LyricLine>,
     currentIndex: Int,
-    activeLineColor: Color = Color(0xFF161A1F),
-    inactiveLineColor: Color = Color(0xFF7A828B),
-    scrimColor: Color = MaterialTheme.colorScheme.background,
+    activeLineColor: Color = Color.White,
+    inactiveLineColor: Color = Color.White.copy(alpha = 0.4f),
+    translationColor: Color = Color.White.copy(alpha = 0.6f),
+    scrimColor: Color = Color.Transparent,
     modifier: Modifier = Modifier
 ) {
     if (lyrics.isEmpty()) {
@@ -46,7 +50,7 @@ fun LyricsView(
             Text(
                 text = "暂无歌词",
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color(0xFF6A727A)
+                color = Color.White.copy(alpha = 0.5f)
             )
         }
         return
@@ -60,9 +64,9 @@ fun LyricsView(
         if (userDragging || currentIndex < 0 || currentIndex == lastAutoScrollIndex) return@LaunchedEffect
         val distance = if (lastAutoScrollIndex >= 0) abs(currentIndex - lastAutoScrollIndex) else 0
         if (distance <= 1) {
-            listState.scrollToItem(index = currentIndex, scrollOffset = -200)
+            listState.scrollToItem(index = currentIndex, scrollOffset = -300)
         } else {
-            listState.animateScrollToItem(index = currentIndex, scrollOffset = -200)
+            listState.animateScrollToItem(index = currentIndex, scrollOffset = -300)
         }
         lastAutoScrollIndex = currentIndex
     }
@@ -73,11 +77,6 @@ fun LyricsView(
             userDragging = false
         }
     }
-
-    // Use transparent scrim when in player (scrimColor == Transparent)
-    val useTransparentScrim = scrimColor == Color.Transparent
-    val topScrimColor = if (useTransparentScrim) Color(0xFFEDEFF2) else scrimColor
-    val bottomScrimColor = if (useTransparentScrim) Color(0xFFE7EBEE) else scrimColor
 
     Box(
         modifier = modifier
@@ -93,62 +92,74 @@ fun LyricsView(
             state = listState,
             modifier = Modifier.fillMaxSize()
         ) {
+            // Top spacer for initial scroll offset
+            item { Spacer(modifier = Modifier.height(40.dp)) }
+
             itemsIndexed(lyrics, key = { index, _ -> index }) { index, line ->
                 val isCurrent = index == currentIndex
-                Text(
-                    text = line.text,
-                    style = if (isCurrent) {
-                        MaterialTheme.typography.headlineSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
-                    } else {
-                        MaterialTheme.typography.bodyLarge
-                    },
-                    color = if (isCurrent) {
-                        activeLineColor
-                    } else {
-                        inactiveLineColor
-                    },
-                    textAlign = TextAlign.Center,
+                val distance = abs(index - currentIndex)
+
+                val targetAlpha = when {
+                    isCurrent -> 1f
+                    distance == 1 -> 0.5f
+                    distance == 2 -> 0.35f
+                    else -> 0.2f
+                }
+                val animatedAlpha by animateFloatAsState(
+                    targetValue = targetAlpha,
+                    animationSpec = tween(400),
+                    label = "lyricAlpha_$index"
+                )
+
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .graphicsLayer { alpha = animatedAlpha }
                         .padding(
-                            vertical = if (isCurrent) 12.dp else 8.dp,
-                            horizontal = 24.dp
+                            top = if (isCurrent) 14.dp else 8.dp,
+                            bottom = if (isCurrent) 14.dp else 8.dp
                         )
-                )
+                ) {
+                    // Original lyric text
+                    Text(
+                        text = line.text,
+                        style = if (isCurrent) {
+                            MaterialTheme.typography.headlineSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 22.sp,
+                                lineHeight = 30.sp
+                            )
+                        } else {
+                            MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                lineHeight = 22.sp
+                            )
+                        },
+                        color = if (isCurrent) activeLineColor else inactiveLineColor,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Translation text (if available)
+                    if (line.translation.isNotBlank()) {
+                        Text(
+                            text = line.translation,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = if (isCurrent) 14.sp else 13.sp,
+                                lineHeight = 20.sp
+                            ),
+                            color = translationColor,
+                            textAlign = TextAlign.Start,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                        )
+                    }
+                }
             }
+
+            // Bottom spacer
+            item { Spacer(modifier = Modifier.height(200.dp)) }
         }
-
-        // Top fade
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .align(Alignment.TopCenter)
-                .drawBehind {
-                    drawRect(
-                        Brush.verticalGradient(
-                            colors = listOf(topScrimColor, Color.Transparent)
-                        )
-                    )
-                }
-        )
-
-        // Bottom fade
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .align(Alignment.BottomCenter)
-                .drawBehind {
-                    drawRect(
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, bottomScrimColor)
-                        )
-                    )
-                }
-        )
     }
 }

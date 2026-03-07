@@ -315,9 +315,10 @@ class PlayerViewModel @Inject constructor(
 
         val cachedLyrics = localRepo.getCachedLyrics(track.platform.id, track.id)
         if (!cachedLyrics.isNullOrBlank()) {
+            val cachedTranslation = localRepo.getCachedTranslation(track.platform.id, track.id)
             _lyricsUiState.value = LyricsUiState(
                 songKey = songKey,
-                lyrics = LyricsParser.parse(cachedLyrics),
+                lyrics = LyricsParser.parseMerged(cachedLyrics, cachedTranslation),
                 viewMode = viewMode
             )
             return
@@ -325,12 +326,16 @@ class PlayerViewModel @Inject constructor(
 
         when (val result = onlineRepo.getLyrics(track.platform, track.id)) {
             is Result.Success -> {
-                if (result.data.isNotBlank()) {
-                    localRepo.cacheLyrics(track.platform.id, track.id, result.data)
+                val lyricsResult = result.data
+                if (lyricsResult.lyric.isNotBlank()) {
+                    localRepo.cacheLyrics(track.platform.id, track.id, lyricsResult.lyric)
+                    if (!lyricsResult.translation.isNullOrBlank()) {
+                        localRepo.cacheTranslation(track.platform.id, track.id, lyricsResult.translation)
+                    }
                 }
                 _lyricsUiState.value = LyricsUiState(
                     songKey = songKey,
-                    lyrics = LyricsParser.parse(result.data),
+                    lyrics = LyricsParser.parseMerged(lyricsResult.lyric, lyricsResult.translation),
                     viewMode = viewMode
                 )
             }

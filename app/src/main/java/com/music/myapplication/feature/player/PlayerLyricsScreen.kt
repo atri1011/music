@@ -1,7 +1,9 @@
 package com.music.myapplication.feature.player
 
-import androidx.compose.animation.animateColorAsState
+import android.os.Build
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,25 +46,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.rememberAsyncImagePainter
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import coil.size.Scale
+import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.domain.model.LyricLine
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.formatDuration
-import com.music.myapplication.ui.theme.PlayerBgBottom
-import com.music.myapplication.ui.theme.PlayerBgMiddle
-import com.music.myapplication.ui.theme.PlayerBgTop
-import com.music.myapplication.ui.theme.rememberDominantColorState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -98,57 +100,13 @@ fun PlayerLyricsScreen(
         LyricsParser.findCurrentIndex(lyricsState.lyrics, progress.positionMs)
     }
 
-    val dominantColorState = rememberDominantColorState(coverUrl = currentTrack.coverUrl)
-
-    val animatedDominant by animateColorAsState(
-        targetValue = dominantColorState.dominantColor,
-        animationSpec = tween(800),
-        label = "dominantColor"
-    )
-    val animatedMuted by animateColorAsState(
-        targetValue = dominantColorState.mutedColor,
-        animationSpec = tween(800),
-        label = "mutedColor"
-    )
-
-    val titleColor = Color(0xFF31373D)
-    val subtitleColor = Color(0xFF6A727A)
-    val activeLyricColor = Color(0xFF161A1F)
-    val inactiveLyricColor = Color(0xFF7A828B)
-    val bottomTint by animateColorAsState(
-        targetValue = lerp(animatedMuted, Color(0xFFEFB1BE), 0.65f),
-        animationSpec = tween(800),
-        label = "bottomTint"
-    )
-
-    // Pager state for 3 pages
     val pagerState = rememberPagerState(initialPage = 0) { 3 }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(PlayerBgTop, PlayerBgMiddle, PlayerBgBottom)
-                )
-            )
-    ) {
-        // Bottom warm tint overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0f to Color.Transparent,
-                            0.72f to Color.Transparent,
-                            1f to bottomTint.copy(alpha = 0.28f)
-                        )
-                    )
-                )
-        )
+    Box(modifier = modifier.fillMaxSize()) {
+        // Layer 1: Blurred album cover background
+        BlurredCoverBackground(coverUrl = currentTrack.coverUrl)
 
-        // Content
+        // Layer 2: Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -167,57 +125,86 @@ fun PlayerLyricsScreen(
                         .width(40.dp)
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(subtitleColor.copy(alpha = 0.3f))
+                        .background(Color.White.copy(alpha = 0.3f))
                 )
             }
 
-            // Top bar: small cover + title/artist + favorite + more
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CoverImage(
-                    url = currentTrack.coverUrl,
-                    contentDescription = currentTrack.title,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = currentTrack.title,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = titleColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = currentTrack.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = subtitleColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                IconButton(onClick = playerViewModel::toggleFavorite) {
-                    Icon(
-                        imageVector = if (currentTrack.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "收藏",
-                        tint = if (currentTrack.isFavorite) Color(0xFFE53935) else subtitleColor,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                IconButton(onClick = { /* more actions */ }) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "更多",
-                        tint = subtitleColor,
-                        modifier = Modifier.size(22.dp)
-                    )
+            // Top bar area — crossfade between minimal (cover page) and full (lyrics/info)
+            Crossfade(
+                targetState = pagerState.currentPage == 0,
+                animationSpec = tween(300),
+                label = "topBarCrossfade"
+            ) { isCoverPage ->
+                if (isCoverPage) {
+                    // Cover page: only more button on right
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { /* more */ }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "更多",
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                } else {
+                    // Lyrics/Info page: small cover + title/artist + heart + more
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CoverImage(
+                            url = currentTrack.coverUrl,
+                            contentDescription = currentTrack.title,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = currentTrack.title,
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = currentTrack.artist,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.6f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = playerViewModel::toggleFavorite) {
+                            Icon(
+                                imageVector = if (currentTrack.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "收藏",
+                                tint = if (currentTrack.isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        IconButton(onClick = { /* more */ }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "更多",
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -232,22 +219,16 @@ fun PlayerLyricsScreen(
                     0 -> CoverPage(
                         track = currentTrack,
                         isPlaying = staticState.isPlaying,
-                        glowColor = animatedDominant,
                         lyrics = lyricsState.lyrics,
                         currentIndex = currentLyricIndex,
-                        primaryLyricColor = activeLyricColor,
-                        secondaryLyricColor = inactiveLyricColor,
                         onToggleFavorite = playerViewModel::toggleFavorite
                     )
                     1 -> LyricsPanelContent(
                         lyricsState = lyricsState,
                         currentIndex = currentLyricIndex,
-                        activeLyricColor = activeLyricColor,
-                        inactiveLyricColor = inactiveLyricColor,
-                        scrimColor = Color.Transparent,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 20.dp)
+                            .padding(horizontal = 24.dp)
                     )
                     2 -> SongInfoPage(
                         track = currentTrack,
@@ -270,13 +251,12 @@ fun PlayerLyricsScreen(
             PlayerProgressSection(
                 progress = progress,
                 onSeek = playerViewModel::seekTo,
-                accentColor = animatedDominant,
-                modifier = Modifier.padding(horizontal = 20.dp)
+                modifier = Modifier.padding(horizontal = 24.dp)
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Play controls: prev / play-pause / next
+            // Play controls
             PlayControlRow(
                 isPlaying = staticState.isPlaying,
                 onPlayPause = playerViewModel::togglePlayPause,
@@ -290,15 +270,56 @@ fun PlayerLyricsScreen(
     }
 }
 
+// ── Blurred Background ──────────────────────────────────────────────────────
+
+@Composable
+private fun BlurredCoverBackground(coverUrl: String) {
+    val context = LocalContext.current
+    val normalizedUrl = remember(coverUrl) { normalizeCoverUrl(coverUrl) }
+    val useNativeBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        val imageRequest = remember(normalizedUrl, useNativeBlur) {
+            ImageRequest.Builder(context)
+                .data(normalizedUrl.ifEmpty { null })
+                .size(if (useNativeBlur) 256 else 32)
+                .scale(Scale.FILL)
+                .crossfade(800)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .build()
+        }
+
+        val painter = rememberAsyncImagePainter(model = imageRequest)
+
+        Image(
+            painter = painter,
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (useNativeBlur) Modifier.blur(60.dp) else Modifier
+                ),
+            contentScale = ContentScale.Crop
+        )
+
+        // Dark scrim overlay
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.35f))
+        )
+    }
+}
+
+// ── Cover Page ──────────────────────────────────────────────────────────────
+
 @Composable
 private fun CoverPage(
     track: Track,
     isPlaying: Boolean,
-    glowColor: Color,
     lyrics: List<LyricLine>,
     currentIndex: Int,
-    primaryLyricColor: Color,
-    secondaryLyricColor: Color,
     onToggleFavorite: () -> Unit
 ) {
     val previewLines = remember(lyrics, currentIndex, track.artist) {
@@ -308,21 +329,21 @@ private fun CoverPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         RotatingCover(
             coverUrl = track.coverUrl,
             isPlaying = isPlaying,
-            glowColor = glowColor,
+            glowColor = Color.White.copy(alpha = 0.15f),
             modifier = Modifier.size(280.dp)
         )
         Spacer(modifier = Modifier.height(28.dp))
         Text(
             text = track.title,
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            color = primaryLyricColor,
+            color = Color.White,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -335,7 +356,7 @@ private fun CoverPage(
             Text(
                 text = track.artist,
                 style = MaterialTheme.typography.bodyMedium,
-                color = secondaryLyricColor,
+                color = Color.White.copy(alpha = 0.65f),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -348,13 +369,43 @@ private fun CoverPage(
                 Icon(
                     imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     contentDescription = "收藏",
-                    tint = if (track.isFavorite) Color(0xFFE53935) else secondaryLyricColor,
+                    tint = if (track.isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.6f),
                     modifier = Modifier.size(18.dp)
                 )
             }
         }
     }
 }
+
+// ── Lyrics Panel ────────────────────────────────────────────────────────────
+
+@Composable
+private fun LyricsPanelContent(
+    lyricsState: LyricsUiState,
+    currentIndex: Int,
+    modifier: Modifier = Modifier
+) {
+    when {
+        lyricsState.isLoading && lyricsState.lyrics.isEmpty() -> StatusHint(
+            text = "歌词加载中...",
+            modifier = modifier
+        )
+        !lyricsState.errorMessage.isNullOrBlank() && lyricsState.lyrics.isEmpty() -> StatusHint(
+            text = lyricsState.errorMessage,
+            modifier = modifier
+        )
+        else -> LyricsView(
+            lyrics = lyricsState.lyrics,
+            currentIndex = currentIndex,
+            activeLineColor = Color.White,
+            inactiveLineColor = Color.White.copy(alpha = 0.4f),
+            translationColor = Color.White.copy(alpha = 0.6f),
+            modifier = modifier
+        )
+    }
+}
+
+// ── Song Info Page ──────────────────────────────────────────────────────────
 
 @Composable
 private fun SongInfoPage(
@@ -363,7 +414,6 @@ private fun SongInfoPage(
     playerViewModel: PlayerViewModel
 ) {
     val scrollState = rememberScrollState()
-    val subtitleColor = Color(0xFF6A727A)
 
     Column(
         modifier = Modifier
@@ -371,22 +421,20 @@ private fun SongInfoPage(
             .verticalScroll(scrollState)
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        // Song title + artist
         Text(
             text = track.title,
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-            color = Color(0xFF31373D)
+            color = Color.White
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = track.artist,
             style = MaterialTheme.typography.bodyLarge,
-            color = subtitleColor
+            color = Color.White.copy(alpha = 0.6f)
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Music Encyclopedia
         SectionHeader("音乐百科")
         Spacer(modifier = Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -399,7 +447,6 @@ private fun SongInfoPage(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Memory Coordinates
         SectionHeader("回忆坐标")
         Spacer(modifier = Modifier.height(8.dp))
         if (trackInfoState.firstPlayDate != null) {
@@ -427,25 +474,24 @@ private fun SongInfoPage(
             Text(
                 text = "初次播放 ${dateFormat.format(Date(trackInfoState.firstPlayDate))} · $season · $timeOfDay",
                 style = MaterialTheme.typography.bodyMedium,
-                color = subtitleColor
+                color = Color.White.copy(alpha = 0.65f)
             )
         } else {
             Text(
                 text = "尚未记录播放历史",
                 style = MaterialTheme.typography.bodyMedium,
-                color = subtitleColor
+                color = Color.White.copy(alpha = 0.65f)
             )
         }
         Text(
             text = "累计播放 ${trackInfoState.totalPlayCount} 次",
             style = MaterialTheme.typography.bodyMedium,
-            color = subtitleColor,
+            color = Color.White.copy(alpha = 0.65f),
             modifier = Modifier.padding(top = 4.dp)
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Similar songs
         if (trackInfoState.similarTracks.isNotEmpty()) {
             SectionHeader("相似歌曲")
             Spacer(modifier = Modifier.height(8.dp))
@@ -453,7 +499,11 @@ private fun SongInfoPage(
                 SimilarTrackItem(
                     track = similarTrack,
                     onClick = {
-                        playerViewModel.playTrack(similarTrack, trackInfoState.similarTracks, trackInfoState.similarTracks.indexOf(similarTrack))
+                        playerViewModel.playTrack(
+                            similarTrack,
+                            trackInfoState.similarTracks,
+                            trackInfoState.similarTracks.indexOf(similarTrack)
+                        )
                     }
                 )
             }
@@ -468,7 +518,7 @@ private fun SectionHeader(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-        color = Color(0xFF31373D)
+        color = Color.White
     )
 }
 
@@ -477,13 +527,13 @@ private fun InfoChip(text: String) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.6f))
+            .background(Color.White.copy(alpha = 0.15f))
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
-            color = Color(0xFF5A6370)
+            color = Color.White.copy(alpha = 0.8f)
         )
     }
 }
@@ -497,7 +547,7 @@ private fun SimilarTrackItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.3f))
+            .background(Color.White.copy(alpha = 0.10f))
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -514,14 +564,14 @@ private fun SimilarTrackItem(
             Text(
                 text = track.title,
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = Color(0xFF31373D),
+                color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = track.artist,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF6A727A),
+                color = Color.White.copy(alpha = 0.6f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -530,13 +580,15 @@ private fun SimilarTrackItem(
             Icon(
                 imageVector = Icons.Default.PlayArrow,
                 contentDescription = "播放",
-                tint = Color(0xFF5A6370),
+                tint = Color.White.copy(alpha = 0.7f),
                 modifier = Modifier.size(20.dp)
             )
         }
     }
     Spacer(modifier = Modifier.height(6.dp))
 }
+
+// ── Page Indicator ──────────────────────────────────────────────────────────
 
 @Composable
 private fun PagerIndicator(
@@ -556,19 +608,20 @@ private fun PagerIndicator(
                     .size(if (index == currentPage) 8.dp else 6.dp)
                     .clip(CircleShape)
                     .background(
-                        if (index == currentPage) Color(0xFF31373D)
-                        else Color(0xFF31373D).copy(alpha = 0.25f)
+                        if (index == currentPage) Color.White
+                        else Color.White.copy(alpha = 0.3f)
                     )
             )
         }
     }
 }
 
+// ── Progress Section ────────────────────────────────────────────────────────
+
 @Composable
 private fun PlayerProgressSection(
     progress: PlaybackProgressUiState,
     onSeek: (Long) -> Unit,
-    accentColor: Color,
     modifier: Modifier = Modifier
 ) {
     var sliderDragging by remember { mutableStateOf(false) }
@@ -578,7 +631,6 @@ private fun PlayerProgressSection(
     } else {
         0f
     }
-    val subtleColor = Color(0xFF6A727A)
 
     Column(modifier = modifier) {
         Slider(
@@ -593,9 +645,9 @@ private fun PlayerProgressSection(
             },
             modifier = Modifier.fillMaxWidth(),
             colors = SliderDefaults.colors(
-                thumbColor = accentColor,
-                activeTrackColor = accentColor,
-                inactiveTrackColor = Color(0xFF31373D).copy(alpha = 0.15f)
+                thumbColor = Color.White,
+                activeTrackColor = Color.White,
+                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
             )
         )
         Row(
@@ -607,16 +659,18 @@ private fun PlayerProgressSection(
                     if (sliderDragging) (sliderPosition * progress.durationMs).toLong() else progress.positionMs
                 ),
                 style = MaterialTheme.typography.labelSmall,
-                color = subtleColor
+                color = Color.White.copy(alpha = 0.55f)
             )
             Text(
                 text = formatDuration(progress.durationMs),
                 style = MaterialTheme.typography.labelSmall,
-                color = subtleColor
+                color = Color.White.copy(alpha = 0.55f)
             )
         }
     }
 }
+
+// ── Play Controls ───────────────────────────────────────────────────────────
 
 @Composable
 private fun PlayControlRow(
@@ -626,8 +680,6 @@ private fun PlayControlRow(
     onNext: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val contentColor = Color(0xFF31373D)
-
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -638,7 +690,7 @@ private fun PlayControlRow(
                 imageVector = Icons.Default.SkipPrevious,
                 contentDescription = "上一首",
                 modifier = Modifier.size(36.dp),
-                tint = contentColor
+                tint = Color.White
             )
         }
         IconButton(
@@ -646,13 +698,13 @@ private fun PlayControlRow(
             modifier = Modifier
                 .size(64.dp)
                 .clip(CircleShape)
-                .background(Color.White)
+                .background(Color.White.copy(alpha = 0.2f))
         ) {
             Icon(
                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = if (isPlaying) "暂停" else "播放",
                 modifier = Modifier.size(36.dp),
-                tint = contentColor
+                tint = Color.White
             )
         }
         IconButton(onClick = onNext) {
@@ -660,40 +712,13 @@ private fun PlayControlRow(
                 imageVector = Icons.Default.SkipNext,
                 contentDescription = "下一首",
                 modifier = Modifier.size(36.dp),
-                tint = contentColor
+                tint = Color.White
             )
         }
     }
 }
 
-@Composable
-private fun LyricsPanelContent(
-    lyricsState: LyricsUiState,
-    currentIndex: Int,
-    activeLyricColor: Color,
-    inactiveLyricColor: Color,
-    scrimColor: Color,
-    modifier: Modifier = Modifier
-) {
-    when {
-        lyricsState.isLoading && lyricsState.lyrics.isEmpty() -> StatusHint(
-            text = "歌词加载中...",
-            modifier = modifier
-        )
-        !lyricsState.errorMessage.isNullOrBlank() && lyricsState.lyrics.isEmpty() -> StatusHint(
-            text = lyricsState.errorMessage,
-            modifier = modifier
-        )
-        else -> LyricsView(
-            lyrics = lyricsState.lyrics,
-            currentIndex = currentIndex,
-            activeLineColor = activeLyricColor,
-            inactiveLineColor = inactiveLyricColor,
-            scrimColor = scrimColor,
-            modifier = modifier
-        )
-    }
-}
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 private data class CoverLyricsPreview(
     val currentLine: String,
@@ -732,7 +757,7 @@ private fun StatusHint(text: String?, modifier: Modifier = Modifier) {
         Text(
             text = text.orEmpty().ifBlank { "暂无歌词" },
             style = MaterialTheme.typography.bodyLarge,
-            color = Color(0xFF6A727A),
+            color = Color.White.copy(alpha = 0.5f),
             textAlign = TextAlign.Center
         )
     }
