@@ -1,5 +1,18 @@
 package com.music.myapplication.data.repository
 
+import com.music.myapplication.core.network.retrofit.TuneHubApi
+import com.music.myapplication.core.common.Result
+import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.Track
+import com.music.myapplication.domain.repository.LocalLibraryRepository
+import com.music.myapplication.domain.repository.OnlineMusicRepository
+import com.music.myapplication.domain.repository.ToplistInfo
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -60,4 +73,94 @@ class RecommendationRepositoryImplTest {
 
         assertTrue(playlists.isEmpty())
     }
+
+    @Test
+    fun getDailyRecommendedTracks_prefersLocalTasteAndFiltersKnownSongs() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val onlineRepo = mockk<OnlineMusicRepository>()
+        val localRepo = mockk<LocalLibraryRepository>()
+        val favorite = testTrack(id = "fav-1", artist = "周杰伦")
+        val recent = testTrack(id = "recent-1", artist = "林俊杰", platform = Platform.QQ)
+        val recommendation = testTrack(id = "new-1", artist = "周杰伦")
+        val recentRecommendation = testTrack(id = "new-2", artist = "林俊杰", platform = Platform.QQ)
+
+        every { localRepo.getFavorites() } returns flowOf(listOf(favorite))
+        every { localRepo.getRecentPlays(any()) } returns flowOf(listOf(recent))
+        coEvery { localRepo.getTrackPlayCount(favorite.id, favorite.platform.id) } returns 5
+        coEvery { localRepo.getTrackPlayCount(recent.id, recent.platform.id) } returns 3
+        coEvery { localRepo.getFirstPlayDate(any(), any()) } returns System.currentTimeMillis() - (40L * 24 * 60 * 60 * 1000)
+        coEvery { localRepo.isFavorite(any(), any()) } returns false
+        coEvery { onlineRepo.search(Platform.NETEASE, "周杰伦", 1, any()) } returns Result.Success(
+            listOf(favorite, recommendation)
+        )
+        coEvery { onlineRepo.search(Platform.QQ, "林俊杰", 1, any()) } returns Result.Success(
+            listOf(recent, recentRecommendation)
+        )
+
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo)
+
+        val tracks = repository.getDailyRecommendedTracks(limit = 5)
+
+        assertEquals(listOf("new-1", "new-2"), tracks.take(2).map { it.id })
+        assertTrue("fav-1" in tracks.map { it.id })
+        assertTrue("recent-1" in tracks.map { it.id })
+        coVerify(exactly = 0) { onlineRepo.getToplists(any()) }
+    }
+
+    @Test
+    fun getDailyRecommendedTracks_fallsBackToLocalSeedsWhenNoOnlineMatch() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val onlineRepo = mockk<OnlineMusicRepository>()
+        val localRepo = mockk<LocalLibraryRepository>()
+        val favorite = testTrack(id = "fav-1", artist = "Aimer")
+        val recent = testTrack(id = "recent-1", artist = "宇多田ヒカル")
+
+        every { localRepo.getFavorites() } returns flowOf(listOf(favorite))
+        every { localRepo.getRecentPlays(any()) } returns flowOf(listOf(recent))
+        coEvery { localRepo.getTrackPlayCount(any(), any()) } returns 2
+        coEvery { localRepo.getFirstPlayDate(any(), any()) } returns null
+        coEvery { onlineRepo.search(any(), any(), any(), any()) } returns Result.Success(emptyList())
+
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo)
+
+        val tracks = repository.getDailyRecommendedTracks(limit = 5)
+
+        assertEquals(listOf("fav-1", "recent-1"), tracks.map { it.id })
+        assertTrue(tracks.first().isFavorite)
+    }
+
+    @Test
+    fun getDailyRecommendedTracks_usesColdStartWhenNoLocalTaste() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val onlineRepo = mockk<OnlineMusicRepository>()
+        val localRepo = mockk<LocalLibraryRepository>()
+        val toplistTrack = testTrack(id = "top-1", artist = "歌手")
+
+        every { localRepo.getFavorites() } returns flowOf(emptyList())
+        every { localRepo.getRecentPlays(any()) } returns flowOf(emptyList())
+        coEvery { onlineRepo.getToplists(Platform.NETEASE) } returns Result.Success(
+            listOf(ToplistInfo(id = "19723756", name = "飙升榜"))
+        )
+        coEvery { onlineRepo.getToplistDetail(Platform.NETEASE, "19723756") } returns Result.Success(
+            listOf(toplistTrack)
+        )
+
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo)
+
+        val tracks = repository.getDailyRecommendedTracks(limit = 5)
+
+        assertEquals(listOf("top-1"), tracks.map { it.id })
+        coVerify(exactly = 1) { onlineRepo.getToplists(Platform.NETEASE) }
+    }
+
+    private fun testTrack(
+        id: String,
+        artist: String,
+        platform: Platform = Platform.NETEASE
+    ) = Track(
+        id = id,
+        platform = platform,
+        title = "测试歌曲-$id",
+        artist = artist
+    )
 }

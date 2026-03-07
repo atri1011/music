@@ -25,16 +25,47 @@ class RecommendationRepositoryImpl @Inject constructor(
 ) : RecommendationRepository {
 
     override suspend fun getDailyRecommendedTracks(limit: Int): List<Track> {
-        // Get the first toplist from Netease and return its tracks
-        val toplists = when (val result = onlineRepo.getToplists(Platform.NETEASE)) {
-            is Result.Success -> result.data
-            else -> return emptyList()
+        val favorites = localRepo.getFavorites().firstOrNull().orEmpty()
+        val recentTracks = localRepo.getRecentPlays(limit = RECENT_HISTORY_LIMIT).firstOrNull().orEmpty()
+        val tasteSeeds = buildTasteSeeds(favorites, recentTracks)
+        if (tasteSeeds.isEmpty()) {
+            return getColdStartTracks(limit)
         }
-        val firstId = toplists.firstOrNull()?.id ?: return emptyList()
-        return when (val detail = onlineRepo.getToplistDetail(Platform.NETEASE, firstId)) {
-            is Result.Success -> detail.data.take(limit)
-            else -> emptyList()
+
+        val knownTrackKeys = (favorites + recentTracks)
+            .map { it.uniqueKey() }
+            .toHashSet()
+        val recommended = linkedMapOf<String, Track>()
+
+        for (seed in tasteSeeds.take(MAX_PERSONALIZED_SEEDS)) {
+            if (recommended.size >= limit) break
+            val similarTracks = getSimilarTracks(seed.track, limit = PERSONALIZED_SIMILAR_LIMIT)
+            for (candidate in similarTracks) {
+                val key = candidate.uniqueKey()
+                if (key in knownTrackKeys || key in recommended) continue
+                recommended[key] = candidate.copy(
+                    isFavorite = localRepo.isFavorite(candidate.id, candidate.platform.id)
+                )
+                if (recommended.size >= limit) break
+            }
         }
+
+        if (recommended.size < limit) {
+            for (seed in tasteSeeds) {
+                val key = seed.track.uniqueKey()
+                if (key in recommended) continue
+                recommended[key] = seed.track
+                if (recommended.size >= limit) break
+            }
+        }
+
+        if (recommended.isNotEmpty()) {
+            return recommended.values.take(limit)
+        }
+
+        return tasteSeeds
+            .map { it.track }
+            .take(limit)
     }
 
     override suspend fun getFmTrack(): Track? {
@@ -55,8 +86,7 @@ class RecommendationRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getSimilarTracks(track: Track, limit: Int): List<Track> {
-        // Search by artist name to find similar tracks
-        val keyword = track.artist.trim()
+        val keyword = track.artist.asRecommendationKeyword()
         if (keyword.isBlank()) return emptyList()
         return when (val result = onlineRepo.search(track.platform, keyword, page = 1, pageSize = limit + 5)) {
             is Result.Success -> result.data
@@ -66,10 +96,86 @@ class RecommendationRepositoryImpl @Inject constructor(
         }
     }
 
+    private suspend fun buildTasteSeeds(
+        favorites: List<Track>,
+        recentTracks: List<Track>
+    ): List<TasteSeed> {
+        val favoriteRanks = favorites
+            .take(FAVORITE_SEED_LIMIT)
+            .withIndex()
+            .associate { it.value.uniqueKey() to it.index }
+        val recentRanks = recentTracks
+            .take(RECENT_SEED_LIMIT)
+            .withIndex()
+            .associate { it.value.uniqueKey() to it.index }
+        val candidates = (favorites.take(FAVORITE_SEED_LIMIT) + recentTracks.take(RECENT_SEED_LIMIT))
+            .distinctBy { it.uniqueKey() }
+        if (candidates.isEmpty()) return emptyList()
+
+        val now = System.currentTimeMillis()
+        return candidates.map { track ->
+            val key = track.uniqueKey()
+            val favoriteScore = favoriteRanks[key]
+                ?.let { FAVORITE_SCORE_BASE - (it * FAVORITE_SCORE_DECAY) }
+                ?.coerceAtLeast(FAVORITE_SCORE_FLOOR)
+                ?: 0.0
+            val recentScore = recentRanks[key]
+                ?.let { RECENT_SCORE_BASE - (it * RECENT_SCORE_DECAY) }
+                ?.coerceAtLeast(RECENT_SCORE_FLOOR)
+                ?: 0.0
+            val playCount = localRepo.getTrackPlayCount(track.id, track.platform.id)
+            val playCountScore = playCount.coerceAtMost(MAX_PLAYCOUNT_SCORE).toDouble()
+            val firstPlayDate = localRepo.getFirstPlayDate(track.id, track.platform.id)
+            val loyaltyScore = when {
+                firstPlayDate == null -> 0.0
+                now - firstPlayDate >= LONG_TERM_LISTENING_MS -> LONG_TERM_LISTENING_BONUS
+                now - firstPlayDate >= MID_TERM_LISTENING_MS -> MID_TERM_LISTENING_BONUS
+                else -> 0.0
+            }
+            TasteSeed(
+                track = track.copy(isFavorite = track.isFavorite || key in favoriteRanks),
+                score = favoriteScore + recentScore + playCountScore + loyaltyScore
+            )
+        }.sortedByDescending { it.score }
+    }
+
+    private suspend fun getColdStartTracks(limit: Int): List<Track> {
+        val toplists = when (val result = onlineRepo.getToplists(Platform.NETEASE)) {
+            is Result.Success -> result.data
+            else -> return emptyList()
+        }
+        val firstId = toplists.firstOrNull()?.id ?: return emptyList()
+        return when (val detail = onlineRepo.getToplistDetail(Platform.NETEASE, firstId)) {
+            is Result.Success -> detail.data.take(limit)
+            else -> emptyList()
+        }
+    }
+
     private companion object {
+        const val FAVORITE_SEED_LIMIT = 8
+        const val RECENT_SEED_LIMIT = 18
+        const val RECENT_HISTORY_LIMIT = 30
+        const val MAX_PERSONALIZED_SEEDS = 3
+        const val PERSONALIZED_SIMILAR_LIMIT = 8
+        const val FAVORITE_SCORE_BASE = 8.0
+        const val FAVORITE_SCORE_DECAY = 0.35
+        const val FAVORITE_SCORE_FLOOR = 4.0
+        const val RECENT_SCORE_BASE = 6.0
+        const val RECENT_SCORE_DECAY = 0.25
+        const val RECENT_SCORE_FLOOR = 1.0
+        const val MAX_PLAYCOUNT_SCORE = 6
         const val RECOMMENDED_PLAYLIST_LIMIT = 6
+        const val MID_TERM_LISTENING_BONUS = 1.0
+        const val LONG_TERM_LISTENING_BONUS = 2.0
+        const val MID_TERM_LISTENING_MS = 7L * 24 * 60 * 60 * 1000
+        const val LONG_TERM_LISTENING_MS = 30L * 24 * 60 * 60 * 1000
     }
 }
+
+private data class TasteSeed(
+    val track: Track,
+    val score: Double
+)
 
 internal fun extractNeteaseRecommendedPlaylists(data: JsonElement?): List<ToplistInfo> {
     val root = data as? JsonObject ?: return emptyList()
@@ -98,4 +204,14 @@ private fun JsonObject.firstStringOf(vararg keys: String): String? {
         if (!value.isNullOrBlank()) return value
     }
     return null
+}
+
+private fun Track.uniqueKey(): String = "${platform.id}:$id"
+
+private fun String.asRecommendationKeyword(): String {
+    if (isBlank()) return ""
+    return split("/", "、", "&", "，", ",", "|")
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() }
+        ?: trim()
 }

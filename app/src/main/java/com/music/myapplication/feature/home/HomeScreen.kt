@@ -276,7 +276,7 @@ private fun DailyRecommendCard(
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                 )
                 Text(
-                    text = "根据你的口味生成的专属歌单",
+                    text = "优先根据最近播放和收藏生成",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)

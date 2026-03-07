@@ -38,6 +38,14 @@ interface TuneHubApi {
         @Header("Referer") referer: String = "https://music.163.com/"
     ): JsonElement
 
+    @GET("https://music.163.com/api/v6/playlist/detail")
+    suspend fun getNeteasePlaylistDetailV6(
+        @Query("id") id: String,
+        @Query("n") n: Int = 100000,
+        @Query("s") s: Int = 8,
+        @Header("Referer") referer: String = "https://music.163.com/"
+    ): JsonElement
+
     @GET("https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg")
     suspend fun getQqSongDetail(
         @Query("songmid") songMid: String,

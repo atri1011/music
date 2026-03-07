@@ -109,6 +109,9 @@ class OnlineMusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getPlaylistDetail(platform: Platform, id: String): Result<List<Track>> {
+        if (platform == Platform.NETEASE) {
+            return fetchNeteasePlaylistDetailDirect(id)
+        }
         val result = dispatchExecutor.executeByMethod(
             platform = platform,
             function = "playlist",
@@ -334,6 +337,26 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         return result
     }
 
+    private suspend fun fetchNeteasePlaylistDetailDirect(id: String): Result<List<Track>> {
+        return try {
+            val response = api.getNeteasePlaylistDetailV6(id = id)
+            val code = extractApiCode(response) ?: -1
+            if (code != 200) {
+                return Result.Error(
+                    AppError.Api(
+                        message = extractApiMessage(response).ifBlank { "获取网易歌单详情失败" },
+                        code = code
+                    )
+                )
+            }
+
+            val tracks = extractNeteasePlaylistTracks(response)
+            Result.Success(enrichTrackCoverIfNeeded(Platform.NETEASE, tracks))
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
     private suspend fun fetchQqSongCovers(songMids: List<String>): Map<String, String> {
         if (songMids.isEmpty()) return emptyMap()
 
@@ -471,6 +494,30 @@ internal fun extractQqToplists(data: JsonElement?): List<ToplistInfo> {
     return toplists
 }
 
+internal fun extractNeteasePlaylistTracks(data: JsonElement?): List<Track> {
+    val root = data as? JsonObject ?: return emptyList()
+    val playlist = (root.getIgnoreCase("playlist") ?: root.getIgnoreCase("result")) as? JsonObject
+        ?: return emptyList()
+    val tracks = playlist.getIgnoreCase("tracks") as? JsonArray ?: return emptyList()
+
+    return tracks.mapNotNull { itemElement ->
+        val item = itemElement as? JsonObject ?: return@mapNotNull null
+        val id = item.firstStringOf("id").orEmpty()
+        if (id.isBlank()) return@mapNotNull null
+
+        val album = (item.getIgnoreCase("al") ?: item.getIgnoreCase("album")) as? JsonObject
+        Track(
+            id = id,
+            platform = Platform.NETEASE,
+            title = item.firstStringOf("name", "title").orEmpty(),
+            artist = extractNeteaseArtistText(item),
+            album = album?.firstStringOf("name").orEmpty(),
+            coverUrl = album?.firstStringOf("picUrl", "blurPicUrl").orEmpty(),
+            durationMs = item.firstLongOf("dt", "duration", "durationMs") ?: 0L
+        )
+    }
+}
+
 internal fun extractQqToplistSongCoverMap(data: JsonElement?): Map<String, String> {
     val root = data as? JsonObject ?: return emptyMap()
     val songs = (((root.getIgnoreCase("toplist") as? JsonObject)
@@ -585,6 +632,23 @@ private fun normalizeKuwoAlbumCoverUrl(rawCover: String): String {
     return "https://img4.kuwo.cn/star/albumcover/$cleaned"
 }
 
+private fun extractNeteaseArtistText(track: JsonObject): String {
+    val artists = (track.getIgnoreCase("ar") ?: track.getIgnoreCase("artists")) as? JsonArray ?: return ""
+    return artists.mapNotNull { artistElement ->
+        (artistElement as? JsonObject)?.firstStringOf("name")
+    }.joinToString("/")
+}
+
+private fun extractApiCode(data: JsonElement?): Int? {
+    val root = data as? JsonObject ?: return null
+    return (root.getIgnoreCase("code") as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+}
+
+private fun extractApiMessage(data: JsonElement?): String {
+    val root = data as? JsonObject ?: return ""
+    return root.firstStringOf("message", "msg").orEmpty()
+}
+
 private fun JsonObject.getIgnoreCase(key: String): JsonElement? {
     return this[key] ?: entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
 }
@@ -593,6 +657,14 @@ private fun JsonObject.firstStringOf(vararg keys: String): String? {
     keys.forEach { key ->
         val value = (getIgnoreCase(key) as? JsonPrimitive)?.contentOrNull
         if (!value.isNullOrBlank()) return value
+    }
+    return null
+}
+
+private fun JsonObject.firstLongOf(vararg keys: String): Long? {
+    keys.forEach { key ->
+        val value = (getIgnoreCase(key) as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
+        if (value != null) return value
     }
     return null
 }

@@ -59,6 +59,44 @@ class OnlineMusicRepositoryImplTest {
     }
 
     @Test
+    fun extractNeteasePlaylistTracks_readsV6PlaylistStructure() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "playlist": {
+                "tracks": [
+                  {
+                    "id": 123,
+                    "name": "晴天",
+                    "dt": 269000,
+                    "ar": [
+                      { "name": "周杰伦" },
+                      { "name": "杨瑞代" }
+                    ],
+                    "al": {
+                      "name": "叶惠美",
+                      "picUrl": "https://example.com/qingtian.jpg"
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val tracks = extractNeteasePlaylistTracks(payload)
+
+        assertEquals(1, tracks.size)
+        assertEquals("123", tracks.first().id)
+        assertEquals("晴天", tracks.first().title)
+        assertEquals("周杰伦/杨瑞代", tracks.first().artist)
+        assertEquals("叶惠美", tracks.first().album)
+        assertEquals("https://example.com/qingtian.jpg", tracks.first().coverUrl)
+        assertEquals(269000L, tracks.first().durationMs)
+    }
+
+    @Test
     fun extractQqSongCoverMap_buildsAlbumCoverUrlFromAlbumMid() {
         val payload = json.parseToJsonElement(
             """
