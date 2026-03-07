@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.ToplistInfo
 import com.music.myapplication.feature.components.CoverImage
@@ -64,7 +65,7 @@ import java.util.Calendar
 
 @Composable
 fun HomeScreen(
-    onNavigateToPlaylist: (id: String, platform: String, name: String) -> Unit,
+    onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit,
     onNavigateToSearch: () -> Unit,
     playerViewModel: PlayerViewModel,
     viewModel: HomeViewModel = hiltViewModel()
@@ -151,7 +152,7 @@ fun HomeScreen(
 @Composable
 private fun ForYouContent(
     state: HomeUiState,
-    onNavigateToPlaylist: (id: String, platform: String, name: String) -> Unit,
+    onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit,
     playerViewModel: PlayerViewModel
 ) {
     val scrollState = rememberScrollState()
@@ -220,7 +221,6 @@ private fun ForYouContent(
             )
             RecommendedPlaylistGrid(
                 playlists = state.recommendedPlaylists,
-                platform = state.platform,
                 onNavigateToPlaylist = onNavigateToPlaylist
             )
         }
@@ -381,8 +381,7 @@ private fun PersonalFmCard(
 @Composable
 private fun RecommendedPlaylistGrid(
     playlists: List<ToplistInfo>,
-    platform: com.music.myapplication.domain.model.Platform,
-    onNavigateToPlaylist: (id: String, platform: String, name: String) -> Unit
+    onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit
 ) {
     // 2-column grid inline
     val rows = playlists.chunked(2)
@@ -399,7 +398,7 @@ private fun RecommendedPlaylistGrid(
                             .height(140.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                onNavigateToPlaylist(toplist.id, platform.id, toplist.name)
+                                onNavigateToPlaylist(toplist.id, Platform.NETEASE.id, toplist.name, "playlist")
                             }
                     ) {
                         CoverImage(
@@ -443,7 +442,7 @@ private fun ChartContent(
     state: HomeUiState,
     onPlatformChange: (com.music.myapplication.domain.model.Platform) -> Unit,
     onRetry: () -> Unit,
-    onNavigateToPlaylist: (id: String, platform: String, name: String) -> Unit
+    onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         PlatformFilterChips(
@@ -497,7 +496,7 @@ private fun ChartContent(
                                 .height(160.dp)
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable {
-                                    onNavigateToPlaylist(toplist.id, state.platform.id, toplist.name)
+                                    onNavigateToPlaylist(toplist.id, state.platform.id, toplist.name, "toplist")
                                 }
                         ) {
                             CoverImage(

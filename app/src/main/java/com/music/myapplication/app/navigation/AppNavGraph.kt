@@ -39,8 +39,8 @@ fun AppNavGraph(
     ) {
         composable<Routes.Home> {
             HomeScreen(
-                onNavigateToPlaylist = { id, platform, name ->
-                    navController.navigate(Routes.PlaylistDetail(id, platform, name))
+                onNavigateToPlaylist = { id, platform, name, source ->
+                    navController.navigate(Routes.PlaylistDetail(id, platform, name, source))
                 },
                 onNavigateToSearch = {
                     navController.navigate(Routes.Search) {
@@ -56,7 +56,7 @@ fun AppNavGraph(
         composable<Routes.Library> {
             LibraryScreen(
                 onNavigateToPlaylist = { id, name ->
-                    navController.navigate(Routes.PlaylistDetail(id, "local", name))
+                    navController.navigate(Routes.PlaylistDetail(id, "local", name, "local"))
                 },
                 playerViewModel = playerViewModel
             )
@@ -98,6 +98,7 @@ fun AppNavGraph(
                 playlistId = route.id,
                 platform = route.platform,
                 title = route.name,
+                source = route.source,
                 onBack = { navController.popBackStack() },
                 playerViewModel = playerViewModel
             )

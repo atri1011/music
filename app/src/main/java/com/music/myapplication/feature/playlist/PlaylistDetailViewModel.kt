@@ -31,7 +31,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val _state = MutableStateFlow(PlaylistDetailUiState())
     val state: StateFlow<PlaylistDetailUiState> = _state.asStateFlow()
 
-    fun loadPlaylist(id: String, platform: String, title: String) {
+    fun loadPlaylist(id: String, platform: String, title: String, source: String = "toplist") {
         _state.update { it.copy(isLoading = true, error = null, title = title) }
         viewModelScope.launch {
             if (platform == "local") {
@@ -40,7 +40,10 @@ class PlaylistDetailViewModel @Inject constructor(
                 }
             } else {
                 val p = Platform.fromId(platform)
-                val result = onlineRepo.getToplistDetail(p, id)
+                val result = when (source) {
+                    "playlist" -> onlineRepo.getPlaylistDetail(p, id)
+                    else -> onlineRepo.getToplistDetail(p, id)
+                }
                 when (result) {
                     is Result.Success -> {
                         val enriched = result.data.map { track ->

@@ -51,14 +51,15 @@ fun PlaylistDetailScreen(
     playlistId: String,
     platform: String,
     title: String,
+    source: String,
     onBack: () -> Unit,
     viewModel: PlaylistDetailViewModel = hiltViewModel(),
     playerViewModel: PlayerViewModel
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(playlistId) {
-        viewModel.loadPlaylist(playlistId, platform, title)
+    LaunchedEffect(playlistId, platform, source) {
+        viewModel.loadPlaylist(playlistId, platform, title, source)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -72,7 +73,7 @@ fun PlaylistDetailScreen(
                 }
                 ErrorView(
                     message = state.error!!,
-                    onRetry = { viewModel.loadPlaylist(playlistId, platform, title) }
+                    onRetry = { viewModel.loadPlaylist(playlistId, platform, title, source) }
                 )
             }
             state.isLoading -> {
