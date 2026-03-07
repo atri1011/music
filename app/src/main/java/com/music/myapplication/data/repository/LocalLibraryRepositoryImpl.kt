@@ -68,12 +68,13 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     }
 
     override fun getPlaylists(): Flow<List<Playlist>> =
-        playlistsDao.getAll().map { list ->
+        playlistsDao.getAllWithStats().map { list ->
             list.map { entity ->
                 Playlist(
                     id = entity.playlistId,
                     name = entity.name,
                     coverUrl = entity.coverUrl,
+                    trackCount = entity.trackCount,
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt
                 )
@@ -100,8 +101,17 @@ class LocalLibraryRepositoryImpl @Inject constructor(
         playlistSongsDao.getSongsByPlaylist(playlistId).map { list -> list.map { it.toTrack() } }
 
     override suspend fun addToPlaylist(playlistId: String, track: Track) {
-        val maxOrder = playlistSongsDao.getMaxOrder(playlistId) ?: -1
-        playlistSongsDao.insert(track.toPlaylistSongEntity(playlistId, maxOrder + 1))
+        addAllToPlaylist(playlistId, listOf(track))
+    }
+
+    override suspend fun addAllToPlaylist(playlistId: String, tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        val startOrder = playlistSongsDao.getMaxOrder(playlistId)?.plus(1) ?: 0
+        playlistSongsDao.insertAll(
+            tracks.mapIndexed { index, track ->
+                track.toPlaylistSongEntity(playlistId, startOrder + index)
+            }
+        )
         val entity = playlistsDao.getById(playlistId) ?: return
         playlistsDao.update(entity.copy(updatedAt = System.currentTimeMillis()))
     }

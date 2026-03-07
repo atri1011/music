@@ -17,6 +17,7 @@ interface LocalLibraryRepository {
     suspend fun renamePlaylist(playlistId: String, newName: String)
     fun getPlaylistSongs(playlistId: String): Flow<List<Track>>
     suspend fun addToPlaylist(playlistId: String, track: Track)
+    suspend fun addAllToPlaylist(playlistId: String, tracks: List<Track>)
     suspend fun removeFromPlaylist(playlistId: String, songId: String, platform: String)
     suspend fun getCachedLyrics(platform: String, songId: String): String?
     suspend fun cacheLyrics(platform: String, songId: String, lyrics: String)

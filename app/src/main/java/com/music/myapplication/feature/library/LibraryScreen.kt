@@ -63,6 +63,7 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Scale
 import com.music.myapplication.core.common.normalizeCoverUrl
+import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.player.PlayerViewModel
@@ -175,7 +176,10 @@ fun LibraryScreen(
 
         if (state.showImportDialog) {
             ImportPlaylistDialog(
-                onDismiss = { viewModel.showImportDialog(false) }
+                isImporting = state.isImporting,
+                importError = state.importError,
+                onDismiss = { viewModel.showImportDialog(false) },
+                onConfirm = viewModel::importPlaylist
             )
         }
     }
@@ -607,7 +611,16 @@ private fun RankedTrackItem(
 // ── Dialogs ─────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ImportPlaylistDialog(onDismiss: () -> Unit) {
+private fun ImportPlaylistDialog(
+    isImporting: Boolean,
+    importError: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (Platform, String, String) -> Unit
+) {
+    var selectedPlatform by remember { mutableStateOf<Platform?>(null) }
+    var sourceInput by remember { mutableStateOf("") }
+    var playlistName by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("导入歌单") },
@@ -618,24 +631,77 @@ private fun ImportPlaylistDialog(onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
-                ImportSourceItem(name = "QQ音乐", onClick = onDismiss)
-                ImportSourceItem(name = "网易云音乐", onClick = onDismiss)
-                ImportSourceItem(name = "酷我音乐", onClick = onDismiss)
+                Platform.entries.forEach { platform ->
+                    ImportSourceItem(
+                        name = platform.displayName,
+                        selected = selectedPlatform == platform,
+                        onClick = { selectedPlatform = platform }
+                    )
+                }
+                selectedPlatform?.let { platform ->
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = sourceInput,
+                        onValueChange = { sourceInput = it },
+                        label = { Text("歌单链接或 ID") },
+                        placeholder = { Text(importSourcePlaceholder(platform)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = playlistName,
+                        onValueChange = { playlistName = it },
+                        label = { Text("本地歌单名称（可选）") },
+                        placeholder = { Text("${platform.displayName}歌单") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "支持直接粘贴分享链接，也支持只填纯数字歌单 ID。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                if (!importError.isNullOrBlank()) {
+                    Text(
+                        text = importError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
             }
         },
-        confirmButton = {},
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    selectedPlatform?.let { platform ->
+                        onConfirm(platform, sourceInput, playlistName)
+                    }
+                },
+                enabled = selectedPlatform != null && sourceInput.isNotBlank() && !isImporting
+            ) {
+                Text(if (isImporting) "导入中..." else "导入")
+            }
+        },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss, enabled = !isImporting) { Text("取消") }
         }
     )
 }
 
 @Composable
-private fun ImportSourceItem(name: String, onClick: () -> Unit) {
+private fun ImportSourceItem(name: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+            )
             .clickable(onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -643,11 +709,15 @@ private fun ImportSourceItem(name: String, onClick: () -> Unit) {
         Icon(
             Icons.Outlined.CloudDownload,
             contentDescription = null,
-            tint = QQMusicGreen,
+            tint = if (selected) MaterialTheme.colorScheme.primary else QQMusicGreen,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
-        Text(name, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -692,5 +762,13 @@ private fun formatDuration(ms: Long): String {
         hours > 0 -> "${hours}小时${minutes}分"
         minutes > 0 -> "${minutes}分${seconds}秒"
         else -> "${seconds}秒"
+    }
+}
+
+private fun importSourcePlaceholder(platform: Platform): String {
+    return when (platform) {
+        Platform.QQ -> "例如：https://y.qq.com/n/ryqq/playlist/9209322004"
+        Platform.NETEASE -> "例如：https://music.163.com/#/playlist?id=19723756"
+        Platform.KUWO -> "例如：https://www.kuwo.cn/playlist_detail/2891238463"
     }
 }
