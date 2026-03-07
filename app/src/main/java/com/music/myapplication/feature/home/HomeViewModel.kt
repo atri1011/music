@@ -18,6 +18,7 @@ import javax.inject.Inject
 
 data class HomeUiState(
     val toplists: List<ToplistInfo> = emptyList(),
+    val toplistPreviews: Map<String, List<Track>> = emptyMap(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val platform: Platform = Platform.NETEASE,
@@ -43,16 +44,32 @@ class HomeViewModel @Inject constructor(
     }
 
     fun loadToplists(platform: Platform = _state.value.platform) {
-        _state.update { it.copy(isLoading = true, error = null, platform = platform) }
+        _state.update { it.copy(isLoading = true, error = null, platform = platform, toplistPreviews = emptyMap()) }
         viewModelScope.launch {
             when (val result = onlineRepo.getToplists(platform)) {
                 is Result.Success -> {
                     _state.update { it.copy(toplists = result.data, isLoading = false) }
+                    loadToplistPreviews(result.data, platform)
                 }
                 is Result.Error -> {
                     _state.update { it.copy(error = result.error.message, isLoading = false) }
                 }
                 is Result.Loading -> {}
+            }
+        }
+    }
+
+    private fun loadToplistPreviews(toplists: List<ToplistInfo>, platform: Platform) {
+        toplists.forEach { toplist ->
+            viewModelScope.launch {
+                when (val result = onlineRepo.getToplistDetailFast(platform, toplist.id)) {
+                    is Result.Success -> {
+                        _state.update {
+                            it.copy(toplistPreviews = it.toplistPreviews + (toplist.id to result.data.take(3)))
+                        }
+                    }
+                    else -> {}
+                }
             }
         }
     }

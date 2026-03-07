@@ -15,10 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -60,6 +57,7 @@ import com.music.myapplication.feature.components.PlatformFilterChips
 import com.music.myapplication.feature.components.ShimmerGridCard
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.QQMusicGreen
+import com.music.myapplication.ui.theme.glassSurface
 import com.music.myapplication.ui.theme.verticalGradientScrim
 import java.util.Calendar
 
@@ -456,78 +454,189 @@ private fun ChartContent(
                 ErrorView(message = state.error!!, onRetry = onRetry)
             }
             state.isLoading -> {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                LazyColumn(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(6) {
+                    items(4) {
                         ShimmerGridCard(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .height(180.dp)
                                 .clip(RoundedCornerShape(16.dp))
                         )
                     }
                 }
             }
             else -> {
-                Text(
-                    text = "排行榜",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                )
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(
                         state.toplists,
                         key = { it.id },
-                        contentType = { "toplist" }
+                        contentType = { "toplist_card" }
                     ) { toplist ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable {
-                                    onNavigateToPlaylist(toplist.id, state.platform.id, toplist.name, "toplist")
-                                }
-                        ) {
-                            CoverImage(
-                                url = toplist.coverUrl,
-                                contentDescription = toplist.name,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalGradientScrim(
-                                        color = Color.Black.copy(alpha = 0.65f),
-                                        startY = 0.4f,
-                                        endY = 1f
-                                    )
-                            )
-                            Text(
-                                text = toplist.name,
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = Color.White,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(12.dp)
-                            )
-                        }
+                        ToplistPreviewCard(
+                            toplist = toplist,
+                            previewTracks = state.toplistPreviews[toplist.id],
+                            onClick = {
+                                onNavigateToPlaylist(toplist.id, state.platform.id, toplist.name, "toplist")
+                            }
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ToplistPreviewCard(
+    toplist: ToplistInfo,
+    previewTracks: List<Track>?,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .glassSurface()
+            .clickable(onClick = onClick)
+            .padding(16.dp)
+    ) {
+        // Header: title + update frequency
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = toplist.name,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "每天更新",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Body: cover image + song list
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            // Cover image with play button overlay
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                CoverImage(
+                    url = toplist.coverUrl,
+                    contentDescription = toplist.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                // Play button overlay
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "播放",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Song preview list
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (previewTracks != null) {
+                    previewTracks.forEachIndexed { index, track ->
+                        ChartSongRow(rank = index + 1, track = track)
+                    }
+                } else {
+                    // Loading placeholder
+                    repeat(3) { index ->
+                        ChartSongRowPlaceholder(rank = index + 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChartSongRow(rank: Int, track: Track) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$rank",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = if (rank <= 3) QQMusicGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(24.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = track.title,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        Text(
+            text = " - ${track.artist}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun ChartSongRowPlaceholder(rank: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$rank",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(24.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        )
     }
 }
