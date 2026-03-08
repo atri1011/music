@@ -27,7 +27,13 @@ data class LibraryUiState(
     val showCreateDialog: Boolean = false,
     val showImportDialog: Boolean = false,
     val isImporting: Boolean = false,
-    val importError: String? = null
+    val importError: String? = null,
+    val importedPlaylist: ImportedPlaylistDestination? = null
+)
+
+data class ImportedPlaylistDestination(
+    val playlistId: String,
+    val playlistName: String
 )
 
 @HiltViewModel
@@ -61,9 +67,10 @@ class LibraryViewModel @Inject constructor(
             showCreateDialog = extras.showCreateDialog,
             showImportDialog = extras.showImportDialog,
             isImporting = extras.isImporting,
-            importError = extras.importError
+            importError = extras.importError,
+            importedPlaylist = extras.importedPlaylist
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LibraryUiState())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryUiState())
 
     fun showCreateDialog(show: Boolean) = _uiExtras.update { it.copy(showCreateDialog = show) }
     fun showImportDialog(show: Boolean) = _uiExtras.update {
@@ -81,15 +88,17 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    fun consumeImportedPlaylist() = _uiExtras.update { it.copy(importedPlaylist = null) }
+
     fun importPlaylist(platform: Platform, rawInput: String, customName: String) {
         viewModelScope.launch {
-            val playlistId = extractImportedPlaylistId(platform, rawInput)
-            if (playlistId == null) {
+            val resolvedInput = resolveImportedPlaylistImportInput(platform, rawInput)
+            if (resolvedInput == null) {
                 _uiExtras.update {
                     it.copy(
                         showImportDialog = true,
                         isImporting = false,
-                        importError = "没识别出来歌单链接或 ID，别整花活，直接贴分享链接或者纯数字 ID。"
+                        importError = importedPlaylistInputError(rawInput)
                     )
                 }
                 return@launch
@@ -99,48 +108,83 @@ class LibraryViewModel @Inject constructor(
                 it.copy(
                     showImportDialog = true,
                     isImporting = true,
-                    importError = null
+                    importError = null,
+                    importedPlaylist = null
                 )
             }
 
-            when (val result = onlineRepo.getPlaylistDetail(platform, playlistId)) {
-                is Result.Success -> {
-                    val tracks = result.data
-                    if (tracks.isEmpty()) {
+            try {
+                val resolvedPlatform = resolvedInput.platform
+                val playlistId = resolvedInput.playlistId
+                when (val result = onlineRepo.getPlaylistDetail(resolvedPlatform, playlistId)) {
+                    is Result.Success -> {
+                        val tracks = result.data
+                        if (tracks.isEmpty()) {
+                            _uiExtras.update {
+                                it.copy(
+                                    showImportDialog = true,
+                                    isImporting = false,
+                                    importError = appendImportedPlaylistHint(
+                                        "歌单是空的，或者接口没给到可用歌曲。",
+                                        rawInput
+                                    )
+                                )
+                            }
+                            return@launch
+                        }
+
+                        val playlistName = customName.trim()
+                            .ifBlank { defaultImportedPlaylistName(resolvedPlatform, playlistId) }
+                        val playlist = localRepo.createPlaylist(playlistName)
+                        localRepo.addAllToPlaylist(playlist.id, tracks)
+                        _uiExtras.update {
+                            it.copy(
+                                showImportDialog = false,
+                                isImporting = false,
+                                importError = null,
+                                importedPlaylist = ImportedPlaylistDestination(
+                                    playlistId = playlist.id,
+                                    playlistName = playlist.name
+                                )
+                            )
+                        }
+                    }
+                    is Result.Error -> {
                         _uiExtras.update {
                             it.copy(
                                 showImportDialog = true,
                                 isImporting = false,
-                                importError = "歌单是空的，或者接口没给到可用歌曲。"
+                                importError = appendImportedPlaylistHint(result.error.message, rawInput)
                             )
                         }
-                        return@launch
                     }
-
-                    val playlistName = customName.trim()
-                        .ifBlank { defaultImportedPlaylistName(platform, playlistId) }
-                    val playlist = localRepo.createPlaylist(playlistName)
-                    localRepo.addAllToPlaylist(playlist.id, tracks)
-                    _uiExtras.update {
-                        it.copy(
-                            showImportDialog = false,
-                            isImporting = false,
-                            importError = null
-                        )
-                    }
+                    is Result.Loading -> Unit
                 }
-                is Result.Error -> {
-                    _uiExtras.update {
-                        it.copy(
-                            showImportDialog = true,
-                            isImporting = false,
-                            importError = result.error.message
+            } catch (e: Exception) {
+                _uiExtras.update {
+                    it.copy(
+                        showImportDialog = true,
+                        isImporting = false,
+                        importError = appendImportedPlaylistHint(
+                            e.message ?: "导入歌单失败，稍后再试。",
+                            rawInput
                         )
-                    }
+                    )
                 }
-                is Result.Loading -> Unit
             }
         }
+    }
+
+    private suspend fun resolveImportedPlaylistImportInput(
+        selectedPlatform: Platform,
+        rawInput: String
+    ): ImportedPlaylistInput? {
+        resolveImportedPlaylistInput(selectedPlatform, rawInput)?.let { return it }
+        if (!looksLikeWebUrl(rawInput)) return null
+
+        val resolvedUrl = onlineRepo.resolveShareUrl(rawInput)
+        if (resolvedUrl.isBlank()) return null
+        return resolveImportedPlaylistInput(selectedPlatform, resolvedUrl)
     }
 
     fun deletePlaylist(playlistId: String) {
@@ -151,7 +195,8 @@ class LibraryViewModel @Inject constructor(
         val showCreateDialog: Boolean = false,
         val showImportDialog: Boolean = false,
         val isImporting: Boolean = false,
-        val importError: String? = null
+        val importError: String? = null,
+        val importedPlaylist: ImportedPlaylistDestination? = null
     )
 
     private data class StatsBundle(
@@ -160,15 +205,32 @@ class LibraryViewModel @Inject constructor(
     )
 }
 
+internal data class ImportedPlaylistInput(
+    val platform: Platform,
+    val playlistId: String
+)
+
+internal fun resolveImportedPlaylistInput(
+    selectedPlatform: Platform,
+    rawInput: String
+): ImportedPlaylistInput? {
+    val resolvedPlatform = detectImportedPlatform(rawInput) ?: selectedPlatform
+    val playlistId = extractImportedPlaylistId(resolvedPlatform, rawInput) ?: return null
+    return ImportedPlaylistInput(
+        platform = resolvedPlatform,
+        playlistId = playlistId
+    )
+}
+
 internal fun extractImportedPlaylistId(platform: Platform, rawInput: String): String? {
     val input = rawInput.trim()
     if (input.isBlank()) return null
+    if (looksLikeSongLink(input)) return null
     if (input.all(Char::isDigit)) return input
 
     val patterns = when (platform) {
         Platform.QQ -> listOf(
             Regex("""playlist/(\d+)""", RegexOption.IGNORE_CASE),
-            Regex("""songDetail/(\d+)""", RegexOption.IGNORE_CASE),
             Regex("""[?&](?:id|disstid)=(\d+)""", RegexOption.IGNORE_CASE)
         )
         Platform.NETEASE -> listOf(
@@ -192,4 +254,51 @@ internal fun extractImportedPlaylistId(platform: Platform, rawInput: String): St
 
 private fun defaultImportedPlaylistName(platform: Platform, playlistId: String): String {
     return "${platform.displayName}歌单-$playlistId"
+}
+
+private fun importedPlaylistInputError(rawInput: String): String {
+    return if (looksLikeSongLink(rawInput)) {
+        "这里只支持导入歌单，不支持单曲链接。你填歌单分享链接或者歌单 ID 就行。"
+    } else {
+        "没识别出来歌单链接或歌单 ID。确认别填成单曲 ID，老老实实贴歌单分享链接或者歌单 ID。"
+    }
+}
+
+private fun appendImportedPlaylistHint(message: String, rawInput: String): String {
+    val normalizedMessage = message.trim().ifBlank { "导入歌单失败，稍后再试。" }
+    val hint = when {
+        looksLikeSongLink(rawInput) -> "这里只支持歌单，不支持单曲链接。"
+        rawInput.trim().all(Char::isDigit) -> "确认填的是歌单 ID，不是单曲 ID。"
+        else -> ""
+    }
+    return listOf(normalizedMessage, hint)
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+}
+
+private fun detectImportedPlatform(rawInput: String): Platform? {
+    val normalizedInput = rawInput.trim().lowercase()
+    return when {
+        "music.163.com" in normalizedInput || "163cn.tv" in normalizedInput -> Platform.NETEASE
+        "y.qq.com" in normalizedInput || "qq.com" in normalizedInput -> Platform.QQ
+        "kuwo.cn" in normalizedInput -> Platform.KUWO
+        else -> null
+    }
+}
+
+private fun looksLikeWebUrl(rawInput: String): Boolean {
+    val normalizedInput = rawInput.trim()
+    return normalizedInput.startsWith("http://", ignoreCase = true) ||
+        normalizedInput.startsWith("https://", ignoreCase = true)
+}
+
+private fun looksLikeSongLink(rawInput: String): Boolean {
+    val normalizedInput = rawInput.trim()
+    val songPatterns = listOf(
+        Regex("""songDetail/[A-Za-z0-9]+""", RegexOption.IGNORE_CASE),
+        Regex("""(?:^|[#/])song\?id=\d+""", RegexOption.IGNORE_CASE),
+        Regex("""/song/\d+""", RegexOption.IGNORE_CASE),
+        Regex("""/play_detail/\d+""", RegexOption.IGNORE_CASE)
+    )
+    return songPatterns.any { it.containsMatchIn(normalizedInput) }
 }

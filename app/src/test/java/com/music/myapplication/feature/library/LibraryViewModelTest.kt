@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -67,6 +68,57 @@ class LibraryViewModelTest {
             coVerify(exactly = 1) { onlineRepo.getPlaylistDetail(Platform.NETEASE, "19723756") }
             coVerify(exactly = 1) { localRepo.createPlaylist("夜曲合集") }
             coVerify(exactly = 1) { localRepo.addAllToPlaylist("local-1", importedTracks) }
+            assertEquals("local-1", viewModel.state.value.importedPlaylist?.playlistId)
+            assertEquals("夜曲合集", viewModel.state.value.importedPlaylist?.playlistName)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun importPlaylistResolvesQqShortShareLinkBeforeImport() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val playlistsFlow = MutableStateFlow(emptyList<Playlist>())
+            val importedTracks = listOf(
+                Track(
+                    id = "0039MnYb0qxYhV",
+                    platform = Platform.QQ,
+                    title = "晴天",
+                    artist = "周杰伦"
+                )
+            )
+            val shortUrl = "https://c6.y.qq.com/base/fcgi-bin/u?__=Hvvmr33vDHrY"
+            val resolvedUrl = "https://i.y.qq.com/n2/m/share/details/taoge.html?id=9601259329"
+
+            every { localRepo.getFavorites() } returns flowOf(emptyList())
+            every { localRepo.getTopPlayedTracks(any()) } returns flowOf(emptyList())
+            every { localRepo.getPlaylists() } returns playlistsFlow
+            every { localRepo.getTotalPlayCount() } returns flowOf(0)
+            every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
+            coEvery { onlineRepo.resolveShareUrl(shortUrl) } returns resolvedUrl
+            coEvery { onlineRepo.getPlaylistDetail(Platform.QQ, "9601259329") } returns Result.Success(importedTracks)
+            coEvery { localRepo.createPlaylist("QQ收藏") } returns Playlist(id = "local-qq-1", name = "QQ收藏")
+            coEvery { localRepo.addAllToPlaylist("local-qq-1", importedTracks) } returns Unit
+
+            val viewModel = LibraryViewModel(localRepo, onlineRepo)
+            viewModel.showImportDialog(true)
+            viewModel.importPlaylist(
+                platform = Platform.QQ,
+                rawInput = shortUrl,
+                customName = "QQ收藏"
+            )
+
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { onlineRepo.resolveShareUrl(shortUrl) }
+            coVerify(exactly = 1) { onlineRepo.getPlaylistDetail(Platform.QQ, "9601259329") }
+            coVerify(exactly = 1) { localRepo.createPlaylist("QQ收藏") }
+            coVerify(exactly = 1) { localRepo.addAllToPlaylist("local-qq-1", importedTracks) }
+            assertEquals("local-qq-1", viewModel.state.value.importedPlaylist?.playlistId)
         } finally {
             Dispatchers.resetMain()
         }
@@ -127,5 +179,26 @@ class LibraryViewModelTest {
                 "https://www.kuwo.cn/playlist_detail/2891238463"
             )
         )
+    }
+
+    @Test
+    fun extractImportedPlaylistIdRejectsObviousSongLink() {
+        assertNull(
+            extractImportedPlaylistId(
+                Platform.QQ,
+                "https://y.qq.com/n/ryqq/songDetail/123456"
+            )
+        )
+    }
+
+    @Test
+    fun resolveImportedPlaylistInputAutoDetectsPlatformFromLink() {
+        val resolved = resolveImportedPlaylistInput(
+            selectedPlatform = Platform.QQ,
+            rawInput = "https://music.163.com/#/playlist?id=19723756"
+        )
+
+        assertEquals(Platform.NETEASE, resolved?.platform)
+        assertEquals("19723756", resolved?.playlistId)
     }
 }

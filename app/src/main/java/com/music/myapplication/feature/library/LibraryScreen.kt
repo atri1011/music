@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,6 +78,13 @@ fun LibraryScreen(
     playerViewModel: PlayerViewModel
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(state.importedPlaylist) {
+        state.importedPlaylist?.let { destination ->
+            onNavigateToPlaylist(destination.playlistId, destination.playlistName)
+            viewModel.consumeImportedPlaylist()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -643,7 +651,7 @@ private fun ImportPlaylistDialog(
                     OutlinedTextField(
                         value = sourceInput,
                         onValueChange = { sourceInput = it },
-                        label = { Text("歌单链接或 ID") },
+                        label = { Text("歌单链接或歌单 ID") },
                         placeholder = { Text(importSourcePlaceholder(platform)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -658,7 +666,7 @@ private fun ImportPlaylistDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = "支持直接粘贴分享链接，也支持只填纯数字歌单 ID。",
+                        text = "支持直接粘贴歌单分享链接、QQ 短分享链，也支持只填歌单 ID；单曲链接和歌曲 ID 不行。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp)
