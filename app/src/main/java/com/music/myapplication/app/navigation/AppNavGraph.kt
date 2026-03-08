@@ -13,7 +13,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
-import com.music.myapplication.feature.discover.DiscoverScreen
 import com.music.myapplication.feature.home.HomeScreen
 import com.music.myapplication.feature.library.LibraryScreen
 import com.music.myapplication.feature.more.MoreScreen
@@ -59,13 +58,6 @@ fun AppNavGraph(
                     navController.navigate(Routes.PlaylistDetail(id, "local", name, "local"))
                 },
                 playerViewModel = playerViewModel
-            )
-        }
-        composable<Routes.Discover> {
-            DiscoverScreen(
-                onNavigateToSearch = {
-                    navController.navigate(Routes.Search) { launchSingleTop = true }
-                }
             )
         }
         composable<Routes.More> {

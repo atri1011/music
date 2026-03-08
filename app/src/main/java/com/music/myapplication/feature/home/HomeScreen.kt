@@ -2,6 +2,7 @@ package com.music.myapplication.feature.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -69,80 +71,95 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val gradientColor = if (isSystemInDarkTheme()) Color(0xFF2D1B3D) else Color(0xFFFCE4EC)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-    ) {
-        // Top bar: title + icon group
-        Row(
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Top gradient scrim
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "首页",
-                style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            IconButton(onClick = { /* scan */ }) {
-                Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = onNavigateToSearch) {
-                Icon(Icons.Default.Search, contentDescription = "搜索", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = { viewModel.loadToplists(); viewModel.loadRecommendations() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "刷新", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
-        // Tab row
-        val tabs = listOf("为你推荐", "榜单")
-        TabRow(
-            selectedTabIndex = state.selectedTab,
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            indicator = { tabPositions ->
-                if (state.selectedTab < tabPositions.size) {
-                    TabRowDefaults.SecondaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(tabPositions[state.selectedTab]),
-                        color = QQMusicGreen
+                .height(220.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(gradientColor, Color.Transparent)
                     )
-                }
-            },
-            divider = {},
-            modifier = Modifier.padding(horizontal = 20.dp)
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
         ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = state.selectedTab == index,
-                    onClick = { viewModel.onTabChange(index) },
-                    text = {
-                        Text(
-                            text = title,
-                            fontWeight = if (state.selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                            color = if (state.selectedTab == index) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+            // Top bar: title + icon group
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "首页",
+                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = { /* scan */ }) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = onNavigateToSearch) {
+                    Icon(Icons.Default.Search, contentDescription = "搜索", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = { viewModel.loadToplists(); viewModel.loadRecommendations() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "刷新", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            // Tab row
+            val tabs = listOf("为你推荐", "榜单")
+            TabRow(
+                selectedTabIndex = state.selectedTab,
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                indicator = { tabPositions ->
+                    if (state.selectedTab < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[state.selectedTab]),
+                            color = QQMusicGreen
                         )
                     }
+                },
+                divider = {},
+                modifier = Modifier.padding(horizontal = 20.dp)
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = state.selectedTab == index,
+                        onClick = { viewModel.onTabChange(index) },
+                        text = {
+                            Text(
+                                text = title,
+                                fontWeight = if (state.selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                color = if (state.selectedTab == index) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    )
+                }
+            }
+
+            when (state.selectedTab) {
+                0 -> ForYouContent(
+                    state = state,
+                    onNavigateToPlaylist = onNavigateToPlaylist,
+                    playerViewModel = playerViewModel
+                )
+                1 -> ChartContent(
+                    state = state,
+                    onPlatformChange = viewModel::onPlatformChange,
+                    onRetry = { viewModel.loadToplists() },
+                    onNavigateToPlaylist = onNavigateToPlaylist
                 )
             }
-        }
-
-        when (state.selectedTab) {
-            0 -> ForYouContent(
-                state = state,
-                onNavigateToPlaylist = onNavigateToPlaylist,
-                playerViewModel = playerViewModel
-            )
-            1 -> ChartContent(
-                state = state,
-                onPlatformChange = viewModel::onPlatformChange,
-                onRetry = { viewModel.loadToplists() },
-                onNavigateToPlaylist = onNavigateToPlaylist
-            )
         }
     }
 }
