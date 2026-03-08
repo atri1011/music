@@ -46,6 +46,24 @@ interface TuneHubApi {
         @Header("Referer") referer: String = "https://music.163.com/"
     ): JsonElement
 
+    @GET("https://music.163.com/api/v1/resource/comments/R_SO_4_{songId}")
+    suspend fun getNeteaseSongComments(
+        @Path("songId") songId: String,
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+        @Header("Referer") referer: String = "https://music.163.com/"
+    ): JsonElement
+
+    @GET("https://music.163.com/api/v2/resource/comments/R_SO_4_{songId}")
+    suspend fun getNeteaseSortedSongComments(
+        @Path("songId") songId: String,
+        @Query("pageNo") pageNo: Int = 1,
+        @Query("pageSize") pageSize: Int = 20,
+        @Query("sortType") sortType: Int,
+        @Query("cursor") cursor: String = "-1",
+        @Header("Referer") referer: String = "https://music.163.com/"
+    ): JsonElement
+
     @GET("https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg")
     suspend fun getQqSongDetail(
         @Query("songmid") songMid: String,
@@ -70,4 +88,15 @@ interface TuneHubApi {
         @Body body: JsonElement,
         @Header("Referer") referer: String = "https://y.qq.com/"
     ): JsonElement
+
+    @GET("https://c.y.qq.com/base/fcgi-bin/fcg_global_comment_h5.fcg")
+    suspend fun getQqSongCommentsRaw(
+        @Query("biztype") bizType: Int = 1,
+        @Query("topid") songId: String,
+        @Query("cmd") cmd: Int = 8,
+        @Query("pagenum") pageNum: Int = 0,
+        @Query("pagesize") pageSize: Int = 20,
+        @Query("format") format: String = "json",
+        @Header("Referer") referer: String = "https://y.qq.com/"
+    ): ResponseBody
 }

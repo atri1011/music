@@ -5,6 +5,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,10 +14,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -34,9 +39,16 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,13 +68,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Scale
 import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.domain.model.LyricLine
+import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.domain.repository.TrackComment
+import com.music.myapplication.domain.repository.TrackCommentSort
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.formatDuration
 import java.text.SimpleDateFormat
@@ -79,6 +95,7 @@ fun PlayerLyricsScreen(
     val progress by playerViewModel.progressState.collectAsStateWithLifecycle()
     val lyricsState by playerViewModel.lyricsUiState.collectAsStateWithLifecycle()
     val trackInfoState by playerViewModel.trackInfoState.collectAsStateWithLifecycle()
+    val commentsState by playerViewModel.commentsUiState.collectAsStateWithLifecycle()
     val currentTrack = staticState.currentTrack
     var hasLoadedTrack by remember { mutableStateOf(false) }
 
@@ -220,8 +237,7 @@ fun PlayerLyricsScreen(
                         track = currentTrack,
                         isPlaying = staticState.isPlaying,
                         lyrics = lyricsState.lyrics,
-                        currentIndex = currentLyricIndex,
-                        onToggleFavorite = playerViewModel::toggleFavorite
+                        currentIndex = currentLyricIndex
                     )
                     1 -> LyricsPanelContent(
                         lyricsState = lyricsState,
@@ -247,6 +263,18 @@ fun PlayerLyricsScreen(
                     .padding(vertical = 12.dp)
             )
 
+            if (pagerState.currentPage == 0) {
+                CoverActionRow(
+                    isFavorite = currentTrack.isFavorite,
+                    onToggleFavorite = playerViewModel::toggleFavorite,
+                    onShowComments = playerViewModel::showComments,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
             // Progress bar + time
             PlayerProgressSection(
                 progress = progress,
@@ -265,6 +293,15 @@ fun PlayerLyricsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 40.dp)
+            )
+        }
+
+        if (commentsState.isVisible) {
+            TrackCommentsSheet(
+                state = commentsState,
+                onDismiss = playerViewModel::hideComments,
+                onRetry = playerViewModel::retryLoadComments,
+                onSelectSort = playerViewModel::selectCommentSort
             )
         }
     }
@@ -319,11 +356,10 @@ private fun CoverPage(
     track: Track,
     isPlaying: Boolean,
     lyrics: List<LyricLine>,
-    currentIndex: Int,
-    onToggleFavorite: () -> Unit
+    currentIndex: Int
 ) {
-    val previewLines = remember(lyrics, currentIndex, track.artist) {
-        resolveCoverLyricsPreview(lyrics = lyrics, currentIndex = currentIndex, fallback = track.artist)
+    val previewLines = remember(lyrics, currentIndex) {
+        resolveCoverLyricsPreview(lyrics = lyrics, currentIndex = currentIndex, fallback = "暂无歌词")
     }
 
     Column(
@@ -345,36 +381,376 @@ private fun CoverPage(
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             color = Color.White,
             textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
         Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+        Text(
+            text = track.artist,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.65f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        CoverLyricsPreviewBlock(
+            previewLines = previewLines,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun CoverActionRow(
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onShowComments: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onToggleFavorite,
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.14f))
+        ) {
+            Icon(
+                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = "收藏",
+                tint = if (isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.72f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        FilledTonalButton(
+            onClick = onShowComments,
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = Color.White.copy(alpha = 0.14f),
+                contentColor = Color.White
+            )
         ) {
             Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.65f),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                text = "评论",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium)
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = onToggleFavorite,
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "收藏",
-                    tint = if (track.isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.size(18.dp)
-                )
+        }
+    }
+}
+
+@Composable
+private fun CoverLyricsPreviewBlock(
+    previewLines: CoverLyricsPreview,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = previewLines.currentLine,
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+            color = Color.White.copy(alpha = 0.92f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = previewLines.nextLine,
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.White.copy(alpha = 0.72f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrackCommentsSheet(
+    state: TrackCommentsUiState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+    onSelectSort: (TrackCommentSort) -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss
+    ) {
+        TrackCommentsSheetContent(
+            state = state,
+            onRetry = onRetry,
+            onSelectSort = onSelectSort,
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp)
+        )
+    }
+}
+
+@Composable
+private fun TrackCommentsSheetContent(
+    state: TrackCommentsUiState,
+    onRetry: () -> Unit,
+    onSelectSort: (TrackCommentSort) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        // ── Header: 评论(count) + sort tabs ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (state.totalCount > 0) "评论(${state.totalCount})" else "评论",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                TrackCommentSort.entries.forEach { sort ->
+                    val enabled = state.commentsOf(sort).isNotEmpty()
+                    val selected = state.selectedSort == sort
+                    Text(
+                        text = sort.label(),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                        ),
+                        color = when {
+                            selected -> MaterialTheme.colorScheme.onSurface
+                            enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                        },
+                        modifier = Modifier.clickable(enabled = enabled) {
+                            onSelectSort(sort)
+                        }
+                    )
+                }
+            }
+        }
+
+        // ── Platform source ──
+        if (state.sourcePlatform != null) {
+            Text(
+                text = buildCommentSourceLine(state),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+            )
+        }
+
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+
+        when {
+            state.isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+
+            !state.errorMessage.isNullOrBlank() -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = state.errorMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(onClick = onRetry) {
+                        Text("重试")
+                    }
+                }
+            }
+
+            state.visibleComments.isEmpty() -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "这首歌暂时还没刷到可用评论。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(state.visibleComments, key = { it.id }) { comment ->
+                        TrackCommentRow(
+                            comment = comment,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp)
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 68.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                            thickness = 0.5.dp
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun TrackCommentRow(
+    comment: TrackComment,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.Top
+    ) {
+        // ── Avatar ──
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = comment.authorName.firstOrNull()?.uppercase() ?: "♪",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (comment.avatarUrl.isNotBlank()) {
+                AsyncImage(
+                    model = comment.avatarUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            // ── Row 1: Username + like count ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = comment.authorName.ifBlank { "匿名用户" },
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+
+                if (comment.likedCount > 0) {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = formatLikeCount(comment.likedCount),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ThumbUp,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // ── Row 2: Date ──
+            Text(
+                text = formatCommentTime(comment.timeMs),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+
+            // ── Content ──
+            Text(
+                text = comment.content,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+    }
+}
+
+private fun buildCommentSourceLine(state: TrackCommentsUiState): String {
+    return when (state.sourcePlatform) {
+        Platform.NETEASE -> "来自网易云"
+        Platform.QQ -> "来自QQ音乐"
+        Platform.KUWO -> "来自酷我"
+        null -> ""
+    }
+}
+
+private fun TrackCommentSort.label(): String {
+    return when (this) {
+        TrackCommentSort.HOT -> "最热"
+        TrackCommentSort.LATEST -> "最新"
+        TrackCommentSort.RECOMMENDED -> "推荐"
+    }
+}
+
+private fun formatLikeCount(count: Int): String {
+    return if (count >= 10000) {
+        val wan = count / 10000
+        val remainder = (count % 10000) / 1000
+        if (remainder > 0) "${wan}.${remainder}万" else "${wan}万"
+    } else {
+        count.toString()
+    }
+}
+
+private fun formatCommentTime(timeMs: Long): String {
+    if (timeMs <= 0L) return ""
+    return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timeMs))
 }
 
 // ── Lyrics Panel ────────────────────────────────────────────────────────────
@@ -397,9 +773,6 @@ private fun LyricsPanelContent(
         else -> LyricsView(
             lyrics = lyricsState.lyrics,
             currentIndex = currentIndex,
-            activeLineColor = Color.White,
-            inactiveLineColor = Color.White.copy(alpha = 0.4f),
-            translationColor = Color.White.copy(alpha = 0.6f),
             modifier = modifier
         )
     }
@@ -744,7 +1117,7 @@ private fun resolveCoverLyricsPreview(
 
     return CoverLyricsPreview(
         currentLine = currentLine,
-        nextLine = if (nextLine.isBlank()) " " else nextLine
+        nextLine = nextLine
     )
 }
 

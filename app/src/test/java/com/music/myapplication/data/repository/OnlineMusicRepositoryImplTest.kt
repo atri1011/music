@@ -11,6 +11,11 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,10 +30,11 @@ class OnlineMusicRepositoryImplTest {
         val api = mockk<TuneHubApi>(relaxed = true)
         val dispatchExecutor = mockk<DispatchExecutor>()
         val cacheStore = mockk<HomeContentCacheStore>()
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
         val cached = listOf(ToplistInfo(id = "19723756", name = "飙升榜"))
         coEvery { cacheStore.getCachedToplists(Platform.NETEASE) } returns cached
 
-        val repository = OnlineMusicRepositoryImpl(api, dispatchExecutor, json, cacheStore)
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
 
         val result = repository.getToplists(Platform.NETEASE)
 
@@ -41,6 +47,7 @@ class OnlineMusicRepositoryImplTest {
         val api = mockk<TuneHubApi>(relaxed = true)
         val dispatchExecutor = mockk<DispatchExecutor>()
         val cacheStore = mockk<HomeContentCacheStore>()
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
         val cachedTracks = listOf(
             Track(
                 id = "123",
@@ -57,7 +64,7 @@ class OnlineMusicRepositoryImplTest {
         )
         coEvery { cacheStore.getCachedToplistDetail(Platform.NETEASE, "19723756") } returns cachedTracks
 
-        val repository = OnlineMusicRepositoryImpl(api, dispatchExecutor, json, cacheStore)
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
 
         val result = repository.getToplistDetailFast(Platform.NETEASE, "19723756")
 
@@ -69,6 +76,7 @@ class OnlineMusicRepositoryImplTest {
     @Test
     fun getToplistDetailFast_bypassesBrokenSingleTrackCacheForNetease() = runTest {
         val api = mockk<TuneHubApi>()
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
         val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
         val cacheStore = mockk<HomeContentCacheStore>()
         val brokenCache = listOf(
@@ -112,13 +120,38 @@ class OnlineMusicRepositoryImplTest {
         coEvery { api.getNeteasePlaylistDetailV6("19723756", any(), any(), any()) } returns payload
         coEvery { cacheStore.cacheToplistDetail(Platform.NETEASE, "19723756", any()) } returns Unit
 
-        val repository = OnlineMusicRepositoryImpl(api, dispatchExecutor, json, cacheStore)
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
 
         val result = repository.getToplistDetailFast(Platform.NETEASE, "19723756")
 
         assertEquals(listOf("123", "456"), (result as Result.Success).data.map { it.id })
         coVerify(exactly = 1) { api.getNeteasePlaylistDetailV6("19723756", any(), any(), any()) }
         coVerify(exactly = 1) { cacheStore.cacheToplistDetail(Platform.NETEASE, "19723756", any()) }
+    }
+
+    @Test
+    fun resolveShareUrl_returnsRedirectTargetRequestUrl() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val redirectTarget = "https://y.qq.com/n/ryqq/playlist/9601259329"
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                Response.Builder()
+                    .request(Request.Builder().url(redirectTarget).build())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("".toResponseBody())
+                    .build()
+            }
+            .build()
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val resolved = repository.resolveShareUrl("https://c6.y.qq.com/base/fcgi-bin/u?__=Hvvmr33vDHrY")
+
+        assertEquals(redirectTarget, resolved)
     }
 
     @Test
@@ -394,5 +427,225 @@ class OnlineMusicRepositoryImplTest {
             "https://img2.kuwo.cn/star/albumcover/120/s4s11/92/707175307.jpg",
             coverMap["530900521"]
         )
+    }
+
+    @Test
+    fun getTrackComments_prefersNeteaseWhenCommentsExist() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val currentTrack = Track(
+            id = "530900521",
+            platform = Platform.KUWO,
+            title = "晴天",
+            artist = "周杰伦",
+            coverUrl = "https://example.com/current.jpg"
+        )
+        val neteaseCandidate = Track(
+            id = "185811",
+            platform = Platform.NETEASE,
+            title = "晴天",
+            artist = "周杰伦",
+            coverUrl = "https://example.com/netease.jpg"
+        )
+        val neteaseComments = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "total": 1,
+              "hotComments": [
+                {
+                  "commentId": 9,
+                  "content": "这歌一响，青春就回来了。",
+                  "likedCount": 420,
+                  "time": 1710000000000,
+                  "user": {
+                    "nickname": "老铁",
+                    "avatarUrl": "https://example.com/avatar.jpg"
+                  }
+                }
+              ],
+              "comments": [
+                {
+                  "commentId": 1,
+                  "content": "旧接口最新流里的评论。",
+                  "likedCount": 42,
+                  "time": 1710000000000,
+                  "user": {
+                    "nickname": "旧接口用户",
+                    "avatarUrl": "https://example.com/legacy-avatar.jpg"
+                  }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        val latestComments = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "totalCount": 1,
+                "comments": [
+                  {
+                    "commentId": 11,
+                    "content": "最新评论这条是真的。",
+                    "likedCount": 5,
+                    "time": 1710000001000,
+                    "user": {
+                      "nickname": "最新用户",
+                      "avatarUrl": "https://example.com/latest.jpg"
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val recommendedComments = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "totalCount": 1,
+                "comments": [
+                  {
+                    "commentId": 12,
+                    "content": "推荐区这条也是真的。",
+                    "likedCount": 88,
+                    "time": 1710000002000,
+                    "user": {
+                      "nickname": "推荐用户",
+                      "avatarUrl": "https://example.com/recommend.jpg"
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { dispatchExecutor.executeByMethod(Platform.NETEASE, "search", any()) } returns
+            Result.Success(listOf(neteaseCandidate))
+        coEvery { api.getNeteaseSongComments("185811", any(), any(), any()) } returns neteaseComments
+        coEvery {
+            api.getNeteaseSortedSongComments("185811", any(), any(), 3, any(), any())
+        } returns latestComments
+        coEvery {
+            api.getNeteaseSortedSongComments("185811", any(), any(), 1, any(), any())
+        } returns recommendedComments
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getTrackComments(currentTrack)
+
+        val data = (result as Result.Success).data
+        assertEquals(Platform.NETEASE, data.sourcePlatform)
+        assertEquals(1, data.totalCount)
+        assertEquals(1, data.comments.size)
+        assertEquals("老铁", data.comments.first().authorName)
+        assertEquals("最新评论这条是真的。", data.latestComments.first().content)
+        assertEquals("推荐区这条也是真的。", data.recommendedComments.first().content)
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(Platform.QQ, "search", any()) }
+    }
+
+    @Test
+    fun getTrackComments_fallsBackToQqWhenNeteaseHasNoComments() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val currentTrack = Track(
+            id = "530900521",
+            platform = Platform.KUWO,
+            title = "晴天",
+            artist = "周杰伦",
+            coverUrl = "https://example.com/current.jpg"
+        )
+        val neteaseCandidate = Track(
+            id = "185811",
+            platform = Platform.NETEASE,
+            title = "晴天",
+            artist = "周杰伦",
+            coverUrl = "https://example.com/netease.jpg"
+        )
+        val qqCandidate = Track(
+            id = "002Kgaz04dXb1Z",
+            platform = Platform.QQ,
+            title = "晴天",
+            artist = "周杰伦",
+            coverUrl = "https://example.com/qq.jpg"
+        )
+        val emptyNeteaseComments = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "total": 0,
+              "comments": []
+            }
+            """.trimIndent()
+        )
+        val qqSongDetail = json.parseToJsonElement(
+            """
+            {
+              "data": [
+                {
+                  "id": 97773,
+                  "mid": "002Kgaz04dXb1Z",
+                  "album": { "mid": "000MkMni19ClKG" }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        val qqCommentsRaw = """
+            MusicJsonCallback({
+              "code": 0,
+              "comment": {
+                "commenttotal": 2,
+                "commentlist": [
+                  {
+                    "rootcommentid": "1001",
+                    "rootcommentcontent": "QQ 这条评论也挺能打。",
+                    "praisenum": 7,
+                    "time": 1710000000,
+                    "userinfo": {
+                      "nick": "企鹅用户",
+                      "avatarurl": "https://example.com/qq-avatar.jpg"
+                    }
+                  }
+                ]
+              }
+            });
+        """.trimIndent()
+
+        coEvery { dispatchExecutor.executeByMethod(Platform.NETEASE, "search", any()) } returns
+            Result.Success(listOf(neteaseCandidate))
+        coEvery { api.getNeteaseSongComments("185811", any(), any(), any()) } returns emptyNeteaseComments
+        coEvery {
+            api.getNeteaseSortedSongComments("185811", any(), any(), 3, any(), any())
+        } returns json.parseToJsonElement("""{"code":200,"data":{"totalCount":0,"comments":[]}}""")
+        coEvery {
+            api.getNeteaseSortedSongComments("185811", any(), any(), 1, any(), any())
+        } returns json.parseToJsonElement("""{"code":200,"data":{"totalCount":0,"comments":[]}}""")
+        coEvery { dispatchExecutor.executeByMethod(Platform.QQ, "search", any()) } returns
+            Result.Success(listOf(qqCandidate))
+        coEvery { api.getQqSongDetail("002Kgaz04dXb1Z", any(), any(), any(), any(), any()) } returns qqSongDetail
+        coEvery {
+            api.getQqSongCommentsRaw(any(), "97773", any(), any(), any(), any(), any())
+        } returns qqCommentsRaw.toResponseBody()
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getTrackComments(currentTrack)
+
+        val data = (result as Result.Success).data
+        assertEquals(Platform.QQ, data.sourcePlatform)
+        assertEquals(2, data.totalCount)
+        assertEquals(1, data.comments.size)
+        assertEquals("企鹅用户", data.comments.first().authorName)
+        assertEquals(1, data.latestComments.size)
+        assertTrue(data.hotComments.isEmpty())
+        assertTrue(data.recommendedComments.isEmpty())
     }
 }

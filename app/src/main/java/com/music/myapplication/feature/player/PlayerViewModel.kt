@@ -12,6 +12,8 @@ import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import com.music.myapplication.domain.repository.RecommendationRepository
+import com.music.myapplication.domain.repository.TrackComment
+import com.music.myapplication.domain.repository.TrackCommentSort
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.MediaControllerConnector
@@ -62,6 +64,32 @@ data class TrackInfoUiState(
     val totalPlayCount: Int = 0,
     val similarTracks: List<Track> = emptyList()
 )
+
+data class TrackCommentsUiState(
+    val trackKey: String? = null,
+    val isVisible: Boolean = false,
+    val isLoading: Boolean = false,
+    val hasLoaded: Boolean = false,
+    val sourcePlatform: Platform? = null,
+    val totalCount: Int = 0,
+    val selectedSort: TrackCommentSort = TrackCommentSort.HOT,
+    val hotComments: List<TrackComment> = emptyList(),
+    val latestComments: List<TrackComment> = emptyList(),
+    val recommendedComments: List<TrackComment> = emptyList(),
+    val errorMessage: String? = null
+) {
+    fun commentsOf(sort: TrackCommentSort): List<TrackComment> = when (sort) {
+        TrackCommentSort.HOT -> hotComments
+        TrackCommentSort.LATEST -> latestComments
+        TrackCommentSort.RECOMMENDED -> recommendedComments
+    }
+
+    val visibleComments: List<TrackComment>
+        get() = commentsOf(selectedSort)
+
+    val availableSorts: List<TrackCommentSort>
+        get() = TrackCommentSort.entries.filter { commentsOf(it).isNotEmpty() }
+}
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
@@ -137,6 +165,8 @@ class PlayerViewModel @Inject constructor(
     val trackActionState: StateFlow<TrackActionUiState> = _trackActionState.asStateFlow()
     private val _trackInfoState = MutableStateFlow(TrackInfoUiState())
     val trackInfoState: StateFlow<TrackInfoUiState> = _trackInfoState.asStateFlow()
+    private val _commentsUiState = MutableStateFlow(TrackCommentsUiState())
+    val commentsUiState: StateFlow<TrackCommentsUiState> = _commentsUiState.asStateFlow()
     @Volatile
     private var currentQuality: String = "128k"
 
@@ -155,6 +185,7 @@ class PlayerViewModel @Inject constructor(
         }
         observeCurrentTrackLyrics()
         observeCurrentTrackInfo()
+        observeCurrentTrackComments()
     }
 
     fun playTrack(track: Track, queue: List<Track>, index: Int) {
@@ -256,6 +287,36 @@ class PlayerViewModel @Inject constructor(
 
     fun showLyricsPanel() = setLyricsPanelMode(LyricsPanelMode.COVER)
 
+    fun showComments() {
+        val track = playbackState.value.currentTrack ?: return
+        val trackKey = track.lyricsSongKey()
+        val currentState = _commentsUiState.value
+        if (
+            currentState.trackKey == trackKey &&
+            currentState.hasLoaded &&
+            currentState.errorMessage.isNullOrBlank()
+        ) {
+            _commentsUiState.update { it.copy(isVisible = true) }
+            return
+        }
+        loadComments(track, showSheet = true)
+    }
+
+    fun hideComments() {
+        _commentsUiState.update { it.copy(isVisible = false) }
+    }
+
+    fun retryLoadComments() {
+        val track = playbackState.value.currentTrack ?: return
+        loadComments(track, showSheet = true)
+    }
+
+    fun selectCommentSort(sort: TrackCommentSort) {
+        _commentsUiState.update { state ->
+            if (state.commentsOf(sort).isEmpty()) state else state.copy(selectedSort = sort)
+        }
+    }
+
     private fun observeCurrentTrackLyrics() {
         viewModelScope.launch {
             stateStore.state
@@ -283,6 +344,17 @@ class PlayerViewModel @Inject constructor(
                         return@collectLatest
                     }
                     loadTrackInfo(track)
+                }
+        }
+    }
+
+    private fun observeCurrentTrackComments() {
+        viewModelScope.launch {
+            stateStore.state
+                .map { it.currentTrack }
+                .distinctUntilChangedBy { track -> track?.lyricsSongKey() }
+                .collectLatest {
+                    _commentsUiState.value = TrackCommentsUiState()
                 }
         }
     }
@@ -352,6 +424,47 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private fun loadComments(track: Track, showSheet: Boolean) {
+        val trackKey = track.lyricsSongKey()
+        viewModelScope.launch {
+            _commentsUiState.value = TrackCommentsUiState(
+                trackKey = trackKey,
+                isVisible = showSheet,
+                isLoading = true
+            )
+
+            when (val result = onlineRepo.getTrackComments(track)) {
+                is Result.Success -> {
+                    val selectedSort = result.data.preferredSort()
+                    _commentsUiState.value = TrackCommentsUiState(
+                        trackKey = trackKey,
+                        isVisible = showSheet,
+                        isLoading = false,
+                        hasLoaded = true,
+                        sourcePlatform = result.data.sourcePlatform,
+                        totalCount = result.data.totalCount,
+                        selectedSort = selectedSort,
+                        hotComments = result.data.hotComments,
+                        latestComments = result.data.latestComments,
+                        recommendedComments = result.data.recommendedComments
+                    )
+                }
+
+                is Result.Error -> {
+                    _commentsUiState.value = TrackCommentsUiState(
+                        trackKey = trackKey,
+                        isVisible = showSheet,
+                        isLoading = false,
+                        hasLoaded = true,
+                        errorMessage = result.error.message.ifBlank { "评论加载失败" }
+                    )
+                }
+
+                Result.Loading -> Unit
+            }
+        }
+    }
+
     private suspend fun resolveTrackForPlayback(track: Track, quality: String): Track? {
         when (val result = onlineRepo.resolvePlayableUrl(track.platform, track.id, quality)) {
             is Result.Success -> return track.copy(playableUrl = result.data, quality = quality)
@@ -410,6 +523,12 @@ class PlayerViewModel @Inject constructor(
 }
 
 private fun Track.lyricsSongKey(): String = "${platform.id}:$id"
+private fun com.music.myapplication.domain.repository.TrackCommentsResult.preferredSort(): TrackCommentSort = when {
+    hotComments.isNotEmpty() -> TrackCommentSort.HOT
+    latestComments.isNotEmpty() -> TrackCommentSort.LATEST
+    recommendedComments.isNotEmpty() -> TrackCommentSort.RECOMMENDED
+    else -> TrackCommentSort.HOT
+}
 private fun String.isDigitsOnly(): Boolean = isNotBlank() && all { it.isDigit() }
 private fun String.isLikelySameArtist(other: String): Boolean {
     if (isBlank() || other.isBlank()) return true
