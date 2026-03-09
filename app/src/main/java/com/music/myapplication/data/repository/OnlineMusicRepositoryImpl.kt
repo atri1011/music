@@ -12,7 +12,9 @@ import com.music.myapplication.domain.model.ArtistRef
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.PlaylistCategory
 import com.music.myapplication.domain.model.PlaylistPreview
+import com.music.myapplication.domain.model.SearchResultItem
 import com.music.myapplication.domain.model.SearchSuggestion
+import com.music.myapplication.domain.model.SearchType
 import com.music.myapplication.domain.model.SuggestionType
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LyricsResult
@@ -1022,6 +1024,63 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             }
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    override suspend fun searchArtists(
+        platform: Platform, keyword: String, page: Int, pageSize: Int
+    ): Result<List<SearchResultItem>> {
+        return executeGenericSearch(platform, "searchArtist", keyword, page, pageSize, SearchType.ARTIST)
+    }
+
+    override suspend fun searchAlbums(
+        platform: Platform, keyword: String, page: Int, pageSize: Int
+    ): Result<List<SearchResultItem>> {
+        return executeGenericSearch(platform, "searchAlbum", keyword, page, pageSize, SearchType.ALBUM)
+    }
+
+    override suspend fun searchPlaylists(
+        platform: Platform, keyword: String, page: Int, pageSize: Int
+    ): Result<List<SearchResultItem>> {
+        return executeGenericSearch(platform, "searchPlaylist", keyword, page, pageSize, SearchType.PLAYLIST)
+    }
+
+    private suspend fun executeGenericSearch(
+        platform: Platform,
+        function: String,
+        keyword: String,
+        page: Int,
+        pageSize: Int,
+        type: SearchType
+    ): Result<List<SearchResultItem>> {
+        val result = dispatchExecutor.executeByMethod(
+            platform = platform,
+            function = function,
+            args = mapOf(
+                "keyword" to keyword,
+                "page" to page.toString(),
+                "pageSize" to pageSize.toString(),
+                "limit" to pageSize.toString(),
+                "page_num" to page.toString(),
+                "num_per_page" to pageSize.toString()
+            )
+        )
+        return when (result) {
+            is Result.Success -> Result.Success(
+                result.data.map { track ->
+                    SearchResultItem(
+                        id = track.id,
+                        title = track.title,
+                        subtitle = track.artist,
+                        coverUrl = track.coverUrl,
+                        platform = platform,
+                        type = type,
+                        trackCount = track.durationMs.toInt().coerceAtLeast(0)
+                    )
+                }
+            )
+            is Result.Error -> Result.Error(result.error)
+            is Result.Loading -> Result.Loading
         }
     }
 

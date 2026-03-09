@@ -17,3 +17,4 @@ local.properties
 /.claude/plan/
 /app/release/
 /.kotlin/
+docs/

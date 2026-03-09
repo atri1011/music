@@ -6,6 +6,7 @@ import com.music.myapplication.domain.model.ArtistRef
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.PlaylistCategory
 import com.music.myapplication.domain.model.PlaylistPreview
+import com.music.myapplication.domain.model.SearchResultItem
 import com.music.myapplication.domain.model.SearchSuggestion
 import com.music.myapplication.domain.model.Track
 import kotlinx.serialization.Serializable
@@ -67,6 +68,10 @@ interface OnlineMusicRepository {
     suspend fun getArtistDetail(artistId: String, platform: Platform): Result<ArtistDetail>
     suspend fun getPlaylistCategories(platform: Platform): Result<List<PlaylistCategory>>
     suspend fun getPlaylistsByCategory(platform: Platform, category: String, page: Int = 1, pageSize: Int = 30): Result<List<PlaylistPreview>>
+
+    suspend fun searchArtists(platform: Platform, keyword: String, page: Int = 1, pageSize: Int = 20): Result<List<SearchResultItem>>
+    suspend fun searchAlbums(platform: Platform, keyword: String, page: Int = 1, pageSize: Int = 20): Result<List<SearchResultItem>>
+    suspend fun searchPlaylists(platform: Platform, keyword: String, page: Int = 1, pageSize: Int = 20): Result<List<SearchResultItem>>
 }
 
 @Serializable

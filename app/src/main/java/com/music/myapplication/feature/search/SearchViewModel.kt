@@ -7,7 +7,9 @@ import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.datastore.SearchHistoryStore
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.SearchResultItem
 import com.music.myapplication.domain.model.SearchSuggestion
+import com.music.myapplication.domain.model.SearchType
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -29,7 +31,9 @@ import javax.inject.Inject
 data class SearchUiState(
     val query: String = "",
     val platform: Platform = Platform.NETEASE,
+    val searchType: SearchType = SearchType.SONG,
     val tracks: List<Track> = emptyList(),
+    val genericResults: List<SearchResultItem> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val page: Int = 1,
@@ -81,7 +85,7 @@ class SearchViewModel @Inject constructor(
                 .debounce(400)
                 .distinctUntilChanged()
                 .filter { it.isNotBlank() }
-                .collect { query -> performSearch(query, _state.value.platform, 1) }
+                .collect { query -> performSearchByType(query, _state.value.platform, 1, _state.value.searchType) }
         }
 
         viewModelScope.launch {
@@ -106,8 +110,8 @@ class SearchViewModel @Inject constructor(
         _state.update {
             if (query.isBlank()) {
                 it.copy(
-                    query = query, tracks = emptyList(), error = null,
-                    page = 1, hasMore = true, isLoading = false,
+                    query = query, tracks = emptyList(), genericResults = emptyList(),
+                    error = null, page = 1, hasMore = true, isLoading = false,
                     suggestions = emptyList(), showSuggestions = false
                 )
             } else {
@@ -125,7 +129,7 @@ class SearchViewModel @Inject constructor(
             suggestionQueryFlow.value = ""
             _state.update { it.copy(showSuggestions = false) }
             viewModelScope.launch { historyStore.record(s.query) }
-            performSearch(s.query, s.platform, 1)
+            performSearchByType(s.query, s.platform, 1, s.searchType)
         }
     }
 
@@ -134,7 +138,7 @@ class SearchViewModel @Inject constructor(
         searchQueryFlow.value = ""
         suggestionQueryFlow.value = ""
         viewModelScope.launch { historyStore.record(keyword) }
-        performSearch(keyword, _state.value.platform, 1)
+        performSearchByType(keyword, _state.value.platform, 1, _state.value.searchType)
     }
 
     fun onSuggestionClick(suggestion: SearchSuggestion) {
@@ -142,7 +146,7 @@ class SearchViewModel @Inject constructor(
         searchQueryFlow.value = ""
         suggestionQueryFlow.value = ""
         viewModelScope.launch { historyStore.record(suggestion.text) }
-        performSearch(suggestion.text, _state.value.platform, 1)
+        performSearchByType(suggestion.text, _state.value.platform, 1, _state.value.searchType)
     }
 
     fun onHotKeywordClick(keyword: String) {
@@ -150,7 +154,7 @@ class SearchViewModel @Inject constructor(
         searchQueryFlow.value = ""
         suggestionQueryFlow.value = ""
         viewModelScope.launch { historyStore.record(keyword) }
-        performSearch(keyword, _state.value.platform, 1)
+        performSearchByType(keyword, _state.value.platform, 1, _state.value.searchType)
     }
 
     fun dismissSuggestions() {
@@ -178,8 +182,8 @@ class SearchViewModel @Inject constructor(
         suggestionQueryFlow.value = ""
         _state.update {
             it.copy(
-                platform = platform, tracks = emptyList(), error = null,
-                page = 1, hasMore = true,
+                platform = platform, tracks = emptyList(), genericResults = emptyList(),
+                error = null, page = 1, hasMore = true,
                 suggestions = emptyList(), showSuggestions = false,
                 hotKeywords = cachedHotKeywords, isHotLoading = false
             )
@@ -189,14 +193,42 @@ class SearchViewModel @Inject constructor(
         if (currentState.query.isBlank()) {
             viewModelScope.launch { loadHotKeywords(platform) }
         } else {
-            performSearch(currentState.query, platform, 1)
+            performSearchByType(currentState.query, platform, 1, _state.value.searchType)
         }
     }
 
     fun loadMore() {
         val s = _state.value
         if (s.isLoading || !s.hasMore || s.query.isBlank()) return
-        performSearch(s.query, s.platform, s.page + 1)
+        performSearchByType(s.query, s.platform, s.page + 1, s.searchType)
+    }
+
+    fun onSearchTypeChange(type: SearchType) {
+        val currentState = _state.value
+        if (currentState.searchType == type) return
+        searchJob?.cancel()
+        searchJob = null
+        _state.update {
+            it.copy(
+                searchType = type,
+                tracks = emptyList(),
+                genericResults = emptyList(),
+                error = null,
+                page = 1,
+                hasMore = true,
+                isLoading = false
+            )
+        }
+        if (currentState.query.isNotBlank()) {
+            performSearchByType(currentState.query, currentState.platform, 1, type)
+        }
+    }
+
+    private fun performSearchByType(query: String, platform: Platform, page: Int, type: SearchType) {
+        when (type) {
+            SearchType.SONG -> performSearch(query, platform, page)
+            else -> performGenericSearch(query, platform, page, type)
+        }
     }
 
     private fun performSearch(query: String, platform: Platform, page: Int) {
@@ -227,6 +259,47 @@ class SearchViewModel @Inject constructor(
                             isLoading = false,
                             error = (result.error as AppError).message,
                             tracks = if (page == 1) emptyList() else s.tracks
+                        )
+                    }
+                }
+                is Result.Loading -> {}
+            }
+        }
+    }
+
+    private fun performGenericSearch(query: String, platform: Platform, page: Int, type: SearchType) {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            _state.update { s ->
+                s.copy(
+                    isLoading = true, error = null,
+                    genericResults = if (page == 1) emptyList() else s.genericResults
+                )
+            }
+            val result = when (type) {
+                SearchType.ARTIST -> onlineRepo.searchArtists(platform, query, page)
+                SearchType.ALBUM -> onlineRepo.searchAlbums(platform, query, page)
+                SearchType.PLAYLIST -> onlineRepo.searchPlaylists(platform, query, page)
+                else -> return@launch
+            }
+            when (result) {
+                is Result.Success -> {
+                    _state.update { s ->
+                        if (s.platform != platform || s.query.trim() != query.trim() || s.searchType != type) return@update s
+                        s.copy(
+                            genericResults = if (page == 1) result.data else s.genericResults + result.data,
+                            isLoading = false, page = page,
+                            hasMore = result.data.size >= 20, error = null
+                        )
+                    }
+                }
+                is Result.Error -> {
+                    _state.update { s ->
+                        if (s.platform != platform || s.query.trim() != query.trim() || s.searchType != type) return@update s
+                        s.copy(
+                            isLoading = false,
+                            error = (result.error as AppError).message,
+                            genericResults = if (page == 1) emptyList() else s.genericResults
                         )
                     }
                 }
@@ -282,6 +355,6 @@ class SearchViewModel @Inject constructor(
 
     fun retry() {
         val s = _state.value
-        if (s.query.isNotBlank()) performSearch(s.query, s.platform, 1)
+        if (s.query.isNotBlank()) performSearchByType(s.query, s.platform, 1, s.searchType)
     }
 }

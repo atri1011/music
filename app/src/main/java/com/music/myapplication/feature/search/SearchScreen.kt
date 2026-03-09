@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,15 +29,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
+import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.TrendingUp
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -54,7 +62,10 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.SearchResultItem
+import com.music.myapplication.domain.model.SearchType
 import com.music.myapplication.domain.model.SuggestionType
+import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.components.PlatformFilterChips
@@ -73,15 +84,17 @@ fun SearchScreen(
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
 
+    val resultCount = if (state.searchType == SearchType.SONG) state.tracks.size else state.genericResults.size
+
     val shouldLoadMore by remember {
         derivedStateOf {
             val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisibleItem >= state.tracks.size - 5
+            lastVisibleItem >= resultCount - 5
         }
     }
 
     LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && state.tracks.isNotEmpty()) {
+        if (shouldLoadMore && resultCount > 0) {
             searchViewModel.loadMore()
         }
     }
@@ -95,7 +108,7 @@ fun SearchScreen(
             value = state.query,
             onValueChange = searchViewModel::onQueryChange,
             singleLine = true,
-            placeholder = { Text("搜索歌曲、歌手") },
+            placeholder = { Text("搜索歌曲、歌手、专辑、歌单") },
             leadingIcon = {
                 Icon(
                     Icons.Default.Search,
@@ -131,6 +144,14 @@ fun SearchScreen(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
 
+        SearchTypeTabRow(
+            selectedType = state.searchType,
+            onTypeSelected = { type ->
+                focusManager.clearFocus(force = true)
+                searchViewModel.onSearchTypeChange(type)
+            }
+        )
+
         Box(modifier = Modifier.fillMaxSize()) {
             // Suggestion overlay
             if (state.showSuggestions && state.suggestions.isNotEmpty()) {
@@ -153,7 +174,7 @@ fun SearchScreen(
                             Icon(
                                 imageVector = when (suggestion.type) {
                                     SuggestionType.SONG -> Icons.Outlined.MusicNote
-                                    SuggestionType.ARTIST -> Icons.Outlined.TrendingUp
+                                    SuggestionType.ARTIST -> Icons.AutoMirrored.Outlined.TrendingUp
                                     else -> Icons.Default.Search
                                 },
                                 contentDescription = null,
@@ -174,16 +195,16 @@ fun SearchScreen(
 
             // Main content
             when {
-                state.error != null && state.tracks.isEmpty() -> {
+                state.error != null && resultCount == 0 -> {
                     ErrorView(message = state.error!!, onRetry = searchViewModel::retry)
                 }
-                state.isLoading && state.tracks.isEmpty() -> {
+                state.isLoading && resultCount == 0 -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(8) { ShimmerMediaListItem() }
                     }
                 }
-                state.tracks.isEmpty() && state.query.isBlank() -> {
-                    // Hot search + history
+                resultCount == 0 && state.query.isBlank() -> {
+                    // Hot search + history (only shown for SONG type or when no query)
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -302,46 +323,168 @@ fun SearchScreen(
                         }
                     }
                 }
-                state.tracks.isEmpty() && state.query.isNotBlank() && !state.isLoading -> {
+                resultCount == 0 && state.query.isNotBlank() && !state.isLoading -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "未找到相关歌曲",
+                            text = "未找到相关${state.searchType.displayName}",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
                 else -> {
-                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                        itemsIndexed(
-                            state.tracks,
-                            key = { _, t -> "${t.platform.id}:${t.id}" },
-                            contentType = { _, _ -> "track" }
-                        ) { index, track ->
-                            MediaListItem(
-                                track = track,
-                                index = index,
-                                onClick = {
-                                    playerViewModel.playTrack(track, state.tracks, index)
-                                },
-                                onArtistClick = if (track.platform != Platform.KUWO) {
-                                    onNavigateToArtist?.let { nav ->
-                                        { t -> nav(t.id, t.platform.id, t.artist) }
-                                    }
-                                } else null
-                            )
+                    if (state.searchType == SearchType.SONG) {
+                        // Song results
+                        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                            itemsIndexed(
+                                state.tracks,
+                                key = { _, t -> "${t.platform.id}:${t.id}" },
+                                contentType = { _, _ -> "track" }
+                            ) { index, track ->
+                                MediaListItem(
+                                    track = track,
+                                    index = index,
+                                    onClick = {
+                                        playerViewModel.playTrack(track, state.tracks, index)
+                                    },
+                                    onArtistClick = if (track.platform != Platform.KUWO) {
+                                        onNavigateToArtist?.let { nav ->
+                                            { t -> nav(t.id, t.platform.id, t.artist) }
+                                        }
+                                    } else null
+                                )
+                            }
+                            if (state.isLoading) {
+                                item(contentType = "loading") {
+                                    ShimmerMediaListItem(modifier = Modifier.padding(16.dp))
+                                }
+                            }
                         }
-                        if (state.isLoading) {
-                            item(contentType = "loading") {
-                                ShimmerMediaListItem(modifier = Modifier.padding(16.dp))
+                    } else {
+                        // Generic results (artist/album/playlist)
+                        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                            items(
+                                state.genericResults,
+                                key = { "${it.platform.id}:${it.type.name}:${it.id}" },
+                                contentType = { it.type.name }
+                            ) { item ->
+                                SearchResultListItem(
+                                    item = item,
+                                    onClick = {
+                                        when (item.type) {
+                                            SearchType.ARTIST -> {
+                                                onNavigateToArtist?.invoke(item.id, item.platform.id, item.title)
+                                            }
+                                            else -> { /* Album/Playlist navigation - TODO in week 2 */ }
+                                        }
+                                    }
+                                )
+                            }
+                            if (state.isLoading) {
+                                item(contentType = "loading") {
+                                    ShimmerMediaListItem(modifier = Modifier.padding(16.dp))
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SearchTypeTabRow(
+    selectedType: SearchType,
+    onTypeSelected: (SearchType) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val types = SearchType.entries
+    val selectedIndex = types.indexOf(selectedType)
+
+    ScrollableTabRow(
+        selectedTabIndex = selectedIndex,
+        modifier = modifier,
+        edgePadding = 16.dp,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        divider = {}
+    ) {
+        types.forEach { type ->
+            Tab(
+                selected = type == selectedType,
+                onClick = { onTypeSelected(type) },
+                text = {
+                    Text(
+                        text = type.displayName,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (type == selectedType) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchResultListItem(
+    item: SearchResultItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CoverImage(
+            url = item.coverUrl,
+            contentDescription = item.title,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(
+                    if (item.type == SearchType.ARTIST) CircleShape
+                    else RoundedCornerShape(8.dp)
+                )
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (item.subtitle.isNotBlank()) {
+                Text(
+                    text = item.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        }
+
+        Icon(
+            imageVector = when (item.type) {
+                SearchType.ARTIST -> Icons.Outlined.Person
+                SearchType.ALBUM -> Icons.Outlined.Album
+                SearchType.PLAYLIST -> Icons.AutoMirrored.Outlined.QueueMusic
+                else -> Icons.Outlined.MusicNote
+            },
+            contentDescription = item.type.displayName,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        )
     }
 }
