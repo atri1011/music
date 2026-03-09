@@ -1079,6 +1079,139 @@ class OnlineMusicRepositoryImplTest {
     }
 
     @Test
+    fun searchAlbums_forQq_prefersExactAlbumMatchesFromSongResultsOverDirectSingerFallback() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val generalPayload = json.parseToJsonElement(
+            """
+            {
+              "req": {
+                "data": {
+                  "body": {
+                    "direct_result": {
+                      "items": [
+                        {
+                          "id": "4701",
+                          "restype": "singer",
+                          "title": "田馥甄",
+                          "custom_info": {
+                            "mid": "001ByAsv3XCdgm"
+                          }
+                        }
+                      ]
+                    },
+                    "item_song": {
+                      "items": [
+                        {
+                          "id": 341303751,
+                          "mid": "003c0kQr1lRAgj",
+                          "title": "无人知晓",
+                          "album": {
+                            "id": 14725932,
+                            "mid": "003KCdYI3H1VPa",
+                            "name": "无人知晓"
+                          },
+                          "singer": [
+                            { "name": "田馥甄" }
+                          ]
+                        },
+                        {
+                          "id": 273771740,
+                          "mid": "001blfaZ2vP1we",
+                          "title": "无人知晓",
+                          "album": {
+                            "id": 14011044,
+                            "mid": "000guZpI3dm0cf",
+                            "name": "无人知晓"
+                          },
+                          "singer": [
+                            { "name": "YU鱼" }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } returns generalPayload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.searchAlbums(Platform.QQ, "无人知晓", 1, 20)
+
+        val data = (result as Result.Success).data
+        assertEquals(listOf("14725932", "14011044"), data.map { it.id })
+        assertEquals(listOf("无人知晓", "无人知晓"), data.map { it.title })
+        assertEquals(listOf("田馥甄", "YU鱼"), data.map { it.subtitle })
+        assertEquals(
+            "https://y.qq.com/music/photo_new/T002R300x300M000003KCdYI3H1VPa.jpg",
+            data.first().coverUrl
+        )
+        coVerify(exactly = 1) { api.postQqMusicu(any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
+    fun searchPlaylists_forQq_usesTypedSearchWithMobileCtAndParsesArrayResults() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val requestBody = slot<JsonElement>()
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "search": {
+                "data": {
+                  "body": {
+                    "item_songlist": [
+                      {
+                        "dissid": "7039749142",
+                        "dissname": "百听不厌的周杰伦",
+                        "logo": "http://qpic.y.qq.com/music_cover/example/300?n=1",
+                        "songnum": 99,
+                        "nickname": "今晚月色很美"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } answers {
+            requestBody.captured = firstArg()
+            payload
+        }
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.searchPlaylists(Platform.QQ, "周杰伦", 1, 20)
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("7039749142", data.first().id)
+        assertEquals("百听不厌的周杰伦", data.first().title)
+        assertEquals("今晚月色很美", data.first().subtitle)
+        assertEquals("https://qpic.y.qq.com/music_cover/example/300?n=1", data.first().coverUrl)
+        assertEquals(99, data.first().trackCount)
+
+        val root = requestBody.captured as JsonObject
+        val comm = root["comm"] as JsonObject
+        val params = ((root["search"] as JsonObject)["param"]) as JsonObject
+        assertEquals(11, (comm["ct"] as JsonPrimitive).content.toInt())
+        assertEquals(3, (params["search_type"] as JsonPrimitive).content.toInt())
+        assertEquals("周杰伦", (params["query"] as JsonPrimitive).content)
+        coVerify(exactly = 1) { api.postQqMusicu(any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
     fun searchPlaylists_forKuwo_usesOfficialApiInsteadOfDispatchTemplate() = runTest {
         val api = mockk<TuneHubApi>()
         val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)

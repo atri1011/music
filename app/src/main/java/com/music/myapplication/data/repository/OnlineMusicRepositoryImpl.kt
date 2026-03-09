@@ -1214,21 +1214,36 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         )
 
         val directResults = extractQqDirectSearchResults(generalResponse, type)
-        if (directResults.isNotEmpty()) return directResults
+        if (type != SearchType.ALBUM && directResults.isNotEmpty()) return directResults
 
         if (type == SearchType.ALBUM) {
-            val singerMid = extractQqDirectSingerMid(generalResponse)
-            if (!singerMid.isNullOrBlank()) {
+            if (directResults.isNotEmpty()) {
+                return rankQqAlbumSearchResults(keyword, directResults)
+            }
+            val generalAlbumResults = mergeQqSearchResultItems(
+                extractQqSearchResults(generalResponse, type),
+                extractQqAlbumSearchResultsFromSongs(generalResponse)
+            )
+            val normalizedKeyword = keyword.normalizeComparisonText()
+            if (generalAlbumResults.any { it.title.normalizeComparisonText() == normalizedKeyword }) {
+                return rankQqAlbumSearchResults(keyword, generalAlbumResults)
+            }
+
+            val directSinger = extractQqDirectSearchResults(generalResponse, SearchType.ARTIST).firstOrNull()
+            if (directSinger != null && directSinger.title.isLikelySameTitle(keyword)) {
                 val albumsResponse = api.postQqMusicu(
                     buildQqSingerAlbumsBody(
-                        singerMid = singerMid,
+                        singerMid = directSinger.id,
                         page = page,
                         pageSize = pageSize
                     )
                 )
                 val singerAlbums = extractQqSingerAlbumSearchResults(albumsResponse)
                 if (singerAlbums.isNotEmpty()) {
-                    return singerAlbums
+                    return rankQqAlbumSearchResults(
+                        keyword,
+                        mergeQqSearchResultItems(singerAlbums, generalAlbumResults)
+                    )
                 }
             }
         }
@@ -1241,7 +1256,20 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                 type = type
             )
         )
-        return extractQqSearchResults(typedResponse, type)
+        val typedResults = extractQqSearchResults(typedResponse, type)
+        return if (type == SearchType.ALBUM) {
+            rankQqAlbumSearchResults(
+                keyword,
+                mergeQqSearchResultItems(
+                    directResults,
+                    extractQqSearchResults(generalResponse, type),
+                    extractQqAlbumSearchResultsFromSongs(generalResponse),
+                    typedResults
+                )
+            )
+        } else {
+            typedResults
+        }
     }
 
     private companion object {
@@ -1687,6 +1715,53 @@ private fun String.normalizeComparisonText(): String {
         .replace(Regex("""[\(\)（）\[\]【】《》\-—_·•.,，:：'"!?！？]"""), "")
 }
 
+private fun mergeQqSearchResultItems(vararg groups: List<SearchResultItem>): List<SearchResultItem> {
+    val mergedItems = LinkedHashMap<String, SearchResultItem>()
+    groups.asList().flatten().forEach { item ->
+        val key = item.id.ifBlank {
+            "${item.type.name}:${item.title.normalizeComparisonText()}:${item.subtitle.normalizeComparisonText()}"
+        }
+        val existing = mergedItems[key]
+        mergedItems[key] = if (existing == null) item else existing.mergeWith(item)
+    }
+    return mergedItems.values.toList()
+}
+
+private fun SearchResultItem.mergeWith(other: SearchResultItem): SearchResultItem {
+    return copy(
+        subtitle = subtitle.ifBlank { other.subtitle },
+        coverUrl = coverUrl.ifBlank { other.coverUrl },
+        trackCount = if (trackCount > 0) trackCount else other.trackCount,
+        extra = extra.ifBlank { other.extra }
+    )
+}
+
+private fun rankQqAlbumSearchResults(keyword: String, results: List<SearchResultItem>): List<SearchResultItem> {
+    val normalizedKeyword = keyword.normalizeComparisonText()
+    if (normalizedKeyword.isBlank() || results.size < 2) return results
+
+    return results.withIndex()
+        .sortedWith(
+            compareByDescending<IndexedValue<SearchResultItem>> {
+                scoreQqAlbumSearchResult(normalizedKeyword, it.value)
+            }.thenBy { it.index }
+        )
+        .map { it.value }
+}
+
+private fun scoreQqAlbumSearchResult(normalizedKeyword: String, item: SearchResultItem): Int {
+    val normalizedTitle = item.title.normalizeComparisonText()
+    val normalizedSubtitle = item.subtitle.normalizeComparisonText()
+    return when {
+        normalizedTitle == normalizedKeyword -> 500
+        normalizedTitle.startsWith(normalizedKeyword) -> 400
+        normalizedTitle.contains(normalizedKeyword) -> 300
+        normalizedSubtitle == normalizedKeyword -> 200
+        normalizedSubtitle.contains(normalizedKeyword) -> 100
+        else -> 0
+    }
+}
+
 private fun buildQqAlbumCoverUrl(albumMid: String): String {
     if (albumMid.isBlank()) return ""
     return "https://y.qq.com/music/photo_new/T002R300x300M000$albumMid.jpg"
@@ -1872,7 +1947,7 @@ private fun buildQqSearchByTypeBody(
 ): JsonElement = buildJsonObject {
     put("comm", buildJsonObject {
         put("cv", 4747474)
-        put("ct", 24)
+        put("ct", 11)
         put("format", "json")
         put("inCharset", "utf-8")
         put("outCharset", "utf-8")
@@ -2012,22 +2087,6 @@ private fun extractQqDirectSearchResults(
     }
 }
 
-private fun extractQqDirectSingerMid(data: JsonElement?): String? {
-    val body = extractQqSearchBody(data) ?: return null
-    val items = (((body.getIgnoreCase("direct_result") as? JsonObject)
-        ?.getIgnoreCase("items")) as? JsonArray).orEmpty()
-
-    return items.firstNotNullOfOrNull { element ->
-        val item = element as? JsonObject ?: return@firstNotNullOfOrNull null
-        if (!item.firstStringOf("restype").orEmpty().equals("singer", ignoreCase = true)) {
-            return@firstNotNullOfOrNull null
-        }
-        val customInfo = item.getIgnoreCase("custom_info") as? JsonObject
-        customInfo?.firstStringOf("mid", "singer_mid")
-            ?: item.firstStringOf("mid", "singerMID", "singerMid", "singer_mid")
-    }
-}
-
 private fun extractQqSingerAlbumSearchResults(data: JsonElement?): List<SearchResultItem> {
     val albumList = (((data as? JsonObject)?.getIgnoreCase("albums") as? JsonObject)
         ?.getIgnoreCase("data") as? JsonObject)
@@ -2035,6 +2094,15 @@ private fun extractQqSingerAlbumSearchResults(data: JsonElement?): List<SearchRe
 
     return albumList.mapNotNull { element ->
         parseQqAlbumSearchItem(element as? JsonObject)
+    }
+}
+
+private fun extractQqAlbumSearchResultsFromSongs(data: JsonElement?): List<SearchResultItem> {
+    val body = extractQqSearchBody(data) ?: return emptyList()
+    val songNode = body.getIgnoreCase("item_song") ?: body.getIgnoreCase("song") ?: return emptyList()
+    val songItems = extractQqSearchItems(songNode, "items", "list")
+    return songItems.mapNotNull { element ->
+        parseQqAlbumSearchItemFromSong(element as? JsonObject)
     }
 }
 
@@ -2164,6 +2232,27 @@ private fun parseQqAlbumSearchItem(item: JsonObject?): SearchResultItem? {
         type = SearchType.ALBUM,
         trackCount = (customInfo?.firstLongOf("track_num")
             ?: album.firstLongOf("song_count", "songNum", "songnum", "musicNum", "trackCount", "totalNum")).toSearchCount()
+    )
+}
+
+private fun parseQqAlbumSearchItemFromSong(item: JsonObject?): SearchResultItem? {
+    val song = item ?: return null
+    val album = song.getIgnoreCase("album") as? JsonObject ?: return null
+    val albumMid = album.firstStringOf("mid", "albumMID", "albumMid", "albummid")
+    val id = album.firstStringOf("id", "albumID", "albumId") ?: albumMid ?: return null
+    val name = album.firstStringOf("name", "title", "albumName")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    val subtitle = extractJoinedNames(song.getIgnoreCase("singer") ?: song.getIgnoreCase("singerList"))
+        .ifBlank { song.firstStringOf("singerName", "artistName").orEmpty() }
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        subtitle = subtitle,
+        coverUrl = buildQqAlbumCoverUrl(albumMid.orEmpty()),
+        platform = Platform.QQ,
+        type = SearchType.ALBUM
     )
 }
 
