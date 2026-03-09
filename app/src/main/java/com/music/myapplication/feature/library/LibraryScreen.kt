@@ -75,6 +75,7 @@ import kotlin.math.abs
 fun LibraryScreen(
     onNavigateToPlaylist: (id: String, name: String) -> Unit,
     onNavigateToDownloaded: () -> Unit = {},
+    onNavigateToLocalMusic: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
     playerViewModel: PlayerViewModel
 ) {
@@ -127,7 +128,9 @@ fun LibraryScreen(
                     onImportClick = { viewModel.showImportDialog(true) },
                     onCreateClick = { viewModel.showCreateDialog(true) },
                     onDownloadedClick = onNavigateToDownloaded,
-                    downloadedCount = state.downloadedCount
+                    downloadedCount = state.downloadedCount,
+                    onLocalMusicClick = onNavigateToLocalMusic,
+                    localTrackCount = state.localTrackCount
                 )
             }
 
@@ -329,7 +332,9 @@ private fun StatsAndFavoritesPanel(
     onImportClick: () -> Unit,
     onCreateClick: () -> Unit,
     onDownloadedClick: () -> Unit = {},
-    downloadedCount: Int = 0
+    downloadedCount: Int = 0,
+    onLocalMusicClick: () -> Unit = {},
+    localTrackCount: Int = 0
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
 
@@ -484,6 +489,51 @@ private fun StatsAndFavoritesPanel(
                 )
                 Text(
                     "$downloadedCount 首歌曲",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .height(0.5.dp)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onLocalMusicClick)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.QueueMusic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "本地音乐",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
+                )
+                Text(
+                    "$localTrackCount 首歌曲",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

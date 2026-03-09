@@ -18,6 +18,7 @@ import com.music.myapplication.feature.artist.ArtistDetailScreen
 import com.music.myapplication.feature.home.HomeScreen
 import com.music.myapplication.feature.library.DownloadedScreen
 import com.music.myapplication.feature.library.LibraryScreen
+import com.music.myapplication.feature.library.LocalMusicScreen
 import com.music.myapplication.feature.more.MoreScreen
 import com.music.myapplication.feature.playlist.PlaylistDetailScreen
 import com.music.myapplication.feature.player.PlayerLyricsScreen
@@ -74,6 +75,9 @@ fun AppNavGraph(
                 onNavigateToDownloaded = {
                     navController.navigate(Routes.Downloaded)
                 },
+                onNavigateToLocalMusic = {
+                    navController.navigate(Routes.LocalMusic)
+                },
                 playerViewModel = playerViewModel
             )
         }
@@ -103,6 +107,32 @@ fun AppNavGraph(
             }
         ) {
             DownloadedScreen(
+                onBack = { navController.popBackStack() },
+                playerViewModel = playerViewModel
+            )
+        }
+
+        composable<Routes.LocalMusic>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            LocalMusicScreen(
                 onBack = { navController.popBackStack() },
                 playerViewModel = playerViewModel
             )

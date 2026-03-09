@@ -18,12 +18,15 @@ import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.MediaControllerConnector
 import com.music.myapplication.media.state.PlaybackStateStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -51,6 +54,9 @@ class PlaybackControlStateHolder @Inject constructor(
     @Volatile
     private var currentQuality: String = "128k"
 
+    @Volatile
+    private var hasRestoredPlaybackSnapshot = false
+
     lateinit var playbackState: StateFlow<PlaybackState>
         private set
     lateinit var miniPlayerState: StateFlow<MiniPlayerUiState>
@@ -62,6 +68,7 @@ class PlaybackControlStateHolder @Inject constructor(
     lateinit var miniProgressState: StateFlow<Float>
         private set
 
+    @OptIn(FlowPreview::class)
     fun bind(scope: CoroutineScope) {
         this.scope = scope
         val initial = stateStore.state.value
@@ -116,6 +123,17 @@ class PlaybackControlStateHolder @Inject constructor(
         connector.connect()
 
         scope.launch {
+            restorePlaybackSnapshotIfNeeded()
+            playbackState
+                .sample(2_000L)
+                .collect { state ->
+                    withContext(dispatchers.io) {
+                        preferences.savePlaybackSnapshot(state)
+                    }
+                }
+        }
+
+        scope.launch {
             preferences.playbackMode.collect { mode -> modeManager.setMode(mode) }
         }
         scope.launch {
@@ -133,20 +151,32 @@ class PlaybackControlStateHolder @Inject constructor(
     fun playTrack(track: Track, queue: List<Track>, index: Int) {
         resolveTrackAction(track) { playable ->
             connector.playTrack(playable, queue, index)
-            withContext(dispatchers.io) { localRepo.recordRecentPlay(playable) }
+            withContext(dispatchers.io) {
+                localRepo.recordRecentPlay(playable)
+                preferences.savePlaybackSnapshot(stateStore.state.value)
+            }
         }
     }
 
-    fun loadQueueTrack(track: Track, queue: List<Track>, index: Int, autoPlay: Boolean) {
+    fun loadQueueTrack(
+        track: Track,
+        queue: List<Track>,
+        index: Int,
+        autoPlay: Boolean,
+        startPositionMs: Long = 0L
+    ) {
         resolveTrackAction(
             track = track,
             onFailure = {
                 syncQueueState(currentTrack = track, clearPreparedTrack = true)
             }
         ) { playable ->
-            connector.loadTrack(playable, queue, index, autoPlay)
+            connector.loadTrack(playable, queue, index, autoPlay, startPositionMs)
             if (autoPlay) {
-                withContext(dispatchers.io) { localRepo.recordRecentPlay(playable) }
+                withContext(dispatchers.io) {
+                    localRepo.recordRecentPlay(playable, positionMs = startPositionMs)
+                    preferences.savePlaybackSnapshot(stateStore.state.value)
+                }
             }
         }
     }
@@ -154,6 +184,7 @@ class PlaybackControlStateHolder @Inject constructor(
     fun togglePlayPause() {
         if (playbackState.value.isPlaying) {
             connector.pause()
+            persistPlaybackSnapshot()
             return
         }
 
@@ -170,7 +201,13 @@ class PlaybackControlStateHolder @Inject constructor(
         }.coerceIn(0, targetQueue.lastIndex)
 
         if (!connector.hasMediaItem()) {
-            playTrack(currentTrack, targetQueue, targetIndex)
+            loadQueueTrack(
+                track = currentTrack,
+                queue = targetQueue,
+                index = targetIndex,
+                autoPlay = true,
+                startPositionMs = playbackState.value.positionMs
+            )
             return
         }
 
@@ -180,12 +217,19 @@ class PlaybackControlStateHolder @Inject constructor(
     fun pausePlayback() {
         if (playbackState.value.isPlaying) {
             connector.pause()
+            persistPlaybackSnapshot()
         }
     }
 
-    fun stopPlayback() = connector.stop()
+    fun stopPlayback() {
+        connector.stop()
+        persistPlaybackSnapshot()
+    }
 
-    fun seekTo(positionMs: Long) = connector.seekTo(positionMs)
+    fun seekTo(positionMs: Long) {
+        connector.seekTo(positionMs)
+        persistPlaybackSnapshot()
+    }
 
     fun skipNext() {
         val previousIndex = queueManager.currentIndex
@@ -280,6 +324,30 @@ class PlaybackControlStateHolder @Inject constructor(
         stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
     }
 
+    private suspend fun restorePlaybackSnapshotIfNeeded() {
+        if (hasRestoredPlaybackSnapshot) return
+        hasRestoredPlaybackSnapshot = true
+
+        val snapshot = withContext(dispatchers.io) {
+            preferences.playbackSnapshot.first()
+        } ?: return
+
+        val restoredQueue = snapshot.queue.ifEmpty { listOfNotNull(snapshot.currentTrack) }
+        val restoredTrack = snapshot.currentTrack ?: restoredQueue.firstOrNull() ?: return
+        val restoredIndex = when {
+            snapshot.currentIndex in restoredQueue.indices -> snapshot.currentIndex
+            else -> restoredQueue.indexOfFirst { it.songKey() == restoredTrack.songKey() }
+                .takeIf { it >= 0 } ?: 0
+        }
+
+        queueManager.setQueue(restoredQueue, restoredIndex)
+        stateStore.updateTrack(restoredTrack)
+        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+        stateStore.updatePosition(snapshot.positionMs.coerceAtLeast(0L))
+        stateStore.updateDuration(restoredTrack.durationMs.coerceAtLeast(0L))
+        stateStore.updatePlaying(false)
+    }
+
     private fun resolveTrackAction(
         track: Track,
         onFailure: () -> Unit = {},
@@ -327,6 +395,14 @@ class PlaybackControlStateHolder @Inject constructor(
                 errorMessage = message,
                 errorId = nextTrackActionErrorId
             )
+        }
+    }
+
+    private fun persistPlaybackSnapshot() {
+        scope.launch {
+            withContext(dispatchers.io) {
+                preferences.savePlaybackSnapshot(stateStore.state.value)
+            }
         }
     }
 }

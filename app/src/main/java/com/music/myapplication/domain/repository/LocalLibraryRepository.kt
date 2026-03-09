@@ -29,4 +29,7 @@ interface LocalLibraryRepository {
     fun getTopPlayedTracks(limit: Int = 10): Flow<List<Pair<Track, Int>>>
     fun getTotalPlayCount(): Flow<Int>
     fun getTotalListenDurationMs(): Flow<Long>
+    fun getLocalTracks(): Flow<List<Track>>
+    fun getLocalTrackCount(): Flow<Int>
+    suspend fun syncLocalTracks(): Int
 }

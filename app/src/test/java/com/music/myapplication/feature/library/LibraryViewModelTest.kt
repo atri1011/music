@@ -58,6 +58,7 @@ class LibraryViewModelTest {
             every { localRepo.getPlaylists() } returns playlistsFlow
             every { localRepo.getTotalPlayCount() } returns flowOf(0)
             every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
+            every { localRepo.getLocalTrackCount() } returns flowOf(0)
             coEvery { onlineRepo.getPlaylistDetail(Platform.NETEASE, "19723756") } returns Result.Success(importedTracks)
             coEvery { localRepo.createPlaylist("夜曲合集") } returns Playlist(id = "local-1", name = "夜曲合集")
             coEvery { localRepo.addAllToPlaylist("local-1", importedTracks) } returns Unit
@@ -106,6 +107,7 @@ class LibraryViewModelTest {
             every { localRepo.getPlaylists() } returns playlistsFlow
             every { localRepo.getTotalPlayCount() } returns flowOf(0)
             every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
+            every { localRepo.getLocalTrackCount() } returns flowOf(0)
             coEvery { onlineRepo.resolveShareUrl(shortUrl) } returns resolvedUrl
             coEvery { onlineRepo.getPlaylistDetail(Platform.QQ, "9601259329") } returns Result.Success(importedTracks)
             coEvery { localRepo.createPlaylist("QQ收藏") } returns Playlist(id = "local-qq-1", name = "QQ收藏")
@@ -144,6 +146,7 @@ class LibraryViewModelTest {
             every { localRepo.getPlaylists() } returns flowOf(emptyList())
             every { localRepo.getTotalPlayCount() } returns flowOf(0)
             every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
+            every { localRepo.getLocalTrackCount() } returns flowOf(0)
 
             val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
             viewModel.showImportDialog(true)

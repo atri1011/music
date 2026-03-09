@@ -26,6 +26,7 @@ data class LibraryUiState(
     val totalPlayCount: Int = 0,
     val totalListenDurationMs: Long = 0L,
     val downloadedCount: Int = 0,
+    val localTrackCount: Int = 0,
     val showCreateDialog: Boolean = false,
     val showImportDialog: Boolean = false,
     val isImporting: Boolean = false,
@@ -50,9 +51,10 @@ class LibraryViewModel @Inject constructor(
     private val statsFlow = combine(
         localRepo.getTotalPlayCount(),
         localRepo.getTotalListenDurationMs(),
-        downloadManager.getDownloadedCount()
-    ) { count, duration, dlCount ->
-        StatsBundle(count, duration, dlCount)
+        downloadManager.getDownloadedCount(),
+        localRepo.getLocalTrackCount()
+    ) { count, duration, dlCount, localCount ->
+        StatsBundle(count, duration, dlCount, localCount)
     }
 
     val state: StateFlow<LibraryUiState> = combine(
@@ -69,6 +71,7 @@ class LibraryViewModel @Inject constructor(
             totalPlayCount = stats.totalPlayCount,
             totalListenDurationMs = stats.totalListenDurationMs,
             downloadedCount = stats.downloadedCount,
+            localTrackCount = stats.localTrackCount,
             showCreateDialog = extras.showCreateDialog,
             showImportDialog = extras.showImportDialog,
             isImporting = extras.isImporting,
@@ -207,7 +210,8 @@ class LibraryViewModel @Inject constructor(
     private data class StatsBundle(
         val totalPlayCount: Int,
         val totalListenDurationMs: Long,
-        val downloadedCount: Int
+        val downloadedCount: Int,
+        val localTrackCount: Int
     )
 }
 

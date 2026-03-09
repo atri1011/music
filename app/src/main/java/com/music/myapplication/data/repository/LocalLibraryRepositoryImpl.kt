@@ -4,6 +4,7 @@ import com.music.myapplication.core.database.dao.*
 import com.music.myapplication.core.database.entity.LyricsCacheEntity
 import com.music.myapplication.core.database.entity.PlaylistEntity
 import com.music.myapplication.core.database.mapper.*
+import com.music.myapplication.core.local.LocalMusicScanner
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
@@ -19,7 +20,9 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     private val recentPlaysDao: RecentPlaysDao,
     private val playlistsDao: PlaylistsDao,
     private val playlistSongsDao: PlaylistSongsDao,
-    private val lyricsCacheDao: LyricsCacheDao
+    private val lyricsCacheDao: LyricsCacheDao,
+    private val localTracksDao: LocalTracksDao,
+    private val localMusicScanner: LocalMusicScanner
 ) : LocalLibraryRepository {
 
     override fun getFavorites(): Flow<List<Track>> =
@@ -159,6 +162,15 @@ class LocalLibraryRepositoryImpl @Inject constructor(
 
     override fun getTotalListenDurationMs(): Flow<Long> =
         recentPlaysDao.getTotalListenDurationMs()
+
+    override fun getLocalTracks(): Flow<List<Track>> =
+        localTracksDao.getAll().map { list -> list.map { it.toTrack() } }
+
+    override fun getLocalTrackCount(): Flow<Int> =
+        localTracksDao.count()
+
+    override suspend fun syncLocalTracks(): Int =
+        localMusicScanner.sync()
 
     private fun favoriteKeyOf(track: Track): String = "${track.platform.id}:${track.id}"
 }

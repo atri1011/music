@@ -16,6 +16,9 @@ interface LocalTracksDao {
     @Query("SELECT * FROM local_tracks WHERE media_store_id = :mediaStoreId LIMIT 1")
     suspend fun get(mediaStoreId: Long): LocalTrackEntity?
 
+    @Query("SELECT * FROM local_tracks")
+    suspend fun getAllOnce(): List<LocalTrackEntity>
+
     @Query("SELECT media_store_id FROM local_tracks")
     suspend fun getAllMediaStoreIds(): List<Long>
 

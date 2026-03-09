@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
+import com.music.myapplication.domain.model.PlaybackState
+import com.music.myapplication.domain.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,10 +18,22 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
 enum class DarkModeOption { FOLLOW_SYSTEM, DARK, LIGHT }
+
+@Serializable
+data class PlaybackSnapshot(
+    val currentTrack: Track? = null,
+    val queue: List<Track> = emptyList(),
+    val currentIndex: Int = -1,
+    val positionMs: Long = 0L
+)
 
 private val Context.dataStore by preferencesDataStore("player_preferences")
 
@@ -28,6 +42,10 @@ class PlayerPreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
     private object Keys {
         val PLAYBACK_MODE = stringPreferencesKey("playback_mode")
@@ -40,6 +58,7 @@ class PlayerPreferences @Inject constructor(
         val AUTO_PLAY = booleanPreferencesKey("auto_play")
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
         val CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
+        val PLAYBACK_SNAPSHOT = stringPreferencesKey("playback_snapshot")
     }
 
     @Volatile
@@ -87,6 +106,14 @@ class PlayerPreferences @Inject constructor(
 
     val cacheLimitMb: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[Keys.CACHE_LIMIT_MB] ?: 500
+    }
+
+    val playbackSnapshot: Flow<PlaybackSnapshot?> = context.dataStore.data.map { prefs ->
+        prefs[Keys.PLAYBACK_SNAPSHOT]
+            ?.takeIf { it.isNotBlank() }
+            ?.let { payload ->
+                runCatching { json.decodeFromString<PlaybackSnapshot>(payload) }.getOrNull()
+            }
     }
 
     val currentApiKey: String
@@ -152,9 +179,40 @@ class PlayerPreferences @Inject constructor(
         context.dataStore.edit { it[Keys.CACHE_LIMIT_MB] = limitMb }
     }
 
+    suspend fun savePlaybackSnapshot(state: PlaybackState) {
+        val snapshot = state.toPlaybackSnapshot()
+        context.dataStore.edit { prefs ->
+            if (snapshot == null) {
+                prefs[Keys.PLAYBACK_SNAPSHOT] = ""
+            } else {
+                prefs[Keys.PLAYBACK_SNAPSHOT] = json.encodeToString(snapshot)
+            }
+        }
+    }
+
     private fun normalizeKey(raw: String): String = raw
         .trim()
         .removeSurrounding("\"")
         .removeSurrounding("'")
         .replace(Regex("[\\u200B\\u200C\\u200D\\uFEFF\\s]+"), "")
+}
+
+private fun PlaybackState.toPlaybackSnapshot(): PlaybackSnapshot? {
+    if (currentTrack == null && queue.isEmpty()) return null
+
+    val snapshotQueue = queue.ifEmpty { listOfNotNull(currentTrack) }
+    val snapshotIndex = when {
+        currentIndex in snapshotQueue.indices -> currentIndex
+        currentTrack == null -> -1
+        else -> snapshotQueue.indexOfFirst {
+            it.id == currentTrack.id && it.platform == currentTrack.platform
+        }.takeIf { it >= 0 } ?: 0
+    }
+
+    return PlaybackSnapshot(
+        currentTrack = currentTrack ?: snapshotQueue.getOrNull(snapshotIndex),
+        queue = snapshotQueue,
+        currentIndex = snapshotIndex,
+        positionMs = positionMs.coerceAtLeast(0L)
+    )
 }

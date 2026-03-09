@@ -43,14 +43,24 @@ class MediaControllerConnector @Inject constructor(
         return runCatching { future.get().mediaItemCount > 0 }.getOrDefault(false)
     }
 
-    fun loadTrack(track: Track, queue: List<Track>, index: Int, autoPlay: Boolean) {
+    fun loadTrack(
+        track: Track,
+        queue: List<Track>,
+        index: Int,
+        autoPlay: Boolean,
+        startPositionMs: Long = 0L
+    ) {
         queueManager.setQueue(queue, index)
         stateStore.updateTrack(track)
         stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+        stateStore.updatePosition(startPositionMs.coerceAtLeast(0L))
         if (track.playableUrl.isNotBlank()) {
             withController {
                 setMediaItem(MediaItem.fromUri(track.playableUrl))
                 prepare()
+                if (startPositionMs > 0L) {
+                    seekTo(startPositionMs)
+                }
                 if (autoPlay) play() else pause()
             }
         }
@@ -59,8 +69,14 @@ class MediaControllerConnector @Inject constructor(
         }
     }
 
-    fun playTrack(track: Track, queue: List<Track>, index: Int) {
-        loadTrack(track = track, queue = queue, index = index, autoPlay = true)
+    fun playTrack(track: Track, queue: List<Track>, index: Int, startPositionMs: Long = 0L) {
+        loadTrack(
+            track = track,
+            queue = queue,
+            index = index,
+            autoPlay = true,
+            startPositionMs = startPositionMs
+        )
     }
 
     fun play() = withController { play() }
