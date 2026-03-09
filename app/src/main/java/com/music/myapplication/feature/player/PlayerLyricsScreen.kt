@@ -98,6 +98,9 @@ fun PlayerLyricsScreen(
     val commentsState by playerViewModel.commentsUiState.collectAsStateWithLifecycle()
     val currentTrack = staticState.currentTrack
     var hasLoadedTrack by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
+    var showSleepTimerPicker by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         playerViewModel.showLyricsPanel()
@@ -162,7 +165,7 @@ fun PlayerLyricsScreen(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = { /* more */ }) {
+                        IconButton(onClick = { showMoreMenu = true }) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "更多",
@@ -213,7 +216,7 @@ fun PlayerLyricsScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-                        IconButton(onClick = { /* more */ }) {
+                        IconButton(onClick = { showMoreMenu = true }) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "更多",
@@ -302,6 +305,28 @@ fun PlayerLyricsScreen(
                 onDismiss = playerViewModel::hideComments,
                 onRetry = playerViewModel::retryLoadComments,
                 onSelectSort = playerViewModel::selectCommentSort
+            )
+        }
+
+        if (showMoreMenu) {
+            PlayerMoreMenu(
+                onDismiss = { showMoreMenu = false },
+                onSleepTimer = { showSleepTimerPicker = true },
+                onQueueManager = { showQueueSheet = true }
+            )
+        }
+
+        if (showSleepTimerPicker) {
+            SleepTimerPickerSheet(
+                playerViewModel = playerViewModel,
+                onDismiss = { showSleepTimerPicker = false }
+            )
+        }
+
+        if (showQueueSheet) {
+            QueueSheet(
+                playerViewModel = playerViewModel,
+                onDismiss = { showQueueSheet = false }
             )
         }
     }

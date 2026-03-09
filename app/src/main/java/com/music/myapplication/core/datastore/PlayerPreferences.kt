@@ -1,7 +1,9 @@
 package com.music.myapplication.core.datastore
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.music.myapplication.domain.model.PlaybackMode
@@ -16,6 +18,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
+enum class DarkModeOption { FOLLOW_SYSTEM, DARK, LIGHT }
+
 private val Context.dataStore by preferencesDataStore("player_preferences")
 
 @Singleton
@@ -29,6 +33,10 @@ class PlayerPreferences @Inject constructor(
         val QUALITY = stringPreferencesKey("quality")
         val PLATFORM = stringPreferencesKey("platform")
         val API_KEY = stringPreferencesKey("api_key")
+        val DARK_MODE = stringPreferencesKey("dark_mode")
+        val AUTO_PLAY = booleanPreferencesKey("auto_play")
+        val WIFI_ONLY = booleanPreferencesKey("wifi_only")
+        val CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
     }
 
     @Volatile
@@ -48,6 +56,23 @@ class PlayerPreferences @Inject constructor(
 
     val apiKey: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.API_KEY] ?: ""
+    }
+
+    val darkMode: Flow<DarkModeOption> = context.dataStore.data.map { prefs ->
+        prefs[Keys.DARK_MODE]?.let { runCatching { DarkModeOption.valueOf(it) }.getOrNull() }
+            ?: DarkModeOption.FOLLOW_SYSTEM
+    }
+
+    val autoPlay: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[Keys.AUTO_PLAY] ?: true
+    }
+
+    val wifiOnly: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[Keys.WIFI_ONLY] ?: false
+    }
+
+    val cacheLimitMb: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[Keys.CACHE_LIMIT_MB] ?: 500
     }
 
     val currentApiKey: String
@@ -81,5 +106,21 @@ class PlayerPreferences @Inject constructor(
             .replace(Regex("[\\u200B\\u200C\\u200D\\uFEFF\\s]+"), "")
         apiKeyCache = normalized
         context.dataStore.edit { it[Keys.API_KEY] = normalized }
+    }
+
+    suspend fun setDarkMode(option: DarkModeOption) {
+        context.dataStore.edit { it[Keys.DARK_MODE] = option.name }
+    }
+
+    suspend fun setAutoPlay(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_PLAY] = enabled }
+    }
+
+    suspend fun setWifiOnly(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.WIFI_ONLY] = enabled }
+    }
+
+    suspend fun setCacheLimitMb(limitMb: Int) {
+        context.dataStore.edit { it[Keys.CACHE_LIMIT_MB] = limitMb }
     }
 }
