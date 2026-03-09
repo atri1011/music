@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.music.myapplication.core.datastore.DarkModeOption
 import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -23,7 +24,10 @@ data class MoreUiState(
     val wifiOnly: Boolean = false,
     val cacheLimitMb: Int = 500,
     val quality: String = "128k",
-    val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL
+    val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
+    val audioSource: AudioSource = AudioSource.TUNEHUB,
+    val jkapiKey: String = "",
+    val showJkapiKeyDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -32,6 +36,7 @@ class MoreViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val dialogVisible = MutableStateFlow(false)
+    private val jkapiDialogVisible = MutableStateFlow(false)
 
     val state: StateFlow<MoreUiState> = combine(
         preferences.apiKey,
@@ -41,7 +46,10 @@ class MoreViewModel @Inject constructor(
         preferences.wifiOnly,
         preferences.cacheLimitMb,
         preferences.quality,
-        preferences.playbackMode
+        preferences.playbackMode,
+        preferences.audioSource,
+        preferences.jkapiKey,
+        jkapiDialogVisible
     ) { values ->
         MoreUiState(
             apiKey = values[0] as String,
@@ -51,7 +59,10 @@ class MoreViewModel @Inject constructor(
             wifiOnly = values[4] as Boolean,
             cacheLimitMb = values[5] as Int,
             quality = values[6] as String,
-            playbackMode = values[7] as PlaybackMode
+            playbackMode = values[7] as PlaybackMode,
+            audioSource = values[8] as AudioSource,
+            jkapiKey = values[9] as String,
+            showJkapiKeyDialog = values[10] as Boolean
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MoreUiState())
 
@@ -59,11 +70,26 @@ class MoreViewModel @Inject constructor(
         dialogVisible.update { show }
     }
 
+    fun showJkapiKeyDialog(show: Boolean) {
+        jkapiDialogVisible.update { show }
+    }
+
     fun saveApiKey(apiKey: String) {
         viewModelScope.launch {
             preferences.setApiKey(apiKey)
             showApiKeyDialog(false)
         }
+    }
+
+    fun saveJkapiKey(key: String) {
+        viewModelScope.launch {
+            preferences.setJkapiKey(key)
+            showJkapiKeyDialog(false)
+        }
+    }
+
+    fun setAudioSource(source: AudioSource) {
+        viewModelScope.launch { preferences.setAudioSource(source) }
     }
 
     fun setDarkMode(option: DarkModeOption) {

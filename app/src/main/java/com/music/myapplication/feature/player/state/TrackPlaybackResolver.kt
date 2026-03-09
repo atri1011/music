@@ -1,16 +1,18 @@
 package com.music.myapplication.feature.player.state
 
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.data.repository.PlaybackSourceRouter
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import javax.inject.Inject
 
 class TrackPlaybackResolver @Inject constructor(
-    private val onlineRepo: OnlineMusicRepository
+    private val onlineRepo: OnlineMusicRepository,
+    private val sourceRouter: PlaybackSourceRouter
 ) {
     suspend fun resolve(track: Track, quality: String): Result<Track> {
-        when (val result = onlineRepo.resolvePlayableUrl(track.platform, track.id, quality)) {
+        when (val result = sourceRouter.resolve(track, quality)) {
             is Result.Success -> {
                 return Result.Success(track.copy(playableUrl = result.data, quality = quality))
             }

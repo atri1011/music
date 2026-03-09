@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.core.datastore.DarkModeOption
+import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
 
 @Composable
@@ -158,14 +160,33 @@ fun MoreScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ── 账户 ──
-        SettingsGroup(title = "账户") {
+        // ── 音源与账户 ──
+        SettingsGroup(title = "音源与账户") {
+            SettingsItem(
+                icon = Icons.Default.SwapHoriz,
+                title = "播放音源",
+                subtitle = audioSourceSubtitle(state.audioSource),
+                onClick = {}
+            ) {
+                AudioSourcePicker(
+                    current = state.audioSource,
+                    onSelect = viewModel::setAudioSource
+                )
+            }
             SettingsItem(
                 icon = Icons.Default.VpnKey,
-                title = "音源 Key",
+                title = "TuneHub 密钥",
                 subtitle = maskApiKey(state.apiKey),
                 onClick = { viewModel.showApiKeyDialog(true) }
             )
+            if (state.audioSource == AudioSource.JKAPI) {
+                SettingsItem(
+                    icon = Icons.Default.VpnKey,
+                    title = "JKAPI 密钥",
+                    subtitle = maskApiKey(state.jkapiKey),
+                    onClick = { viewModel.showJkapiKeyDialog(true) }
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -190,10 +211,24 @@ fun MoreScreen(
     }
 
     if (state.showApiKeyDialog) {
-        ApiKeyDialog(
+        KeyInputDialog(
+            title = "设置 TuneHub 密钥",
+            label = "API Key",
+            placeholder = "th_xxx",
             initialValue = state.apiKey,
             onDismiss = { viewModel.showApiKeyDialog(false) },
             onConfirm = viewModel::saveApiKey
+        )
+    }
+
+    if (state.showJkapiKeyDialog) {
+        KeyInputDialog(
+            title = "设置 JKAPI 密钥",
+            label = "API Key",
+            placeholder = "输入 JKAPI 密钥",
+            initialValue = state.jkapiKey,
+            onDismiss = { viewModel.showJkapiKeyDialog(false) },
+            onConfirm = viewModel::saveJkapiKey
         )
     }
 }
@@ -392,6 +427,32 @@ private fun CacheLimitPicker(current: Int, onSelect: (Int) -> Unit) {
 }
 
 @Composable
+private fun AudioSourcePicker(current: AudioSource, onSelect: (AudioSource) -> Unit) {
+    val options = listOf(
+        AudioSource.TUNEHUB to "TuneHub",
+        AudioSource.JKAPI to "JKAPI (无铭API)"
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEach { (source, label) ->
+            val selected = source == current
+            TextButton(onClick = { onSelect(source) }) {
+                Text(
+                    text = if (selected) "● $label" else label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun PickerRow(options: List<Pair<String, String>>, current: String, onSelect: (String) -> Unit) {
     Row(
         modifier = Modifier
@@ -416,27 +477,30 @@ private fun PickerRow(options: List<Pair<String, String>>, current: String, onSe
 // ── Dialogs ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ApiKeyDialog(
+private fun KeyInputDialog(
+    title: String,
+    label: String,
+    placeholder: String,
     initialValue: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
-    var apiKey by remember(initialValue) { mutableStateOf(initialValue) }
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("设置 TuneHub API Key") },
+        title = { Text(title) },
         text = {
             OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                label = { Text("API Key") },
-                placeholder = { Text("th_xxx") },
+                value = value,
+                onValueChange = { value = it },
+                label = { Text(label) },
+                placeholder = { Text(placeholder) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(apiKey) }) { Text("保存") }
+            TextButton(onClick = { onConfirm(value) }) { Text("保存") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
@@ -470,4 +534,9 @@ private fun darkModeLabel(option: DarkModeOption): String = when (option) {
     DarkModeOption.FOLLOW_SYSTEM -> "跟随系统"
     DarkModeOption.DARK -> "深色"
     DarkModeOption.LIGHT -> "浅色"
+}
+
+private fun audioSourceSubtitle(source: AudioSource): String = when (source) {
+    AudioSource.TUNEHUB -> "默认音源，支持全平台"
+    AudioSource.JKAPI -> "支持网易云/QQ音乐（不支持酷我）"
 }

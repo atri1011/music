@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +34,8 @@ class PlayerPreferences @Inject constructor(
         val QUALITY = stringPreferencesKey("quality")
         val PLATFORM = stringPreferencesKey("platform")
         val API_KEY = stringPreferencesKey("api_key")
+        val AUDIO_SOURCE = stringPreferencesKey("audio_source")
+        val JKAPI_KEY = stringPreferencesKey("jkapi_key")
         val DARK_MODE = stringPreferencesKey("dark_mode")
         val AUTO_PLAY = booleanPreferencesKey("auto_play")
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
@@ -41,6 +44,9 @@ class PlayerPreferences @Inject constructor(
 
     @Volatile
     private var apiKeyCache: String = ""
+
+    @Volatile
+    private var jkapiKeyCache: String = ""
 
     val playbackMode: Flow<PlaybackMode> = context.dataStore.data.map { prefs ->
         prefs[Keys.PLAYBACK_MODE]?.let { PlaybackMode.valueOf(it) } ?: PlaybackMode.SEQUENTIAL
@@ -54,8 +60,16 @@ class PlayerPreferences @Inject constructor(
         prefs[Keys.PLATFORM] ?: "netease"
     }
 
+    val audioSource: Flow<AudioSource> = context.dataStore.data.map { prefs ->
+        AudioSource.fromId(prefs[Keys.AUDIO_SOURCE] ?: AudioSource.TUNEHUB.id)
+    }
+
     val apiKey: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.API_KEY] ?: ""
+    }
+
+    val jkapiKey: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[Keys.JKAPI_KEY] ?: ""
     }
 
     val darkMode: Flow<DarkModeOption> = context.dataStore.data.map { prefs ->
@@ -78,11 +92,19 @@ class PlayerPreferences @Inject constructor(
     val currentApiKey: String
         get() = apiKeyCache
 
+    val currentJkapiKey: String
+        get() = jkapiKeyCache
+
     init {
         scope.launch {
             apiKey
                 .catch { emit("") }
                 .collect { key -> apiKeyCache = key }
+        }
+        scope.launch {
+            jkapiKey
+                .catch { emit("") }
+                .collect { key -> jkapiKeyCache = key }
         }
     }
 
@@ -98,14 +120,20 @@ class PlayerPreferences @Inject constructor(
         context.dataStore.edit { it[Keys.PLATFORM] = platform }
     }
 
+    suspend fun setAudioSource(source: AudioSource) {
+        context.dataStore.edit { it[Keys.AUDIO_SOURCE] = source.id }
+    }
+
     suspend fun setApiKey(apiKey: String) {
-        val normalized = apiKey
-            .trim()
-            .removeSurrounding("\"")
-            .removeSurrounding("'")
-            .replace(Regex("[\\u200B\\u200C\\u200D\\uFEFF\\s]+"), "")
+        val normalized = normalizeKey(apiKey)
         apiKeyCache = normalized
         context.dataStore.edit { it[Keys.API_KEY] = normalized }
+    }
+
+    suspend fun setJkapiKey(key: String) {
+        val normalized = normalizeKey(key)
+        jkapiKeyCache = normalized
+        context.dataStore.edit { it[Keys.JKAPI_KEY] = normalized }
     }
 
     suspend fun setDarkMode(option: DarkModeOption) {
@@ -123,4 +151,10 @@ class PlayerPreferences @Inject constructor(
     suspend fun setCacheLimitMb(limitMb: Int) {
         context.dataStore.edit { it[Keys.CACHE_LIMIT_MB] = limitMb }
     }
+
+    private fun normalizeKey(raw: String): String = raw
+        .trim()
+        .removeSurrounding("\"")
+        .removeSurrounding("'")
+        .replace(Regex("[\\u200B\\u200C\\u200D\\uFEFF\\s]+"), "")
 }
