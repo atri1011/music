@@ -30,6 +30,7 @@ fun MediaListItem(
     index: Int? = null,
     onClick: () -> Unit,
     onMoreClick: (() -> Unit)? = null,
+    onArtistClick: ((Track) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -69,10 +70,16 @@ fun MediaListItem(
             Text(
                 text = track.artist,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (onArtistClick != null) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp)
+                modifier = Modifier
+                    .padding(top = 2.dp)
+                    .then(
+                        if (onArtistClick != null) Modifier.clickable { onArtistClick(track) }
+                        else Modifier
+                    )
             )
         }
 

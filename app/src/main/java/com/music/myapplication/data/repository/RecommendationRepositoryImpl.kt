@@ -7,8 +7,10 @@ import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
+import com.music.myapplication.domain.repository.GuessYouLikeResult
 import com.music.myapplication.domain.repository.RecommendationRepository
 import com.music.myapplication.domain.repository.ToplistInfo
+import java.util.Random
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -91,6 +93,80 @@ class RecommendationRepositoryImpl @Inject constructor(
             homeContentCacheStore.cacheRecommendedPlaylists(playlists)
         }
         return playlists
+    }
+
+    override suspend fun getGuessYouLikeTracks(refreshCount: Int, limit: Int): GuessYouLikeResult {
+        val favorites = localRepo.getFavorites().firstOrNull().orEmpty()
+        val recentTracks = localRepo.getRecentPlays(limit = GUESS_HISTORY_LIMIT).firstOrNull().orEmpty()
+
+        if (favorites.isEmpty() && recentTracks.isEmpty()) {
+            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit))
+        }
+
+        val tasteSeeds = buildTasteSeeds(favorites, recentTracks)
+        if (tasteSeeds.isEmpty()) {
+            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit))
+        }
+
+        val artistScores = mutableMapOf<String, Double>()
+        val artistPlatform = mutableMapOf<String, Platform>()
+        for (seed in tasteSeeds) {
+            val artist = seed.track.artist.asRecommendationKeyword()
+            if (artist.isBlank()) continue
+            artistScores[artist] = (artistScores[artist] ?: 0.0) + seed.score
+            if (artist !in artistPlatform) artistPlatform[artist] = seed.track.platform
+        }
+        if (artistScores.isEmpty()) {
+            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit))
+        }
+
+        val rankedArtists = artistScores.entries.sortedByDescending { it.value }.map { it.key }
+        val shuffled = rankedArtists.toMutableList().apply { shuffle(Random(refreshCount.toLong())) }
+        val seedArtists = shuffled.take(GUESS_SEED_ARTIST_COUNT)
+
+        val knownKeys = (favorites + recentTracks).map { it.uniqueKey() }.toHashSet()
+        val recommended = linkedMapOf<String, Track>()
+        val strategies = listOf("", " 热门", " 新歌")
+
+        for (artist in seedArtists) {
+            if (recommended.size >= limit) break
+            val suffix = strategies[refreshCount % strategies.size]
+            val query = "$artist$suffix"
+            val page = 1 + (refreshCount / strategies.size) % 3
+            val platform = artistPlatform[artist] ?: Platform.NETEASE
+
+            val result = onlineRepo.search(platform, query, page = page, pageSize = limit + 5)
+            if (result is Result.Success) {
+                for (track in result.data) {
+                    if (track.title.isBlank() || track.artist.isBlank()) continue
+                    val key = track.uniqueKey()
+                    if (key in knownKeys || key in recommended) continue
+                    recommended[key] = track
+                    if (recommended.size >= limit) break
+                }
+            }
+        }
+
+        if (recommended.size < limit / 2) {
+            val titleSeed = tasteSeeds[refreshCount % tasteSeeds.size].track.title
+            val result = onlineRepo.search(Platform.NETEASE, titleSeed, page = 1, pageSize = limit)
+            if (result is Result.Success) {
+                for (track in result.data) {
+                    if (track.title.isBlank() || track.artist.isBlank()) continue
+                    val key = track.uniqueKey()
+                    if (key in knownKeys || key in recommended) continue
+                    recommended[key] = track
+                    if (recommended.size >= limit) break
+                }
+            }
+        }
+
+        val tracks = if (recommended.isNotEmpty()) {
+            localRepo.applyFavoriteState(recommended.values.take(limit))
+        } else {
+            emptyList()
+        }
+        return GuessYouLikeResult(label = seedArtists.first(), tracks = tracks)
     }
 
     override suspend fun getSimilarTracks(track: Track, limit: Int): List<Track> {
@@ -177,6 +253,8 @@ class RecommendationRepositoryImpl @Inject constructor(
         const val LONG_TERM_LISTENING_BONUS = 2.0
         const val MID_TERM_LISTENING_MS = 7L * 24 * 60 * 60 * 1000
         const val LONG_TERM_LISTENING_MS = 30L * 24 * 60 * 60 * 1000
+        const val GUESS_SEED_ARTIST_COUNT = 3
+        const val GUESS_HISTORY_LIMIT = 50
     }
 }
 

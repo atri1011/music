@@ -1,7 +1,12 @@
 package com.music.myapplication.domain.repository
 
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.domain.model.ArtistDetail
+import com.music.myapplication.domain.model.ArtistRef
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.PlaylistCategory
+import com.music.myapplication.domain.model.PlaylistPreview
+import com.music.myapplication.domain.model.SearchSuggestion
 import com.music.myapplication.domain.model.Track
 import kotlinx.serialization.Serializable
 
@@ -55,6 +60,13 @@ interface OnlineMusicRepository {
     suspend fun resolveShareUrl(url: String): String
     suspend fun resolvePlayableUrl(platform: Platform, songId: String, quality: String = "128k"): Result<String>
     suspend fun getLyrics(platform: Platform, songId: String): Result<LyricsResult>
+
+    suspend fun getHotSearchKeywords(platform: Platform): Result<List<String>>
+    suspend fun getSearchSuggestions(platform: Platform, keyword: String): Result<List<SearchSuggestion>>
+    suspend fun resolveArtistRef(track: Track): Result<ArtistRef>
+    suspend fun getArtistDetail(artistId: String, platform: Platform): Result<ArtistDetail>
+    suspend fun getPlaylistCategories(platform: Platform): Result<List<PlaylistCategory>>
+    suspend fun getPlaylistsByCategory(platform: Platform, category: String, page: Int = 1, pageSize: Int = 30): Result<List<PlaylistPreview>>
 }
 
 @Serializable

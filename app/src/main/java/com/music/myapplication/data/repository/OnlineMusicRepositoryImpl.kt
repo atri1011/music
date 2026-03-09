@@ -6,7 +6,14 @@ import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.data.remote.dto.ParseRequestDto
+import com.music.myapplication.domain.model.ArtistAlbum
+import com.music.myapplication.domain.model.ArtistDetail
+import com.music.myapplication.domain.model.ArtistRef
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.PlaylistCategory
+import com.music.myapplication.domain.model.PlaylistPreview
+import com.music.myapplication.domain.model.SearchSuggestion
+import com.music.myapplication.domain.model.SuggestionType
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LyricsResult
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -726,6 +733,301 @@ class OnlineMusicRepositoryImpl @Inject constructor(
 
     private fun String.isDigitsOnly(): Boolean = isNotEmpty() && all(Char::isDigit)
 
+    // ── Hot Search ──
+
+    override suspend fun getHotSearchKeywords(platform: Platform): Result<List<String>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val keywords = when (platform) {
+                    Platform.NETEASE -> {
+                        val detailKeywords = extractNeteaseHotSearchKeywords(
+                            runCatching { api.getNeteaseHotSearchDetail() }.getOrNull()
+                        )
+                        if (detailKeywords.isNotEmpty()) {
+                            detailKeywords
+                        } else {
+                            val legacyKeywords = extractNeteaseHotSearchKeywords(
+                                runCatching { api.getNeteaseHotSearch() }.getOrNull()
+                            )
+                            if (legacyKeywords.isNotEmpty()) legacyKeywords
+                            else buildNeteaseFallbackHotKeywords()
+                        }
+                    }
+                    Platform.QQ -> {
+                        val resp = api.getQqHotSearch()
+                        val root = resp as? JsonObject ?: return@withContext Result.Error(AppError.Api(message = "empty"))
+                        val hotkeys = ((root["data"] as? JsonObject)?.get("hotkey") as? JsonArray) ?: JsonArray(emptyList())
+                        hotkeys.mapNotNull { (it as? JsonObject)?.firstStringOf("k")?.trim() }
+                            .filter { it.isNotBlank() }
+                    }
+                    else -> emptyList()
+                }
+                Result.Success(keywords)
+            } catch (e: Exception) {
+                Result.Error(AppError.Network(cause = e))
+            }
+        }
+
+    private suspend fun buildNeteaseFallbackHotKeywords(): List<String> {
+        val keywords = linkedSetOf<String>()
+
+        extractNeteaseDefaultKeyword(
+            runCatching { api.getNeteaseDefaultKeyword() }.getOrNull()
+        )?.let(keywords::add)
+
+        val toplists = (getToplists(Platform.NETEASE) as? Result.Success)?.data.orEmpty()
+        val candidate = pickNeteaseHotKeywordToplist(toplists)
+        val tracks = candidate?.let { toplist ->
+            (getToplistDetailFast(Platform.NETEASE, toplist.id) as? Result.Success)?.data.orEmpty()
+        }.orEmpty()
+
+        tracks.forEach { track ->
+            track.title.trim().takeIf(String::isNotBlank)?.let(keywords::add)
+            if (keywords.size >= 20) return keywords.toList()
+        }
+
+        if (keywords.isNotEmpty()) return keywords.toList()
+        return toplists.mapNotNull { it.name.trim().takeIf(String::isNotBlank) }.distinct().take(10)
+    }
+
+    // ── Search Suggestions ──
+
+    override suspend fun getSearchSuggestions(
+        platform: Platform, keyword: String
+    ): Result<List<SearchSuggestion>> = withContext(Dispatchers.IO) {
+        try {
+            val suggestions = when (platform) {
+                Platform.NETEASE -> {
+                    val resp = api.getNeteaseSearchSuggest(keyword)
+                    val root = resp as? JsonObject ?: return@withContext Result.Success(emptyList())
+                    val result = root["result"] as? JsonObject ?: return@withContext Result.Success(emptyList())
+                    val list = mutableListOf<SearchSuggestion>()
+                    (result["songs"] as? JsonArray)?.forEach { el ->
+                        (el as? JsonObject)?.firstStringOf("name")?.let {
+                            list += SearchSuggestion(it, SuggestionType.SONG)
+                        }
+                    }
+                    (result["artists"] as? JsonArray)?.forEach { el ->
+                        (el as? JsonObject)?.firstStringOf("name")?.let {
+                            list += SearchSuggestion(it, SuggestionType.ARTIST)
+                        }
+                    }
+                    (result["albums"] as? JsonArray)?.forEach { el ->
+                        (el as? JsonObject)?.firstStringOf("name")?.let {
+                            list += SearchSuggestion(it, SuggestionType.ALBUM)
+                        }
+                    }
+                    list
+                }
+                Platform.QQ -> {
+                    val resp = api.getQqSearchSuggest(keyword)
+                    val root = resp as? JsonObject ?: return@withContext Result.Success(emptyList())
+                    val data = root["data"] as? JsonObject ?: return@withContext Result.Success(emptyList())
+                    val list = mutableListOf<SearchSuggestion>()
+                    (data["song"] as? JsonObject)?.let { node ->
+                        (node["itemlist"] as? JsonArray)?.forEach { el ->
+                            (el as? JsonObject)?.firstStringOf("name")?.let {
+                                list += SearchSuggestion(it, SuggestionType.SONG)
+                            }
+                        }
+                    }
+                    (data["singer"] as? JsonObject)?.let { node ->
+                        (node["itemlist"] as? JsonArray)?.forEach { el ->
+                            (el as? JsonObject)?.firstStringOf("name")?.let {
+                                list += SearchSuggestion(it, SuggestionType.ARTIST)
+                            }
+                        }
+                    }
+                    (data["album"] as? JsonObject)?.let { node ->
+                        (node["itemlist"] as? JsonArray)?.forEach { el ->
+                            (el as? JsonObject)?.firstStringOf("name")?.let {
+                                list += SearchSuggestion(it, SuggestionType.ALBUM)
+                            }
+                        }
+                    }
+                    list
+                }
+                else -> emptyList()
+            }
+            Result.Success(suggestions)
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    // ── Artist ──
+
+    override suspend fun resolveArtistRef(track: Track): Result<ArtistRef> =
+        withContext(Dispatchers.IO) {
+            try {
+                when (track.platform) {
+                    Platform.NETEASE -> {
+                        val resp = api.getNeteaseSongDetail(ids = "[${track.id}]")
+                        val songs = (resp as? JsonObject)?.get("songs") as? JsonArray
+                        val song = songs?.firstOrNull() as? JsonObject
+                        val artists = (song?.getIgnoreCase("ar") ?: song?.getIgnoreCase("artists")) as? JsonArray
+                        val artist = artists?.firstOrNull() as? JsonObject
+                        val artistId = artist?.firstStringOf("id")
+                        if (artistId.isNullOrBlank()) {
+                            Result.Error(AppError.Api(message = "artist not found"))
+                        } else {
+                            Result.Success(ArtistRef(artistId, track.artist, track.platform))
+                        }
+                    }
+                    Platform.QQ -> {
+                        val resp = api.getQqSongDetail(songMid = track.id)
+                        val data = (resp as? JsonObject)?.get("data") as? JsonArray
+                        val song = data?.firstOrNull() as? JsonObject
+                        val singers = song?.get("singer") as? JsonArray
+                        val singer = singers?.firstOrNull() as? JsonObject
+                        val singerMid = singer?.firstStringOf("mid")
+                        if (singerMid.isNullOrBlank()) {
+                            Result.Error(AppError.Api(message = "artist not found"))
+                        } else {
+                            Result.Success(ArtistRef(singerMid, track.artist, track.platform))
+                        }
+                    }
+                    else -> Result.Error(AppError.Api(message = "unsupported platform"))
+                }
+            } catch (e: Exception) {
+                Result.Error(AppError.Network(cause = e))
+            }
+        }
+
+    override suspend fun getArtistDetail(
+        artistId: String, platform: Platform
+    ): Result<ArtistDetail> = withContext(Dispatchers.IO) {
+        try {
+            when (platform) {
+                Platform.NETEASE -> {
+                    val detailResp = api.getNeteaseArtistDetail(artistId)
+                    val root = detailResp as? JsonObject ?: return@withContext Result.Error(AppError.Api(message = "empty"))
+                    val artistObj = root["artist"] as? JsonObject
+                    val name = artistObj?.firstStringOf("name").orEmpty()
+                    val avatarUrl = artistObj?.firstStringOf("picUrl", "img1v1Url").orEmpty()
+                    val hotSongs = (root["hotSongs"] as? JsonArray)?.mapNotNull {
+                        extractNeteaseTrack(it as? JsonObject)
+                    } ?: emptyList()
+
+                    val albumResp = runCatching { api.getNeteaseArtistAlbums(artistId) }.getOrNull()
+                    val albums = extractNeteaseArtistAlbums(albumResp)
+
+                    Result.Success(
+                        ArtistDetail(artistId, name, platform, avatarUrl, hotSongs, albums)
+                    )
+                }
+                Platform.QQ -> {
+                    val body = buildQqArtistDetailBody(artistId)
+                    val resp = api.postQqMusicu(body)
+                    val root = resp as? JsonObject ?: return@withContext Result.Error(AppError.Api(message = "empty"))
+                    val singerData = (root["singerDetail"] as? JsonObject)?.get("data") as? JsonObject
+                    val singerInfo = singerData?.get("singer_info") as? JsonObject
+                    val name = singerInfo?.firstStringOf("name").orEmpty()
+                    val avatarUrl = normalizeQqImageUrl(singerInfo?.firstStringOf("pic").orEmpty())
+
+                    val songList = (singerData?.get("songlist") as? JsonArray)?.mapNotNull { el ->
+                        extractQqArtistSong(el as? JsonObject)
+                    } ?: emptyList()
+
+                    Result.Success(
+                        ArtistDetail(artistId, name, platform, avatarUrl, songList, emptyList())
+                    )
+                }
+                else -> Result.Error(AppError.Api(message = "unsupported platform"))
+            }
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    // ── Playlist Browse ──
+
+    override suspend fun getPlaylistCategories(platform: Platform): Result<List<PlaylistCategory>> =
+        withContext(Dispatchers.IO) {
+            try {
+                when (platform) {
+                    Platform.NETEASE -> {
+                        val resp = api.getNeteasePlaylistCategories()
+                        val root = resp as? JsonObject ?: return@withContext Result.Success(emptyList())
+                        val categories = mutableListOf(PlaylistCategory("全部", true))
+                        val subs = root["sub"] as? JsonArray ?: return@withContext Result.Success(categories)
+                        subs.forEach { el ->
+                            val cat = el as? JsonObject ?: return@forEach
+                            val name = cat.firstStringOf("name") ?: return@forEach
+                            val hot = (cat.getIgnoreCase("hot") as? JsonPrimitive)?.contentOrNull == "true"
+                            categories += PlaylistCategory(name, hot)
+                        }
+                        Result.Success(categories)
+                    }
+                    Platform.QQ -> {
+                        Result.Success(
+                            qqPlaylistCategoryIdMap.keys.mapIndexed { index, name ->
+                                PlaylistCategory(name, hot = index == 0)
+                            }
+                        )
+                    }
+                    else -> Result.Success(emptyList())
+                }
+            } catch (e: Exception) {
+                Result.Error(AppError.Network(cause = e))
+            }
+        }
+
+    override suspend fun getPlaylistsByCategory(
+        platform: Platform, category: String, page: Int, pageSize: Int
+    ): Result<List<PlaylistPreview>> = withContext(Dispatchers.IO) {
+        try {
+            when (platform) {
+                Platform.NETEASE -> {
+                    val offset = (page - 1) * pageSize
+                    val resp = api.getNeteasePlaylistByCategory(
+                        category = category,
+                        offset = offset,
+                        limit = pageSize
+                    )
+                    val root = resp as? JsonObject ?: return@withContext Result.Success(emptyList())
+                    val playlists = root["playlists"] as? JsonArray ?: return@withContext Result.Success(emptyList())
+                    val result = playlists.mapNotNull { el ->
+                        val item = el as? JsonObject ?: return@mapNotNull null
+                        val id = item.firstStringOf("id") ?: return@mapNotNull null
+                        PlaylistPreview(
+                            id = id,
+                            name = item.firstStringOf("name").orEmpty(),
+                            coverUrl = item.firstStringOf("coverImgUrl", "picUrl").orEmpty(),
+                            playCount = item.firstLongOf("playCount", "playcount") ?: 0L,
+                            description = item.firstStringOf("description").orEmpty(),
+                            platform = Platform.NETEASE
+                        )
+                    }
+                    Result.Success(result)
+                }
+                Platform.QQ -> {
+                    val body = buildQqPlaylistByCategoryBody(category, page, pageSize)
+                    val resp = api.postQqMusicu(body)
+                    val root = resp as? JsonObject ?: return@withContext Result.Success(emptyList())
+                    val data = (root["playlist"] as? JsonObject)?.get("data") as? JsonObject
+                    val list = data?.get("v_playlist") as? JsonArray ?: return@withContext Result.Success(emptyList())
+                    val result = list.mapNotNull { el ->
+                        val item = el as? JsonObject ?: return@mapNotNull null
+                        val id = item.firstStringOf("tid", "dissid") ?: return@mapNotNull null
+                        PlaylistPreview(
+                            id = id,
+                            name = item.firstStringOf("title", "diss_name").orEmpty(),
+                            coverUrl = normalizeQqImageUrl(item.firstStringOf("cover_url_big", "imgurl", "logo").orEmpty()),
+                            playCount = item.firstLongOf("listen_num", "access_num") ?: 0L,
+                            description = item.firstStringOf("desc", "introduction").orEmpty(),
+                            platform = Platform.QQ
+                        )
+                    }
+                    Result.Success(result)
+                }
+                else -> Result.Success(emptyList())
+            }
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
     private companion object {
         const val NETEASE_DETAIL_BATCH_SIZE = 50
         const val NETEASE_COMMENT_SORT_RECOMMENDED = 1
@@ -1274,10 +1576,141 @@ private fun JsonObject.firstStringOf(vararg keys: String): String? {
     return null
 }
 
+internal fun extractNeteaseHotSearchKeywords(data: JsonElement?): List<String> {
+    val root = data as? JsonObject ?: return emptyList()
+    val keywordLists = listOfNotNull(
+        root.getIgnoreCase("data") as? JsonArray,
+        ((root.getIgnoreCase("result") as? JsonObject)?.getIgnoreCase("hots") as? JsonArray),
+        ((root.getIgnoreCase("result") as? JsonObject)?.getIgnoreCase("hot") as? JsonArray),
+        root.getIgnoreCase("hots") as? JsonArray
+    )
+
+    keywordLists.forEach { keywords ->
+        val parsed = keywords.mapNotNull { item ->
+            when (item) {
+                is JsonObject -> item.firstStringOf(
+                    "searchWord", "word", "first", "keyword", "name", "content"
+                )?.trim()
+
+                is JsonPrimitive -> item.contentOrNull?.trim()
+                else -> null
+            }
+        }.filter { it.isNotBlank() }
+            .distinct()
+
+        if (parsed.isNotEmpty()) return parsed
+    }
+    return emptyList()
+}
+
+internal fun extractNeteaseDefaultKeyword(data: JsonElement?): String? {
+    val root = data as? JsonObject ?: return null
+    val payload = root.getIgnoreCase("data") as? JsonObject ?: return null
+    return payload.firstStringOf("realkeyword", "showKeyword", "keyword")
+        ?.replace("🔥", "")
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+}
+
+private fun pickNeteaseHotKeywordToplist(toplists: List<ToplistInfo>): ToplistInfo? {
+    if (toplists.isEmpty()) return null
+    val priorities = listOf("热歌", "飙升", "新歌", "原创", "流行")
+    return priorities.firstNotNullOfOrNull { token ->
+        toplists.firstOrNull { it.name.contains(token) }
+    } ?: toplists.first()
+}
+
 private fun JsonObject.firstLongOf(vararg keys: String): Long? {
     keys.forEach { key ->
         val value = (getIgnoreCase(key) as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
         if (value != null) return value
     }
     return null
+}
+
+// ── Artist / Playlist Browse helpers ──
+
+private fun buildQqArtistDetailBody(singerMid: String): JsonElement = buildJsonObject {
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("singerDetail", buildJsonObject {
+        put("module", "musichall.singer_info_server")
+        put("method", "GetSingerDetail")
+        put("param", buildJsonObject {
+            put("singer_mid", singerMid)
+            put("order", 1)
+            put("begin", 0)
+            put("num", 50)
+        })
+    })
+}
+
+private const val QQ_DEFAULT_PLAYLIST_CATEGORY_ID = 6
+
+private val qqPlaylistCategoryIdMap = linkedMapOf(
+    "流行" to 6, "经典" to 22, "轻音乐" to 12, "摇滚" to 19,
+    "民谣" to 8, "电子" to 14, "嘻哈" to 25, "R&B" to 17, "古典" to 7
+)
+
+private fun buildQqPlaylistByCategoryBody(category: String, page: Int, pageSize: Int): JsonElement = buildJsonObject {
+    val categoryId = qqPlaylistCategoryIdMap[category] ?: QQ_DEFAULT_PLAYLIST_CATEGORY_ID
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("playlist", buildJsonObject {
+        put("module", "playlist.PlayListPlazaServer")
+        put("method", "get_playlist_by_category")
+        put("param", buildJsonObject {
+            put("id", categoryId)
+            put("curPage", page.coerceAtLeast(1))
+            put("size", pageSize.coerceAtLeast(1))
+            put("order", 5)
+            put("titleid", categoryId)
+        })
+    })
+}
+
+private fun extractNeteaseArtistAlbums(data: JsonElement?): List<ArtistAlbum> {
+    val root = data as? JsonObject ?: return emptyList()
+    val hotAlbums = root.getIgnoreCase("hotAlbums") as? JsonArray ?: return emptyList()
+    return hotAlbums.mapNotNull { el ->
+        val album = el as? JsonObject ?: return@mapNotNull null
+        val id = album.firstStringOf("id") ?: return@mapNotNull null
+        ArtistAlbum(
+            id = id,
+            name = album.firstStringOf("name").orEmpty(),
+            coverUrl = album.firstStringOf("picUrl", "blurPicUrl").orEmpty(),
+            publishTime = album.firstStringOf("publishTime").orEmpty(),
+            songCount = (album.firstLongOf("size") ?: 0L).toInt()
+        )
+    }
+}
+
+private fun extractQqArtistSong(song: JsonObject?): Track? {
+    val item = song ?: return null
+    val mid = item.firstStringOf("mid", "songmid") ?: return null
+    val singers = item.get("singer") as? JsonArray
+    val artist = singers?.mapNotNull { (it as? JsonObject)?.firstStringOf("name") }?.joinToString("/").orEmpty()
+    val albumObj = item.get("album") as? JsonObject
+    val albumMid = albumObj?.firstStringOf("mid").orEmpty()
+    return Track(
+        id = mid,
+        platform = Platform.QQ,
+        title = item.firstStringOf("name", "title").orEmpty(),
+        artist = artist,
+        album = albumObj?.firstStringOf("name").orEmpty(),
+        coverUrl = buildQqAlbumCoverUrl(albumMid),
+        durationMs = (item.firstLongOf("interval") ?: 0L) * 1000
+    )
 }

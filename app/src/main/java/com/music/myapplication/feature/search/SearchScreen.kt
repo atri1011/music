@@ -1,24 +1,43 @@
 package com.music.myapplication.feature.search
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.TrendingUp
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -27,22 +46,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.SuggestionType
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.components.PlatformFilterChips
 import com.music.myapplication.feature.components.ShimmerMediaListItem
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.ui.theme.glassSurface
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(
     searchViewModel: SearchViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel
+    playerViewModel: PlayerViewModel,
+    onNavigateToArtist: ((String, String, String) -> Unit)? = null
 ) {
     val state by searchViewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
@@ -106,67 +131,213 @@ fun SearchScreen(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
 
-        when {
-            state.error != null && state.tracks.isEmpty() -> {
-                ErrorView(message = state.error!!, onRetry = searchViewModel::retry)
-            }
-            state.isLoading && state.tracks.isEmpty() -> {
-                // Shimmer loading
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(8) { ShimmerMediaListItem() }
-                }
-            }
-            state.tracks.isEmpty() && state.query.isBlank() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Suggestion overlay
+            if (state.showSuggestions && state.suggestions.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .zIndex(10f)
+                        .padding(horizontal = 16.dp)
+                        .glassSurface(RoundedCornerShape(12.dp))
+                        .padding(8.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Outlined.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                        )
-                        Text(
-                            text = "输入关键词开始搜索",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 12.dp)
-                        )
+                    state.suggestions.take(8).forEach { suggestion ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { searchViewModel.onSuggestionClick(suggestion) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = when (suggestion.type) {
+                                    SuggestionType.SONG -> Icons.Outlined.MusicNote
+                                    SuggestionType.ARTIST -> Icons.Outlined.TrendingUp
+                                    else -> Icons.Default.Search
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = suggestion.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
-            state.tracks.isEmpty() && state.query.isNotBlank() && !state.isLoading -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "未找到相关歌曲",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+            // Main content
+            when {
+                state.error != null && state.tracks.isEmpty() -> {
+                    ErrorView(message = state.error!!, onRetry = searchViewModel::retry)
                 }
-            }
-            else -> {
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(
-                        state.tracks,
-                        key = { _, t -> "${t.platform.id}:${t.id}" },
-                        contentType = { _, _ -> "track" }
-                    ) { index, track ->
-                        MediaListItem(
-                            track = track,
-                            index = index,
-                            onClick = {
-                                playerViewModel.playTrack(track, state.tracks, index)
+                state.isLoading && state.tracks.isEmpty() -> {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(8) { ShimmerMediaListItem() }
+                    }
+                }
+                state.tracks.isEmpty() && state.query.isBlank() -> {
+                    // Hot search + history
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        // Search History
+                        if (state.searchHistory.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "搜索历史",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                TextButton(onClick = searchViewModel::clearHistory) {
+                                    Text("清空", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                state.searchHistory.forEach { keyword ->
+                                    AssistChip(
+                                        onClick = { searchViewModel.onHistoryClick(keyword) },
+                                        label = { Text(keyword, maxLines = 1) },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Outlined.History,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "删除",
+                                                modifier = Modifier
+                                                    .size(14.dp)
+                                                    .clickable { searchViewModel.removeHistoryItem(keyword) }
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                        }
+
+                        // Hot Search
+                        if (state.hotKeywords.isNotEmpty()) {
+                            Text(
+                                text = "热门搜索",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            state.hotKeywords.take(20).forEachIndexed { index, keyword ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { searchViewModel.onHotKeywordClick(keyword) }
+                                        .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${index + 1}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = if (index < 3) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (index < 3) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.width(32.dp)
+                                    )
+                                    if (index < 3) {
+                                        Icon(
+                                            Icons.Outlined.LocalFireDepartment,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        text = keyword,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (index < 3) FontWeight.Medium else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        } else if (!state.isHotLoading) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.MusicNote,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    )
+                                    Text(
+                                        text = "输入关键词开始搜索",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                state.tracks.isEmpty() && state.query.isNotBlank() && !state.isLoading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "未找到相关歌曲",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (state.isLoading) {
-                        item(contentType = "loading") {
-                            ShimmerMediaListItem(modifier = Modifier.padding(16.dp))
+                }
+                else -> {
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                        itemsIndexed(
+                            state.tracks,
+                            key = { _, t -> "${t.platform.id}:${t.id}" },
+                            contentType = { _, _ -> "track" }
+                        ) { index, track ->
+                            MediaListItem(
+                                track = track,
+                                index = index,
+                                onClick = {
+                                    playerViewModel.playTrack(track, state.tracks, index)
+                                },
+                                onArtistClick = if (track.platform != Platform.KUWO) {
+                                    onNavigateToArtist?.let { nav ->
+                                        { t -> nav(t.id, t.platform.id, t.artist) }
+                                    }
+                                } else null
+                            )
+                        }
+                        if (state.isLoading) {
+                            item(contentType = "loading") {
+                                ShimmerMediaListItem(modifier = Modifier.padding(16.dp))
+                            }
                         }
                     }
                 }

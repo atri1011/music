@@ -10,7 +10,11 @@ import com.music.myapplication.domain.repository.ToplistInfo
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -24,6 +28,112 @@ import kotlinx.coroutines.test.runTest
 class OnlineMusicRepositoryImplTest {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    @Test
+    fun getHotSearchKeywords_forNetease_prefersDetailEndpoint() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": [
+                { "searchWord": "晴天" },
+                { "searchWord": "夜曲" }
+              ]
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseHotSearchDetail(any()) } returns payload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getHotSearchKeywords(Platform.NETEASE)
+
+        assertEquals(listOf("晴天", "夜曲"), (result as Result.Success).data)
+        coVerify(exactly = 1) { api.getNeteaseHotSearchDetail(any()) }
+        coVerify(exactly = 0) { api.getNeteaseHotSearch(any()) }
+    }
+
+    @Test
+    fun getHotSearchKeywords_forNetease_fallsBackToLegacyEndpoint() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val emptyDetailPayload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": []
+            }
+            """.trimIndent()
+        )
+        val legacyPayload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "result": {
+                "hots": [
+                  { "first": "稻香" },
+                  { "first": "七里香" }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseHotSearchDetail(any()) } returns emptyDetailPayload
+        coEvery { api.getNeteaseHotSearch(any()) } returns legacyPayload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getHotSearchKeywords(Platform.NETEASE)
+
+        assertEquals(listOf("稻香", "七里香"), (result as Result.Success).data)
+        coVerify(exactly = 1) { api.getNeteaseHotSearchDetail(any()) }
+        coVerify(exactly = 1) { api.getNeteaseHotSearch(any()) }
+    }
+
+    @Test
+    fun getHotSearchKeywords_forNetease_fallsBackToDefaultKeywordAndToplistTracks() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>()
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val defaultKeywordPayload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "realkeyword": "海屿你"
+              }
+            }
+            """.trimIndent()
+        )
+        val cachedToplists = listOf(
+            ToplistInfo(id = "19723756", name = "热歌榜"),
+            ToplistInfo(id = "3779629", name = "新歌榜")
+        )
+        val cachedTracks = listOf(
+            Track(id = "1", platform = Platform.NETEASE, title = "晴天", artist = "周杰伦"),
+            Track(id = "2", platform = Platform.NETEASE, title = "七里香", artist = "周杰伦")
+        )
+        coEvery { api.getNeteaseHotSearchDetail(any()) } returns json.parseToJsonElement("""{"code":404}""")
+        coEvery { api.getNeteaseHotSearch(any()) } returns json.parseToJsonElement("""{"code":400}""")
+        coEvery { api.getNeteaseDefaultKeyword(any()) } returns defaultKeywordPayload
+        coEvery { cacheStore.getCachedToplists(Platform.NETEASE) } returns cachedToplists
+        coEvery { cacheStore.getCachedToplistDetail(Platform.NETEASE, "19723756") } returns cachedTracks
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getHotSearchKeywords(Platform.NETEASE)
+
+        assertEquals(listOf("海屿你", "晴天", "七里香"), (result as Result.Success).data.take(3))
+        coVerify(exactly = 1) { api.getNeteaseDefaultKeyword(any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(Platform.NETEASE, "toplists", any()) }
+    }
 
     @Test
     fun getToplists_returnsCachedDataWithoutDispatch() = runTest {
@@ -261,6 +371,81 @@ class OnlineMusicRepositoryImplTest {
         val trackIds = extractNeteasePlaylistTrackIds(payload)
 
         assertEquals(listOf("123", "456"), trackIds)
+    }
+
+    @Test
+    fun getPlaylistCategories_forQq_usesPlayableCategories() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getPlaylistCategories(Platform.QQ)
+
+        val data = (result as Result.Success).data
+        assertEquals(
+            listOf("流行", "经典", "轻音乐", "摇滚", "民谣", "电子", "嘻哈", "R&B", "古典"),
+            data.map { it.name }
+        )
+        assertTrue(data.first().hot)
+    }
+
+    @Test
+    fun getPlaylistsByCategory_forQq_usesValidCategoryRequest() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val requestBody = slot<JsonElement>()
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "playlist": {
+                "data": {
+                  "v_playlist": [
+                    {
+                      "tid": 3261601343,
+                      "title": "热情海岛风，从东方夏威夷吹来",
+                      "cover_url_big": "http://p.qpic.cn/music_cover/example/600?n=1",
+                      "access_num": 29305,
+                      "desc": "测试歌单"
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } answers {
+            requestBody.captured = firstArg()
+            payload
+        }
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getPlaylistsByCategory(
+            platform = Platform.QQ,
+            category = "流行",
+            page = 2,
+            pageSize = 30
+        )
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("3261601343", data.first().id)
+        assertEquals("热情海岛风，从东方夏威夷吹来", data.first().name)
+        assertEquals("https://p.qpic.cn/music_cover/example/600?n=1", data.first().coverUrl)
+        assertEquals(29305L, data.first().playCount)
+        assertEquals("测试歌单", data.first().description)
+        assertEquals(Platform.QQ, data.first().platform)
+
+        val root = requestBody.captured as JsonObject
+        val params = ((root["playlist"] as JsonObject)["param"]) as JsonObject
+        assertEquals(6, (params["id"] as JsonPrimitive).content.toInt())
+        assertEquals(2, (params["curPage"] as JsonPrimitive).content.toInt())
+        assertEquals(30, (params["size"] as JsonPrimitive).content.toInt())
+        assertEquals(6, (params["titleid"] as JsonPrimitive).content.toInt())
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.music.myapplication.feature.home
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -17,6 +19,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,22 +34,28 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,17 +64,19 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.PlaylistPreview
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.ToplistInfo
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.PlatformFilterChips
+import com.music.myapplication.feature.components.PlaylistCard
 import com.music.myapplication.feature.components.ShimmerGridCard
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.QQMusicGreen
 import com.music.myapplication.ui.theme.glassSurface
-import com.music.myapplication.ui.theme.verticalGradientScrim
 import java.util.Calendar
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
@@ -115,7 +130,7 @@ fun HomeScreen(
             }
 
             // Tab row
-            val tabs = listOf("为你推荐", "榜单")
+            val tabs = listOf("为你推荐", "榜单", "歌单广场")
             TabRow(
                 selectedTabIndex = state.selectedTab,
                 containerColor = Color.Transparent,
@@ -151,12 +166,21 @@ fun HomeScreen(
                 0 -> ForYouContent(
                     state = state,
                     onNavigateToPlaylist = onNavigateToPlaylist,
+                    onRefreshGuessYouLike = viewModel::refreshGuessYouLike,
                     playerViewModel = playerViewModel
                 )
                 1 -> ChartContent(
                     state = state,
                     onPlatformChange = viewModel::onPlatformChange,
                     onRetry = { viewModel.loadToplists() },
+                    onNavigateToPlaylist = onNavigateToPlaylist
+                )
+                2 -> PlaylistSquareContent(
+                    state = state,
+                    onPlatformChange = viewModel::onPlaylistSquarePlatformChange,
+                    onCategoryChange = viewModel::onPlaylistCategoryChange,
+                    onLoadMore = viewModel::loadMorePlaylistSquare,
+                    onRetry = viewModel::retryPlaylistSquare,
                     onNavigateToPlaylist = onNavigateToPlaylist
                 )
             }
@@ -168,6 +192,7 @@ fun HomeScreen(
 private fun ForYouContent(
     state: HomeUiState,
     onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit,
+    onRefreshGuessYouLike: () -> Unit,
     playerViewModel: PlayerViewModel
 ) {
     val scrollState = rememberScrollState()
@@ -186,20 +211,20 @@ private fun ForYouContent(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 20.dp)
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
         // Greeting
         Text(
             text = greeting,
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier.padding(horizontal = 20.dp)
         )
         Text(
             text = "今天想听点什么?",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier.padding(top = 4.dp, start = 20.dp, end = 20.dp)
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -211,7 +236,8 @@ private fun ForYouContent(
                 onPlay = {
                     val track = state.dailyTracks.firstOrNull() ?: return@DailyRecommendCard
                     playerViewModel.playTrack(track, state.dailyTracks, 0)
-                }
+                },
+                modifier = Modifier.padding(horizontal = 20.dp)
             )
             Spacer(modifier = Modifier.height(20.dp))
         }
@@ -222,21 +248,44 @@ private fun ForYouContent(
                 track = fmTrack,
                 onPlay = {
                     playerViewModel.playTrack(fmTrack, listOf(fmTrack), 0)
-                }
+                },
+                modifier = Modifier.padding(horizontal = 20.dp)
             )
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Recommended Playlists
+        // Recommended Playlists - horizontal scroll
         if (state.recommendedPlaylists.isNotEmpty()) {
-            Text(
-                text = "每日推荐歌单",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-            RecommendedPlaylistGrid(
+            RecommendedPlaylistRow(
                 playlists = state.recommendedPlaylists,
                 onNavigateToPlaylist = onNavigateToPlaylist
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        // Guess You Like
+        if (state.guessYouLikeTracks.isNotEmpty() || state.isGuessYouLikeLoading) {
+            GuessYouLikeSection(
+                label = state.guessYouLikeLabel,
+                tracks = state.guessYouLikeTracks,
+                isLoading = state.isGuessYouLikeLoading,
+                onRefresh = onRefreshGuessYouLike,
+                onPlayAll = {
+                    if (state.guessYouLikeTracks.isNotEmpty()) {
+                        playerViewModel.playTrack(
+                            state.guessYouLikeTracks.first(),
+                            state.guessYouLikeTracks,
+                            0
+                        )
+                    }
+                },
+                onPlayTrack = { index ->
+                    playerViewModel.playTrack(
+                        state.guessYouLikeTracks[index],
+                        state.guessYouLikeTracks,
+                        index
+                    )
+                }
             )
         }
 
@@ -247,7 +296,8 @@ private fun ForYouContent(
 @Composable
 private fun DailyRecommendCard(
     tracks: List<Track>,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val calendar = remember { Calendar.getInstance() }
     val dayOfMonth = remember { calendar.get(Calendar.DAY_OF_MONTH) }
@@ -255,7 +305,7 @@ private fun DailyRecommendCard(
     val dayOfWeek = remember { dayNames[calendar.get(Calendar.DAY_OF_WEEK) - 1] }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
@@ -335,10 +385,11 @@ private fun DailyRecommendCard(
 @Composable
 private fun PersonalFmCard(
     track: Track,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
@@ -394,60 +445,219 @@ private fun PersonalFmCard(
 }
 
 @Composable
-private fun RecommendedPlaylistGrid(
+private fun RecommendedPlaylistRow(
     playlists: List<ToplistInfo>,
     onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit
 ) {
-    // 2-column grid inline
-    val rows = playlists.chunked(2)
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        rows.forEach { rowItems ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                rowItems.forEach { toplist ->
+    Column {
+        Text(
+            text = "推荐歌单",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier.padding(start = 20.dp, bottom = 12.dp)
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 20.dp)
+        ) {
+            items(playlists, key = { it.id }) { playlist ->
+                Column(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .clickable {
+                            onNavigateToPlaylist(playlist.id, Platform.NETEASE.id, playlist.name, "playlist")
+                        }
+                ) {
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable {
-                                onNavigateToPlaylist(toplist.id, Platform.NETEASE.id, toplist.name, "playlist")
-                            }
+                            .size(120.dp)
+                            .clip(RoundedCornerShape(12.dp))
                     ) {
                         CoverImage(
-                            url = toplist.coverUrl,
-                            contentDescription = toplist.name,
+                            url = playlist.coverUrl,
+                            contentDescription = playlist.name,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalGradientScrim(
-                                    color = Color.Black.copy(alpha = 0.65f),
-                                    startY = 0.4f,
-                                    endY = 1f
-                                )
-                        )
-                        Text(
-                            text = toplist.name,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = Color.White,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(12.dp)
-                        )
                     }
-                }
-                // Fill empty space if odd number
-                if (rowItems.size < 2) {
-                    Spacer(modifier = Modifier.weight(1f))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = playlist.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun GuessYouLikeSection(
+    label: String,
+    tracks: List<Track>,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+    onPlayAll: () -> Unit,
+    onPlayTrack: (Int) -> Unit
+) {
+    val refreshRotation = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+        // Section header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = {
+                    if (!isLoading) {
+                        scope.launch {
+                            refreshRotation.animateTo(
+                                targetValue = refreshRotation.value + 360f,
+                                animationSpec = tween(500)
+                            )
+                        }
+                        onRefresh()
+                    }
+                },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "刷新",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer { rotationZ = refreshRotation.value }
+                )
+            }
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = if (label.isNotBlank()) "猜你喜欢 · $label" else "猜你喜欢",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.weight(1f)
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                    .clickable(onClick = onPlayAll)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "播放",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = "播放",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+        }
+
+        // Song list
+        if (isLoading) {
+            repeat(3) {
+                GuessYouLikeItemPlaceholder()
+                if (it < 2) Spacer(modifier = Modifier.height(12.dp))
+            }
+        } else {
+            tracks.forEachIndexed { index, track ->
+                GuessYouLikeItem(
+                    track = track,
+                    onClick = { onPlayTrack(index) }
+                )
+                if (index < tracks.lastIndex) Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun GuessYouLikeItem(
+    track: Track,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CoverImage(
+            url = track.coverUrl,
+            contentDescription = track.title,
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(8.dp)),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = track.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+@Composable
+private fun GuessYouLikeItemPlaceholder() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .height(14.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.4f)
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            )
         }
     }
 }
@@ -655,5 +865,121 @@ private fun ChartSongRowPlaceholder(rank: Int) {
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         )
+    }
+}
+
+@Composable
+private fun PlaylistSquareContent(
+    state: HomeUiState,
+    onPlatformChange: (Platform) -> Unit,
+    onCategoryChange: (String) -> Unit,
+    onLoadMore: () -> Unit,
+    onRetry: () -> Unit,
+    onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit
+) {
+    val gridState = rememberLazyGridState()
+
+    LaunchedEffect(state.playlistSquarePlatform, state.selectedPlaylistCategory) {
+        gridState.scrollToItem(0)
+    }
+
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= state.playlistItems.size - 6
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore && state.playlistItems.isNotEmpty()) {
+            onLoadMore()
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        PlatformFilterChips(
+            selectedPlatform = state.playlistSquarePlatform,
+            onPlatformSelected = onPlatformChange,
+            platforms = listOf(Platform.NETEASE, Platform.QQ),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
+
+        // Category chips
+        if (state.playlistCategories.isNotEmpty()) {
+            ScrollableTabRow(
+                selectedTabIndex = state.playlistCategories.indexOfFirst {
+                    it.name == state.selectedPlaylistCategory
+                }.coerceAtLeast(0),
+                containerColor = Color.Transparent,
+                edgePadding = 16.dp,
+                divider = {},
+                indicator = {},
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                state.playlistCategories.forEach { category ->
+                    val selected = category.name == state.selectedPlaylistCategory
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onCategoryChange(category.name) },
+                        label = { Text(category.name, maxLines = 1) },
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+            }
+        }
+
+        when {
+            state.playlistSquareError != null && state.playlistItems.isEmpty() -> {
+                ErrorView(
+                    message = state.playlistSquareError!!,
+                    onRetry = onRetry
+                )
+            }
+            state.isPlaylistSquareLoading && state.playlistItems.isEmpty() -> {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 110.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(9) {
+                        ShimmerGridCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    }
+                }
+            }
+            else -> {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 110.dp),
+                    state = gridState,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(
+                        state.playlistItems,
+                        key = { "${it.platform.id}:${it.id}" }
+                    ) { playlist ->
+                        PlaylistCard(
+                            name = playlist.name,
+                            coverUrl = playlist.coverUrl,
+                            onClick = {
+                                onNavigateToPlaylist(
+                                    playlist.id,
+                                    playlist.platform.id,
+                                    playlist.name,
+                                    "playlist"
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 }

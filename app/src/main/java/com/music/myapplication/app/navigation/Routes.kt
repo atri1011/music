@@ -14,4 +14,10 @@ sealed interface Routes {
         val name: String = "",
         val source: String = "toplist"
     ) : Routes
+
+    @Serializable data class ArtistDetail(
+        val artistId: String,
+        val platform: String,
+        val artistName: String = ""
+    ) : Routes
 }

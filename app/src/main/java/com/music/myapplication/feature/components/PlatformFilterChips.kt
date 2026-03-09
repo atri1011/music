@@ -16,13 +16,14 @@ import com.music.myapplication.domain.model.Platform
 fun PlatformFilterChips(
     selectedPlatform: Platform,
     onPlatformSelected: (Platform) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    platforms: List<Platform> = Platform.entries.toList()
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        for (platform in Platform.entries) {
+        for (platform in platforms) {
             FilterChip(
                 selected = platform == selectedPlatform,
                 onClick = { onPlatformSelected(platform) },

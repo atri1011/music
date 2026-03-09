@@ -13,6 +13,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.music.myapplication.feature.artist.ArtistDetailScreen
 import com.music.myapplication.feature.home.HomeScreen
 import com.music.myapplication.feature.library.LibraryScreen
 import com.music.myapplication.feature.more.MoreScreen
@@ -50,7 +51,12 @@ fun AppNavGraph(
             )
         }
         composable<Routes.Search> {
-            SearchScreen(playerViewModel = playerViewModel)
+            SearchScreen(
+                playerViewModel = playerViewModel,
+                onNavigateToArtist = { trackId, platformId, artistName ->
+                    navController.navigate(Routes.ArtistDetail(trackId, platformId, artistName))
+                }
+            )
         }
         composable<Routes.Library> {
             LibraryScreen(
@@ -91,6 +97,33 @@ fun AppNavGraph(
                 platform = route.platform,
                 title = route.name,
                 source = route.source,
+                onBack = { navController.popBackStack() },
+                playerViewModel = playerViewModel
+            )
+        }
+
+        // Artist detail: slide in from right
+        composable<Routes.ArtistDetail>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            ArtistDetailScreen(
                 onBack = { navController.popBackStack() },
                 playerViewModel = playerViewModel
             )
