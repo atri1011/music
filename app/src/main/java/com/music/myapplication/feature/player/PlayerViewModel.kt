@@ -2,37 +2,19 @@ package com.music.myapplication.feature.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.music.myapplication.core.common.DispatchersProvider
-import com.music.myapplication.core.common.Result
-import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.PlaybackState
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
-import com.music.myapplication.domain.repository.LocalLibraryRepository
-import com.music.myapplication.domain.repository.OnlineMusicRepository
-import com.music.myapplication.domain.repository.RecommendationRepository
 import com.music.myapplication.domain.repository.TrackComment
 import com.music.myapplication.domain.repository.TrackCommentSort
-import com.music.myapplication.media.player.PlaybackModeManager
-import com.music.myapplication.media.player.QueueManager
-import com.music.myapplication.media.session.MediaControllerConnector
-import com.music.myapplication.media.state.PlaybackStateStore
+import com.music.myapplication.feature.player.state.CommentsStateHolder
+import com.music.myapplication.feature.player.state.LyricsStateHolder
+import com.music.myapplication.feature.player.state.PlaybackControlStateHolder
+import com.music.myapplication.feature.player.state.TrackInfoStateHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.distinctUntilChangedBy
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
-import kotlin.math.roundToInt
 
 data class MiniPlayerUiState(
     val currentTrack: Track? = null,
@@ -93,449 +75,49 @@ data class TrackCommentsUiState(
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
-    private val stateStore: PlaybackStateStore,
-    private val connector: MediaControllerConnector,
-    private val queueManager: QueueManager,
-    private val modeManager: PlaybackModeManager,
-    private val onlineRepo: OnlineMusicRepository,
-    private val localRepo: LocalLibraryRepository,
-    private val recommendationRepo: RecommendationRepository,
-    private val preferences: PlayerPreferences,
-    private val dispatchers: DispatchersProvider
+    private val playback: PlaybackControlStateHolder,
+    private val lyrics: LyricsStateHolder,
+    private val comments: CommentsStateHolder,
+    private val trackInfo: TrackInfoStateHolder
 ) : ViewModel() {
 
-    val playbackState: StateFlow<PlaybackState> = stateStore.state
-        .stateIn(viewModelScope, SharingStarted.Eagerly, PlaybackState())
+    val playbackState: StateFlow<PlaybackState> get() = playback.playbackState
+    val miniPlayerState: StateFlow<MiniPlayerUiState> get() = playback.miniPlayerState
+    val staticUiState: StateFlow<PlayerStaticUiState> get() = playback.staticUiState
+    val progressState: StateFlow<PlaybackProgressUiState> get() = playback.progressState
+    val miniProgressState: StateFlow<Float> get() = playback.miniProgressState
+    val trackActionState: StateFlow<TrackActionUiState> get() = playback.trackActionState
 
-    val miniPlayerState: StateFlow<MiniPlayerUiState> = playbackState
-        .map { state ->
-            MiniPlayerUiState(
-                currentTrack = state.currentTrack,
-                isPlaying = state.isPlaying,
-                quality = state.quality
-            )
-        }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, MiniPlayerUiState())
-
-    val staticUiState: StateFlow<PlayerStaticUiState> = stateStore.state
-        .map { s ->
-            PlayerStaticUiState(
-                currentTrack = s.currentTrack,
-                isPlaying = s.isPlaying,
-                playbackMode = s.playbackMode,
-                queue = s.queue,
-                currentIndex = s.currentIndex,
-                quality = s.quality
-            )
-        }
-        .distinctUntilChanged()
-        .stateIn(
-            viewModelScope,
-            SharingStarted.Eagerly,
-            stateStore.state.value.let { s ->
-                PlayerStaticUiState(s.currentTrack, s.isPlaying, s.playbackMode, s.queue, s.currentIndex, s.quality)
-            }
-        )
-
-    val progressState: StateFlow<PlaybackProgressUiState> = stateStore.state
-        .map { s -> PlaybackProgressUiState(s.positionMs, s.durationMs) }
-        .distinctUntilChanged()
-        .stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            stateStore.state.value.let { s -> PlaybackProgressUiState(s.positionMs, s.durationMs) }
-        )
-
-    val miniProgressState: StateFlow<Float> = progressState
-        .map { progress ->
-            if (progress.durationMs > 0L) {
-                (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
-        }
-        .map { fraction -> (fraction * 100f).roundToInt() / 100f }
-        .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
-
-    private val _lyricsUiState = MutableStateFlow(LyricsUiState())
-    val lyricsUiState: StateFlow<LyricsUiState> = _lyricsUiState.asStateFlow()
-    private val _trackActionState = MutableStateFlow(TrackActionUiState())
-    val trackActionState: StateFlow<TrackActionUiState> = _trackActionState.asStateFlow()
-    private val _trackInfoState = MutableStateFlow(TrackInfoUiState())
-    val trackInfoState: StateFlow<TrackInfoUiState> = _trackInfoState.asStateFlow()
-    private val _commentsUiState = MutableStateFlow(TrackCommentsUiState())
-    val commentsUiState: StateFlow<TrackCommentsUiState> = _commentsUiState.asStateFlow()
-    @Volatile
-    private var currentQuality: String = "128k"
+    val lyricsUiState: StateFlow<LyricsUiState> get() = lyrics.uiState
+    val commentsUiState: StateFlow<TrackCommentsUiState> get() = comments.uiState
+    val trackInfoState: StateFlow<TrackInfoUiState> get() = trackInfo.uiState
 
     init {
-        connector.connect()
-        viewModelScope.launch {
-            preferences.playbackMode.collect { mode ->
-                modeManager.setMode(mode)
-            }
-        }
-        viewModelScope.launch {
-            preferences.quality.collect { quality ->
-                currentQuality = quality
-                stateStore.updateQuality(quality)
-            }
-        }
-        observeCurrentTrackLyrics()
-        observeCurrentTrackInfo()
-        observeCurrentTrackComments()
+        playback.bind(viewModelScope)
+        lyrics.bind(viewModelScope)
+        comments.bind(viewModelScope)
+        trackInfo.bind(viewModelScope)
     }
 
-    fun playTrack(track: Track, queue: List<Track>, index: Int) {
-        viewModelScope.launch {
-            if (_trackActionState.value.isResolving) return@launch
-            _trackActionState.value = TrackActionUiState(
-                isResolving = true,
-                resolvingTrackKey = track.lyricsSongKey()
-            )
-            try {
-                val playable = withContext(dispatchers.io) {
-                    resolveTrackForPlayback(track, currentQuality)
-                } ?: return@launch
-                connector.playTrack(playable, queue, index)
-                withContext(dispatchers.io) {
-                    localRepo.recordRecentPlay(playable)
-                }
-            } finally {
-                _trackActionState.value = TrackActionUiState()
-            }
-        }
-    }
+    fun playTrack(track: Track, queue: List<Track>, index: Int) = playback.playTrack(track, queue, index)
+    fun togglePlayPause() = playback.togglePlayPause()
+    fun seekTo(positionMs: Long) = playback.seekTo(positionMs)
+    fun skipNext() = playback.skipNext()
+    fun skipPrevious() = playback.skipPrevious()
+    fun togglePlaybackMode() = playback.togglePlaybackMode()
+    fun toggleFavorite() = playback.toggleFavorite()
+    fun setQuality(quality: String) = playback.setQuality(quality)
 
-    fun togglePlayPause() {
-        if (playbackState.value.isPlaying) connector.pause() else connector.play()
-    }
+    fun setLyricsPanelMode(mode: LyricsPanelMode) = lyrics.setLyricsPanelMode(mode)
+    fun showLyricsPanel() = lyrics.showLyricsPanel()
 
-    fun seekTo(positionMs: Long) = connector.seekTo(positionMs)
-
-    fun skipNext() {
-        viewModelScope.launch {
-            if (_trackActionState.value.isResolving) return@launch
-            val next = modeManager.getNextTrack() ?: return@launch
-            _trackActionState.value = TrackActionUiState(
-                isResolving = true,
-                resolvingTrackKey = next.lyricsSongKey()
-            )
-            try {
-                val playable = withContext(dispatchers.io) {
-                    resolveTrackForPlayback(next, currentQuality)
-                } ?: return@launch
-                connector.skipToNext(playable)
-                withContext(dispatchers.io) {
-                    localRepo.recordRecentPlay(playable)
-                }
-            } finally {
-                _trackActionState.value = TrackActionUiState()
-            }
-        }
-    }
-
-    fun skipPrevious() {
-        viewModelScope.launch {
-            if (_trackActionState.value.isResolving) return@launch
-            val prev = modeManager.getPreviousTrack() ?: return@launch
-            _trackActionState.value = TrackActionUiState(
-                isResolving = true,
-                resolvingTrackKey = prev.lyricsSongKey()
-            )
-            try {
-                val playable = withContext(dispatchers.io) {
-                    resolveTrackForPlayback(prev, currentQuality)
-                } ?: return@launch
-                connector.skipToPrevious(playable)
-                withContext(dispatchers.io) {
-                    localRepo.recordRecentPlay(playable)
-                }
-            } finally {
-                _trackActionState.value = TrackActionUiState()
-            }
-        }
-    }
-
-    fun togglePlaybackMode() {
-        modeManager.toggleMode()
-        viewModelScope.launch {
-            preferences.setPlaybackMode(modeManager.currentMode())
-        }
-    }
-
-    fun toggleFavorite() {
-        val track = playbackState.value.currentTrack ?: return
-        viewModelScope.launch {
-            localRepo.toggleFavorite(track)
-            stateStore.updateTrack(track.copy(isFavorite = !track.isFavorite))
-        }
-    }
-
-    fun setQuality(quality: String) {
-        viewModelScope.launch {
-            preferences.setQuality(quality)
-            stateStore.updateQuality(quality)
-        }
-    }
-
-    fun setLyricsPanelMode(mode: LyricsPanelMode) {
-        _lyricsUiState.update { it.copy(viewMode = mode) }
-    }
-
-    fun showLyricsPanel() = setLyricsPanelMode(LyricsPanelMode.COVER)
-
-    fun showComments() {
-        val track = playbackState.value.currentTrack ?: return
-        val trackKey = track.lyricsSongKey()
-        val currentState = _commentsUiState.value
-        if (
-            currentState.trackKey == trackKey &&
-            currentState.hasLoaded &&
-            currentState.errorMessage.isNullOrBlank()
-        ) {
-            _commentsUiState.update { it.copy(isVisible = true) }
-            return
-        }
-        loadComments(track, showSheet = true)
-    }
-
-    fun hideComments() {
-        _commentsUiState.update { it.copy(isVisible = false) }
-    }
-
-    fun retryLoadComments() {
-        val track = playbackState.value.currentTrack ?: return
-        loadComments(track, showSheet = true)
-    }
-
-    fun selectCommentSort(sort: TrackCommentSort) {
-        _commentsUiState.update { state ->
-            if (state.commentsOf(sort).isEmpty()) state else state.copy(selectedSort = sort)
-        }
-    }
-
-    private fun observeCurrentTrackLyrics() {
-        viewModelScope.launch {
-            stateStore.state
-                .map { it.currentTrack }
-                .distinctUntilChangedBy { track -> track?.lyricsSongKey() }
-                .collectLatest { track ->
-                    val preservedMode = _lyricsUiState.value.viewMode
-                    if (track == null) {
-                        _lyricsUiState.value = LyricsUiState(viewMode = preservedMode)
-                        return@collectLatest
-                    }
-                    loadLyrics(track = track, viewMode = preservedMode)
-                }
-        }
-    }
-
-    private fun observeCurrentTrackInfo() {
-        viewModelScope.launch {
-            stateStore.state
-                .map { it.currentTrack }
-                .distinctUntilChangedBy { track -> track?.lyricsSongKey() }
-                .collectLatest { track ->
-                    if (track == null) {
-                        _trackInfoState.value = TrackInfoUiState()
-                        return@collectLatest
-                    }
-                    loadTrackInfo(track)
-                }
-        }
-    }
-
-    private fun observeCurrentTrackComments() {
-        viewModelScope.launch {
-            stateStore.state
-                .map { it.currentTrack }
-                .distinctUntilChangedBy { track -> track?.lyricsSongKey() }
-                .collectLatest {
-                    _commentsUiState.value = TrackCommentsUiState()
-                }
-        }
-    }
-
-    private suspend fun loadTrackInfo(track: Track) {
-        val playCount = withContext(dispatchers.io) {
-            localRepo.getTrackPlayCount(track.id, track.platform.id)
-        }
-        val firstPlayDate = withContext(dispatchers.io) {
-            localRepo.getFirstPlayDate(track.id, track.platform.id)
-        }
-        _trackInfoState.value = TrackInfoUiState(
-            firstPlayDate = firstPlayDate,
-            totalPlayCount = playCount
-        )
-        // Load similar tracks in background
-        val similar = withContext(dispatchers.io) {
-            recommendationRepo.getSimilarTracks(track)
-        }
-        _trackInfoState.update { it.copy(similarTracks = similar) }
-    }
-
-    private suspend fun loadLyrics(track: Track, viewMode: LyricsPanelMode) {
-        val songKey = track.lyricsSongKey()
-        _lyricsUiState.value = LyricsUiState(
-            songKey = songKey,
-            isLoading = true,
-            viewMode = viewMode
-        )
-
-        val cachedLyrics = localRepo.getCachedLyrics(track.platform.id, track.id)
-        if (!cachedLyrics.isNullOrBlank()) {
-            val cachedTranslation = localRepo.getCachedTranslation(track.platform.id, track.id)
-            _lyricsUiState.value = LyricsUiState(
-                songKey = songKey,
-                lyrics = LyricsParser.parseMerged(cachedLyrics, cachedTranslation),
-                viewMode = viewMode
-            )
-            return
-        }
-
-        when (val result = onlineRepo.getLyrics(track.platform, track.id)) {
-            is Result.Success -> {
-                val lyricsResult = result.data
-                if (lyricsResult.lyric.isNotBlank()) {
-                    localRepo.cacheLyrics(track.platform.id, track.id, lyricsResult.lyric)
-                    if (!lyricsResult.translation.isNullOrBlank()) {
-                        localRepo.cacheTranslation(track.platform.id, track.id, lyricsResult.translation)
-                    }
-                }
-                _lyricsUiState.value = LyricsUiState(
-                    songKey = songKey,
-                    lyrics = LyricsParser.parseMerged(lyricsResult.lyric, lyricsResult.translation),
-                    viewMode = viewMode
-                )
-            }
-
-            is Result.Error -> {
-                _lyricsUiState.value = LyricsUiState(
-                    songKey = songKey,
-                    errorMessage = result.error.message.ifBlank { "歌词加载失败" },
-                    viewMode = viewMode
-                )
-            }
-
-            Result.Loading -> Unit
-        }
-    }
-
-    private fun loadComments(track: Track, showSheet: Boolean) {
-        val trackKey = track.lyricsSongKey()
-        viewModelScope.launch {
-            _commentsUiState.value = TrackCommentsUiState(
-                trackKey = trackKey,
-                isVisible = showSheet,
-                isLoading = true
-            )
-
-            when (val result = onlineRepo.getTrackComments(track)) {
-                is Result.Success -> {
-                    val selectedSort = result.data.preferredSort()
-                    _commentsUiState.value = TrackCommentsUiState(
-                        trackKey = trackKey,
-                        isVisible = showSheet,
-                        isLoading = false,
-                        hasLoaded = true,
-                        sourcePlatform = result.data.sourcePlatform,
-                        totalCount = result.data.totalCount,
-                        selectedSort = selectedSort,
-                        hotComments = result.data.hotComments,
-                        latestComments = result.data.latestComments,
-                        recommendedComments = result.data.recommendedComments
-                    )
-                }
-
-                is Result.Error -> {
-                    _commentsUiState.value = TrackCommentsUiState(
-                        trackKey = trackKey,
-                        isVisible = showSheet,
-                        isLoading = false,
-                        hasLoaded = true,
-                        errorMessage = result.error.message.ifBlank { "评论加载失败" }
-                    )
-                }
-
-                Result.Loading -> Unit
-            }
-        }
-    }
-
-    private suspend fun resolveTrackForPlayback(track: Track, quality: String): Track? {
-        when (val result = onlineRepo.resolvePlayableUrl(track.platform, track.id, quality)) {
-            is Result.Success -> return track.copy(playableUrl = result.data, quality = quality)
-            is Result.Error -> {
-                // QQ 榜单偶发数字 id 解析失败，兜底用搜索结果中的 mid 重试一次。
-                if (track.platform != Platform.QQ || !track.id.isDigitsOnly()) return null
-            }
-            Result.Loading -> return null
-        }
-
-        val candidate = findQqMidCandidate(track) ?: return null
-        val retry = onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, quality)
-        if (retry !is Result.Success) return null
-
-        return track.copy(
-            id = candidate.id,
-            title = if (track.title.isBlank()) candidate.title else track.title,
-            artist = if (track.artist.isBlank()) candidate.artist else track.artist,
-            album = if (track.album.isBlank()) candidate.album else track.album,
-            coverUrl = if (track.coverUrl.isBlank()) candidate.coverUrl else track.coverUrl,
-            durationMs = if (track.durationMs <= 0L) candidate.durationMs else track.durationMs,
-            playableUrl = retry.data,
-            quality = quality
-        )
-    }
-
-    private suspend fun findQqMidCandidate(track: Track): Track? {
-        val keyword = listOf(track.title, track.artist)
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-        if (keyword.isBlank()) return null
-
-        val searchResult = onlineRepo.search(
-            platform = Platform.QQ,
-            keyword = keyword,
-            page = 1,
-            pageSize = 20
-        )
-        val candidates = (searchResult as? Result.Success)?.data.orEmpty()
-            .filter { it.id.isNotBlank() && !it.id.isDigitsOnly() }
-        if (candidates.isEmpty()) return null
-
-        return candidates.firstOrNull { candidate ->
-            candidate.title.equals(track.title, ignoreCase = true) &&
-                candidate.artist.isLikelySameArtist(track.artist)
-        } ?: candidates.firstOrNull { candidate ->
-            candidate.title.equals(track.title, ignoreCase = true)
-        } ?: candidates.firstOrNull()
-    }
+    fun showComments() = comments.showComments()
+    fun hideComments() = comments.hideComments()
+    fun retryLoadComments() = comments.retryLoadComments()
+    fun selectCommentSort(sort: TrackCommentSort) = comments.selectCommentSort(sort)
 
     override fun onCleared() {
-        connector.disconnect()
+        playback.unbind()
         super.onCleared()
     }
-}
-
-private fun Track.lyricsSongKey(): String = "${platform.id}:$id"
-private fun com.music.myapplication.domain.repository.TrackCommentsResult.preferredSort(): TrackCommentSort = when {
-    hotComments.isNotEmpty() -> TrackCommentSort.HOT
-    latestComments.isNotEmpty() -> TrackCommentSort.LATEST
-    recommendedComments.isNotEmpty() -> TrackCommentSort.RECOMMENDED
-    else -> TrackCommentSort.HOT
-}
-private fun String.isDigitsOnly(): Boolean = isNotBlank() && all { it.isDigit() }
-private fun String.isLikelySameArtist(other: String): Boolean {
-    if (isBlank() || other.isBlank()) return true
-    val left = lowercase().replace(" ", "")
-    val right = other.lowercase().replace(" ", "")
-    if (left.contains(right) || right.contains(left)) return true
-    val leftTokens = left.split(Regex("[,，/&、]")).map { it.trim() }.filter { it.isNotBlank() }
-    val rightTokens = right.split(Regex("[,，/&、]")).map { it.trim() }.filter { it.isNotBlank() }
-    return leftTokens.any { token -> rightTokens.any { it == token || it.contains(token) || token.contains(it) } }
 }

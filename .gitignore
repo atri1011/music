@@ -16,3 +16,4 @@ local.properties
 .ace-tool/
 /.claude/plan/
 /app/release/
+/.kotlin/
