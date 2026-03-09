@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.music.myapplication.core.database.entity.PlaylistSongEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -30,4 +31,12 @@ interface PlaylistSongsDao {
 
     @Query("SELECT MAX(order_in_playlist) FROM playlist_songs WHERE playlist_id = :playlistId")
     suspend fun getMaxOrder(playlistId: String): Int?
+
+    @Transaction
+    suspend fun replacePlaylistSongs(playlistId: String, entities: List<PlaylistSongEntity>) {
+        deleteAllByPlaylist(playlistId)
+        if (entities.isNotEmpty()) {
+            insertAll(entities)
+        }
+    }
 }

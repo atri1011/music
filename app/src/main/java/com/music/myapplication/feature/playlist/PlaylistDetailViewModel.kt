@@ -8,6 +8,7 @@ import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,8 +18,13 @@ import javax.inject.Inject
 
 data class PlaylistDetailUiState(
     val tracks: List<Track> = emptyList(),
+    val editingTracks: List<Track> = emptyList(),
     val isLoading: Boolean = false,
+    val isSavingEdits: Boolean = false,
+    val isLocalPlaylist: Boolean = false,
+    val isEditMode: Boolean = false,
     val error: String? = null,
+    val editMessage: String? = null,
     val title: String = ""
 )
 
@@ -30,13 +36,36 @@ class PlaylistDetailViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(PlaylistDetailUiState())
     val state: StateFlow<PlaylistDetailUiState> = _state.asStateFlow()
+    private var loadJob: Job? = null
+    private var currentPlaylistId: String? = null
 
     fun loadPlaylist(id: String, platform: String, title: String, source: String = "toplist") {
-        _state.update { it.copy(isLoading = true, error = null, title = title) }
-        viewModelScope.launch {
+        currentPlaylistId = id
+        loadJob?.cancel()
+        val isLocalPlaylist = platform == Platform.LOCAL.id
+        _state.update {
+            it.copy(
+                isLoading = true,
+                isSavingEdits = false,
+                isLocalPlaylist = isLocalPlaylist,
+                isEditMode = false,
+                editingTracks = emptyList(),
+                error = null,
+                editMessage = null,
+                title = title
+            )
+        }
+        loadJob = viewModelScope.launch {
             if (platform == "local") {
                 localRepo.getPlaylistSongs(id).collect { tracks ->
-                    _state.update { it.copy(tracks = tracks, isLoading = false) }
+                    _state.update { current ->
+                        current.copy(
+                            tracks = tracks,
+                            editingTracks = if (current.isEditMode) current.editingTracks else tracks,
+                            isLoading = false,
+                            isLocalPlaylist = true
+                        )
+                    }
                 }
             } else {
                 val p = Platform.fromId(platform)
@@ -45,10 +74,23 @@ class PlaylistDetailViewModel @Inject constructor(
                         when (val result = onlineRepo.getPlaylistDetail(p, id)) {
                             is Result.Success -> {
                                 val enriched = localRepo.applyFavoriteState(result.data)
-                                _state.update { it.copy(tracks = enriched, isLoading = false) }
+                                _state.update {
+                                    it.copy(
+                                        tracks = enriched,
+                                        editingTracks = emptyList(),
+                                        isLoading = false,
+                                        isLocalPlaylist = false
+                                    )
+                                }
                             }
                             is Result.Error -> {
-                                _state.update { it.copy(error = result.error.message, isLoading = false) }
+                                _state.update {
+                                    it.copy(
+                                        error = result.error.message,
+                                        isLoading = false,
+                                        isLocalPlaylist = false
+                                    )
+                                }
                             }
                             is Result.Loading -> {}
                         }
@@ -57,7 +99,14 @@ class PlaylistDetailViewModel @Inject constructor(
                         when (val result = onlineRepo.getToplistDetailFast(p, id)) {
                             is Result.Success -> {
                                 val baseTracks = localRepo.applyFavoriteState(result.data)
-                                _state.update { it.copy(tracks = baseTracks, isLoading = false) }
+                                _state.update {
+                                    it.copy(
+                                        tracks = baseTracks,
+                                        editingTracks = emptyList(),
+                                        isLoading = false,
+                                        isLocalPlaylist = false
+                                    )
+                                }
 
                                 if (p == Platform.QQ || p == Platform.KUWO) {
                                     launch {
@@ -70,11 +119,106 @@ class PlaylistDetailViewModel @Inject constructor(
                                 }
                             }
                             is Result.Error -> {
-                                _state.update { it.copy(error = result.error.message, isLoading = false) }
+                                _state.update {
+                                    it.copy(
+                                        error = result.error.message,
+                                        isLoading = false,
+                                        isLocalPlaylist = false
+                                    )
+                                }
                             }
                             is Result.Loading -> {}
                         }
                     }
+                }
+            }
+        }
+    }
+
+    fun enterEditMode() {
+        _state.update { current ->
+            if (!current.isLocalPlaylist || current.isLoading) {
+                current
+            } else {
+                current.copy(
+                    isEditMode = true,
+                    editingTracks = current.tracks,
+                    error = null,
+                    editMessage = null
+                )
+            }
+        }
+    }
+
+    fun cancelEditMode() {
+        _state.update { current ->
+            current.copy(
+                isEditMode = false,
+                isSavingEdits = false,
+                editingTracks = current.tracks,
+                editMessage = null
+            )
+        }
+    }
+
+    fun removeEditingTrack(track: Track) {
+        _state.update { current ->
+            if (!current.isEditMode) {
+                current
+            } else {
+                current.copy(
+                    editingTracks = current.editingTracks.filterNot {
+                        it.id == track.id && it.platform == track.platform
+                    }
+                )
+            }
+        }
+    }
+
+    fun moveEditingTrack(fromIndex: Int, toIndex: Int) {
+        _state.update { current ->
+            if (!current.isEditMode) return@update current
+            val tracks = current.editingTracks
+            if (
+                fromIndex !in tracks.indices ||
+                toIndex !in tracks.indices ||
+                fromIndex == toIndex
+            ) {
+                return@update current
+            }
+
+            val reordered = tracks.toMutableList()
+            val moved = reordered.removeAt(fromIndex)
+            reordered.add(toIndex, moved)
+            current.copy(editingTracks = reordered)
+        }
+    }
+
+    fun commitPlaylistEdits() {
+        val playlistId = currentPlaylistId ?: return
+        val editingTracks = state.value.editingTracks
+        if (!state.value.isLocalPlaylist || !state.value.isEditMode) return
+
+        viewModelScope.launch {
+            _state.update { it.copy(isSavingEdits = true, editMessage = null) }
+            runCatching {
+                localRepo.replacePlaylistSongs(playlistId, editingTracks)
+            }.onSuccess {
+                _state.update {
+                    it.copy(
+                        tracks = editingTracks,
+                        editingTracks = editingTracks,
+                        isEditMode = false,
+                        isSavingEdits = false,
+                        editMessage = null
+                    )
+                }
+            }.onFailure { throwable ->
+                _state.update {
+                    it.copy(
+                        isSavingEdits = false,
+                        editMessage = throwable.message ?: "保存歌单失败，请稍后再试。"
+                    )
                 }
             }
         }

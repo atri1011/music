@@ -115,12 +115,22 @@ class LocalLibraryRepositoryImpl @Inject constructor(
                 track.toPlaylistSongEntity(playlistId, startOrder + index)
             }
         )
-        val entity = playlistsDao.getById(playlistId) ?: return
-        playlistsDao.update(entity.copy(updatedAt = System.currentTimeMillis()))
+        touchPlaylist(playlistId)
+    }
+
+    override suspend fun replacePlaylistSongs(playlistId: String, tracks: List<Track>) {
+        playlistSongsDao.replacePlaylistSongs(
+            playlistId = playlistId,
+            entities = tracks.mapIndexed { index, track ->
+                track.toPlaylistSongEntity(playlistId, index)
+            }
+        )
+        touchPlaylist(playlistId)
     }
 
     override suspend fun removeFromPlaylist(playlistId: String, songId: String, platform: String) {
         playlistSongsDao.delete(playlistId, songId, platform)
+        touchPlaylist(playlistId)
     }
 
     override suspend fun getCachedLyrics(platform: String, songId: String): String? {
@@ -173,4 +183,9 @@ class LocalLibraryRepositoryImpl @Inject constructor(
         localMusicScanner.sync()
 
     private fun favoriteKeyOf(track: Track): String = "${track.platform.id}:${track.id}"
+
+    private suspend fun touchPlaylist(playlistId: String) {
+        val entity = playlistsDao.getById(playlistId) ?: return
+        playlistsDao.update(entity.copy(updatedAt = System.currentTimeMillis()))
+    }
 }

@@ -37,6 +37,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +59,10 @@ fun MoreScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshCacheUsage()
+    }
 
     Column(
         modifier = modifier
@@ -150,11 +155,29 @@ fun MoreScreen(
                 )
             }
             SettingsItem(
+                icon = Icons.Default.Cached,
+                title = "图片缓存",
+                subtitle = cacheItemSubtitle(state.imageCacheBytes, state.isCacheLoading),
+                onClick = {}
+            )
+            SettingsItem(
+                icon = Icons.Default.MusicNote,
+                title = "歌词缓存",
+                subtitle = cacheItemSubtitle(state.lyricsCacheBytes, state.isCacheLoading),
+                onClick = {}
+            )
+            SettingsItem(
+                icon = Icons.Default.Info,
+                title = "模板缓存",
+                subtitle = cacheItemSubtitle(state.templateCacheBytes, state.isCacheLoading),
+                onClick = {}
+            )
+            SettingsItem(
                 icon = Icons.Default.DeleteOutline,
                 title = "清理缓存",
-                subtitle = "待后续版本实现",
-                onClick = {},
-                enabled = false
+                subtitle = clearCacheSubtitle(state),
+                onClick = viewModel::clearCache,
+                enabled = !state.isCacheLoading && !state.isClearingCache && state.totalCacheBytes > 0L
             )
         }
 
@@ -539,4 +562,28 @@ private fun darkModeLabel(option: DarkModeOption): String = when (option) {
 private fun audioSourceSubtitle(source: AudioSource): String = when (source) {
     AudioSource.TUNEHUB -> "默认音源，支持全平台"
     AudioSource.JKAPI -> "支持网易云/QQ音乐（不支持酷我）"
+}
+
+private fun cacheItemSubtitle(sizeBytes: Long, isLoading: Boolean): String {
+    return if (isLoading) "统计中..." else formatStorageSize(sizeBytes)
+}
+
+private fun clearCacheSubtitle(state: MoreUiState): String = when {
+    state.isClearingCache -> "正在清理 ${formatStorageSize(state.totalCacheBytes)}"
+    state.isCacheLoading -> "统计缓存中..."
+    state.totalCacheBytes <= 0L -> "暂无可清理缓存"
+    else -> "当前共 ${formatStorageSize(state.totalCacheBytes)}"
+}
+
+private fun formatStorageSize(bytes: Long): String {
+    if (bytes <= 0L) return "0 B"
+    val kb = 1024L
+    val mb = kb * 1024
+    val gb = mb * 1024
+    return when {
+        bytes >= gb -> String.format("%.2f GB", bytes.toDouble() / gb)
+        bytes >= mb -> String.format("%.2f MB", bytes.toDouble() / mb)
+        bytes >= kb -> String.format("%.2f KB", bytes.toDouble() / kb)
+        else -> "$bytes B"
+    }
 }

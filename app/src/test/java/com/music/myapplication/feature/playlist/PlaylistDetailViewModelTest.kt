@@ -6,10 +6,13 @@ import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import io.mockk.coEvery
+import io.mockk.coJustRun
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -70,5 +73,87 @@ class PlaylistDetailViewModelTest {
         } finally {
             Dispatchers.resetMain()
         }
+    }
+
+    @Test
+    fun localPlaylistCommitPersistsEditedOrder() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val trackA = Track(id = "1", platform = Platform.LOCAL, title = "A", artist = "AA")
+            val trackB = Track(id = "2", platform = Platform.LOCAL, title = "B", artist = "BB")
+            everyLocalPlaylist(localRepo, listOf(trackA, trackB))
+            coJustRun { localRepo.replacePlaylistSongs("local-playlist", any()) }
+
+            val viewModel = PlaylistDetailViewModel(onlineRepo, localRepo)
+
+            viewModel.loadPlaylist(
+                id = "local-playlist",
+                platform = Platform.LOCAL.id,
+                title = "本地歌单",
+                source = "local"
+            )
+            advanceUntilIdle()
+
+            viewModel.enterEditMode()
+            viewModel.moveEditingTrack(0, 1)
+            viewModel.commitPlaylistEdits()
+            advanceUntilIdle()
+
+            coVerify {
+                localRepo.replacePlaylistSongs(
+                    "local-playlist",
+                    listOf(trackB, trackA)
+                )
+            }
+            assertEquals(listOf(trackB, trackA), viewModel.state.value.tracks)
+            assertEquals(false, viewModel.state.value.isEditMode)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun localPlaylistCommitFailureKeepsEditModeAndShowsInlineMessage() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val trackA = Track(id = "1", platform = Platform.LOCAL, title = "A", artist = "AA")
+            val trackB = Track(id = "2", platform = Platform.LOCAL, title = "B", artist = "BB")
+            everyLocalPlaylist(localRepo, listOf(trackA, trackB))
+            coEvery {
+                localRepo.replacePlaylistSongs("broken-playlist", any())
+            } throws IllegalStateException("保存失败")
+
+            val viewModel = PlaylistDetailViewModel(onlineRepo, localRepo)
+
+            viewModel.loadPlaylist(
+                id = "broken-playlist",
+                platform = Platform.LOCAL.id,
+                title = "本地歌单",
+                source = "local"
+            )
+            advanceUntilIdle()
+
+            viewModel.enterEditMode()
+            viewModel.removeEditingTrack(trackA)
+            viewModel.commitPlaylistEdits()
+            advanceUntilIdle()
+
+            assertTrue(viewModel.state.value.isEditMode)
+            assertEquals("保存失败", viewModel.state.value.editMessage)
+            assertEquals(null, viewModel.state.value.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    private fun everyLocalPlaylist(localRepo: LocalLibraryRepository, tracks: List<Track>) {
+        coEvery { localRepo.replacePlaylistSongs(any(), any()) } returns Unit
+        io.mockk.every { localRepo.getPlaylistSongs(any()) } returns flowOf(tracks)
     }
 }
