@@ -74,6 +74,7 @@ import kotlin.math.abs
 @Composable
 fun LibraryScreen(
     onNavigateToPlaylist: (id: String, name: String) -> Unit,
+    onNavigateToDownloaded: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
     playerViewModel: PlayerViewModel
 ) {
@@ -124,7 +125,9 @@ fun LibraryScreen(
                         }
                     },
                     onImportClick = { viewModel.showImportDialog(true) },
-                    onCreateClick = { viewModel.showCreateDialog(true) }
+                    onCreateClick = { viewModel.showCreateDialog(true) },
+                    onDownloadedClick = onNavigateToDownloaded,
+                    downloadedCount = state.downloadedCount
                 )
             }
 
@@ -324,7 +327,9 @@ private fun StatsAndFavoritesPanel(
     favoritesCoverUrl: String,
     onFavoritesClick: () -> Unit,
     onImportClick: () -> Unit,
-    onCreateClick: () -> Unit
+    onCreateClick: () -> Unit,
+    onDownloadedClick: () -> Unit = {},
+    downloadedCount: Int = 0
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
 
@@ -434,6 +439,53 @@ private fun StatsAndFavoritesPanel(
                     contentDescription = "新建歌单",
                     tint = QQMusicGreen,
                     modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        // ── Divider ──
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .height(0.5.dp)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        )
+
+        // ── Downloaded row ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onDownloadedClick)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Outlined.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "已下载",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
+                )
+                Text(
+                    "$downloadedCount 首歌曲",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -639,7 +691,7 @@ private fun ImportPlaylistDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
-                Platform.entries.forEach { platform ->
+                Platform.onlinePlatforms.forEach { platform ->
                     ImportSourceItem(
                         name = platform.displayName,
                         selected = selectedPlatform == platform,
@@ -778,5 +830,6 @@ private fun importSourcePlaceholder(platform: Platform): String {
         Platform.QQ -> "例如：https://y.qq.com/n/ryqq/playlist/9209322004"
         Platform.NETEASE -> "例如：https://music.163.com/#/playlist?id=19723756"
         Platform.KUWO -> "例如：https://www.kuwo.cn/playlist_detail/2891238463"
+        Platform.LOCAL -> ""
     }
 }

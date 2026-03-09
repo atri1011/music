@@ -231,6 +231,17 @@ class SearchViewModel @Inject constructor(
         }
     }
 
+    private fun isSearchContextStillValid(
+        state: SearchUiState,
+        query: String,
+        platform: Platform,
+        type: SearchType
+    ): Boolean {
+        return state.platform == platform &&
+            state.query.trim() == query.trim() &&
+            state.searchType == type
+    }
+
     private fun performSearch(query: String, platform: Platform, page: Int) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
@@ -244,7 +255,7 @@ class SearchViewModel @Inject constructor(
                 is Result.Success -> {
                     val enriched = localRepo.applyFavoriteState(result.data)
                     _state.update { s ->
-                        if (s.platform != platform || s.query.trim() != query.trim()) return@update s
+                        if (!isSearchContextStillValid(s, query, platform, SearchType.SONG)) return@update s
                         s.copy(
                             tracks = if (page == 1) enriched else s.tracks + enriched,
                             isLoading = false, page = page,
@@ -254,7 +265,7 @@ class SearchViewModel @Inject constructor(
                 }
                 is Result.Error -> {
                     _state.update { s ->
-                        if (s.platform != platform || s.query.trim() != query.trim()) return@update s
+                        if (!isSearchContextStillValid(s, query, platform, SearchType.SONG)) return@update s
                         s.copy(
                             isLoading = false,
                             error = (result.error as AppError).message,
@@ -285,7 +296,7 @@ class SearchViewModel @Inject constructor(
             when (result) {
                 is Result.Success -> {
                     _state.update { s ->
-                        if (s.platform != platform || s.query.trim() != query.trim() || s.searchType != type) return@update s
+                        if (!isSearchContextStillValid(s, query, platform, type)) return@update s
                         s.copy(
                             genericResults = if (page == 1) result.data else s.genericResults + result.data,
                             isLoading = false, page = page,
@@ -295,7 +306,7 @@ class SearchViewModel @Inject constructor(
                 }
                 is Result.Error -> {
                     _state.update { s ->
-                        if (s.platform != platform || s.query.trim() != query.trim() || s.searchType != type) return@update s
+                        if (!isSearchContextStillValid(s, query, platform, type)) return@update s
                         s.copy(
                             isLoading = false,
                             error = (result.error as AppError).message,

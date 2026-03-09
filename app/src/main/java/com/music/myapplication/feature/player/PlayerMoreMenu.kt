@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -29,7 +30,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-data class PlayerMenuItem(
+data class MenuActionItem(
     val icon: ImageVector,
     val label: String,
     val enabled: Boolean = true,
@@ -49,7 +50,7 @@ fun PlayerMoreMenu(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val menuItems = listOf(
-        PlayerMenuItem(
+        MenuActionItem(
             icon = Icons.Default.Bedtime,
             label = "定时关闭",
             onClick = {
@@ -57,7 +58,7 @@ fun PlayerMoreMenu(
                 onSleepTimer()
             }
         ),
-        PlayerMenuItem(
+        MenuActionItem(
             icon = Icons.AutoMirrored.Filled.QueueMusic,
             label = "播放队列",
             onClick = {
@@ -65,25 +66,25 @@ fun PlayerMoreMenu(
                 onQueueManager()
             }
         ),
-        PlayerMenuItem(
+        MenuActionItem(
             icon = Icons.Default.GraphicEq,
             label = "音质选择",
             enabled = false,
             disabledHint = "待后续能力接入"
         ) {},
-        PlayerMenuItem(
+        MenuActionItem(
             icon = Icons.AutoMirrored.Filled.PlaylistAdd,
             label = "添加到歌单",
             enabled = false,
             disabledHint = "待后续能力接入"
         ) {},
-        PlayerMenuItem(
+        MenuActionItem(
             icon = Icons.Default.PersonSearch,
             label = "查看歌手",
             enabled = false,
             disabledHint = "待后续能力接入"
         ) {},
-        PlayerMenuItem(
+        MenuActionItem(
             icon = Icons.Default.Share,
             label = "分享",
             onClick = {
@@ -117,8 +118,60 @@ fun PlayerMoreMenu(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MenuRow(item: PlayerMenuItem) {
+fun TrackMoreMenu(
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+    onShare: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val menuItems = listOf(
+        MenuActionItem(
+            icon = Icons.Outlined.Download,
+            label = "下载",
+            onClick = {
+                onDismiss()
+                onDownload()
+            }
+        ),
+        MenuActionItem(
+            icon = Icons.Default.Share,
+            label = "分享",
+            onClick = {
+                onDismiss()
+                onShare()
+            }
+        )
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = modifier
+    ) {
+        Text(
+            text = "歌曲操作",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 24.dp)
+        ) {
+            menuItems.forEach { item ->
+                MenuRow(item)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuRow(item: MenuActionItem) {
     val alpha = if (item.enabled) 1f else 0.4f
 
     TextButton(

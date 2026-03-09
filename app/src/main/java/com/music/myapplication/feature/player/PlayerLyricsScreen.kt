@@ -756,6 +756,7 @@ private fun buildCommentSourceLine(state: TrackCommentsUiState): String {
         Platform.NETEASE -> "来自网易云"
         Platform.QQ -> "来自QQ音乐"
         Platform.KUWO -> "来自酷我"
+        Platform.LOCAL -> "本地"
         null -> ""
     }
 }

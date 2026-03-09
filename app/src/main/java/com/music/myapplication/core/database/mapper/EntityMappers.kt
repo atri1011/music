@@ -64,3 +64,43 @@ fun Track.toPlaylistSongEntity(playlistId: String, order: Int): PlaylistSongEnti
         coverUrl = coverUrl,
         durationMs = durationMs
     )
+
+fun DownloadedTrackEntity.toTrack(): Track = Track(
+    id = songId,
+    platform = Platform.fromId(platform),
+    title = title,
+    artist = artist,
+    album = album,
+    coverUrl = coverUrl,
+    durationMs = durationMs,
+    playableUrl = filePath,
+    quality = quality
+)
+
+fun Track.toDownloadedTrackEntity(
+    filePath: String = "",
+    fileSizeBytes: Long = 0L,
+    status: String = DownloadedTrackEntity.DownloadStatus.DOWNLOADING
+): DownloadedTrackEntity = DownloadedTrackEntity(
+    songId = id,
+    platform = platform.id,
+    title = title,
+    artist = artist,
+    album = album,
+    coverUrl = coverUrl,
+    durationMs = durationMs,
+    filePath = filePath,
+    fileSizeBytes = fileSizeBytes,
+    quality = quality,
+    downloadStatus = status
+)
+
+fun LocalTrackEntity.toTrack(): Track = Track(
+    id = mediaStoreId.toString(),
+    platform = Platform.LOCAL,
+    title = title,
+    artist = artist,
+    album = album,
+    durationMs = durationMs,
+    playableUrl = filePath
+)

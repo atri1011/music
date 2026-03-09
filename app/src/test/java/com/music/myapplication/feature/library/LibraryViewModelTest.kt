@@ -1,6 +1,7 @@
 package com.music.myapplication.feature.library
 
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
@@ -27,6 +28,12 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelTest {
+
+    private fun createDownloadManagerMock(): DownloadManager {
+        val dm = mockk<DownloadManager>()
+        every { dm.getDownloadedCount() } returns flowOf(0)
+        return dm
+    }
 
     @Test
     fun importPlaylistCreatesLocalPlaylistWithRemoteTracks() = runTest {
@@ -55,7 +62,7 @@ class LibraryViewModelTest {
             coEvery { localRepo.createPlaylist("夜曲合集") } returns Playlist(id = "local-1", name = "夜曲合集")
             coEvery { localRepo.addAllToPlaylist("local-1", importedTracks) } returns Unit
 
-            val viewModel = LibraryViewModel(localRepo, onlineRepo)
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
             viewModel.showImportDialog(true)
             viewModel.importPlaylist(
                 platform = Platform.NETEASE,
@@ -104,7 +111,7 @@ class LibraryViewModelTest {
             coEvery { localRepo.createPlaylist("QQ收藏") } returns Playlist(id = "local-qq-1", name = "QQ收藏")
             coEvery { localRepo.addAllToPlaylist("local-qq-1", importedTracks) } returns Unit
 
-            val viewModel = LibraryViewModel(localRepo, onlineRepo)
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
             viewModel.showImportDialog(true)
             viewModel.importPlaylist(
                 platform = Platform.QQ,
@@ -138,7 +145,7 @@ class LibraryViewModelTest {
             every { localRepo.getTotalPlayCount() } returns flowOf(0)
             every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
 
-            val viewModel = LibraryViewModel(localRepo, onlineRepo)
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
             viewModel.showImportDialog(true)
             viewModel.importPlaylist(
                 platform = Platform.QQ,

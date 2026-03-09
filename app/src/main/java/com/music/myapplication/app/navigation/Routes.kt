@@ -8,6 +8,7 @@ sealed interface Routes {
     @Serializable data object Library : Routes
     @Serializable data object More : Routes
     @Serializable data object PlayerLyrics : Routes
+    @Serializable data object Downloaded : Routes
     @Serializable data class PlaylistDetail(
         val id: String,
         val platform: String,

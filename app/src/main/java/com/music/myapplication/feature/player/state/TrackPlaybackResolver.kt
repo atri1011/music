@@ -1,17 +1,23 @@
 package com.music.myapplication.feature.player.state
 
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.data.repository.PlaybackSourceRouter
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import javax.inject.Inject
+import java.io.File
+import java.net.URI
 
 class TrackPlaybackResolver @Inject constructor(
     private val onlineRepo: OnlineMusicRepository,
-    private val sourceRouter: PlaybackSourceRouter
+    private val sourceRouter: PlaybackSourceRouter,
+    private val downloadManager: DownloadManager
 ) {
     suspend fun resolve(track: Track, quality: String): Result<Track> {
+        resolveLocalPlayableTrack(track)?.let { return Result.Success(it) }
+
         when (val result = sourceRouter.resolve(track, quality)) {
             is Result.Success -> {
                 return Result.Success(track.copy(playableUrl = result.data, quality = quality))
@@ -43,6 +49,16 @@ class TrackPlaybackResolver @Inject constructor(
         }
     }
 
+    private suspend fun resolveLocalPlayableTrack(track: Track): Track? {
+        track.playableUrl.toLocalPlayableUriOrNull()?.let { localUri ->
+            return track.copy(playableUrl = localUri)
+        }
+
+        val downloadedPath = downloadManager.getDownloadedFilePath(track.id, track.platform.id)
+        val localUri = downloadedPath?.toLocalPlayableUriOrNull() ?: return null
+        return track.copy(playableUrl = localUri)
+    }
+
     private suspend fun findQqMidCandidate(track: Track): Track? {
         val keyword = listOf(track.title, track.artist)
             .map { it.trim() }
@@ -66,6 +82,28 @@ class TrackPlaybackResolver @Inject constructor(
         } ?: candidates.firstOrNull { candidate ->
             candidate.title.equals(track.title, ignoreCase = true)
         } ?: candidates.firstOrNull()
+    }
+}
+
+private fun String.toLocalPlayableUriOrNull(): String? {
+    val value = trim()
+    if (value.isBlank()) return null
+
+    return when {
+        value.startsWith("http://", ignoreCase = true) ||
+            value.startsWith("https://", ignoreCase = true) -> null
+
+        value.startsWith("content://", ignoreCase = true) -> value
+
+        value.startsWith("file://", ignoreCase = true) -> {
+            val path = runCatching { URI.create(value).path }.getOrNull().orEmpty()
+            if (path.isNotBlank() && File(path).exists()) value else null
+        }
+
+        else -> {
+            val file = File(value)
+            if (file.exists()) file.toURI().toString() else null
+        }
     }
 }
 

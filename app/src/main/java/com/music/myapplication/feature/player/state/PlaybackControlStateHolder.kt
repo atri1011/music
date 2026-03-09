@@ -3,8 +3,10 @@ package com.music.myapplication.feature.player.state
 import com.music.myapplication.core.common.DispatchersProvider
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.PlaybackState
+import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.feature.player.MiniPlayerUiState
@@ -37,6 +39,7 @@ class PlaybackControlStateHolder @Inject constructor(
     private val localRepo: LocalLibraryRepository,
     private val preferences: PlayerPreferences,
     private val resolver: TrackPlaybackResolver,
+    private val downloadManager: DownloadManager,
     private val dispatchers: DispatchersProvider
 ) {
     private lateinit var scope: CoroutineScope
@@ -231,6 +234,27 @@ class PlaybackControlStateHolder @Inject constructor(
         }
     }
 
+    fun downloadTrack(track: Track) {
+        if (track.platform == Platform.LOCAL) {
+            publishTrackActionError("本地文件无需下载")
+            return
+        }
+
+        resolveTrackAction(track) { playable ->
+            if (!playable.playableUrl.isRemoteHttpUrl()) {
+                publishTrackActionError("该歌曲已下载，可直接播放")
+                return@resolveTrackAction
+            }
+
+            val enqueued = withContext(dispatchers.io) {
+                downloadManager.enqueueDownload(playable, playable.playableUrl, playable.quality)
+            }
+            if (!enqueued) {
+                publishTrackActionError("该歌曲已在下载列表中")
+            }
+        }
+    }
+
     fun setQuality(quality: String) {
         scope.launch {
             preferences.setQuality(quality)
@@ -308,3 +332,6 @@ class PlaybackControlStateHolder @Inject constructor(
 }
 
 internal fun Track.songKey(): String = "${platform.id}:$id"
+
+private fun String.isRemoteHttpUrl(): Boolean =
+    startsWith("http://", ignoreCase = true) || startsWith("https://", ignoreCase = true)

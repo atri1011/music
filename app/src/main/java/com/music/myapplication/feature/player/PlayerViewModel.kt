@@ -117,6 +117,7 @@ class PlayerViewModel @Inject constructor(
     fun skipPrevious() = playback.skipPrevious()
     fun togglePlaybackMode() = playback.togglePlaybackMode()
     fun toggleFavorite() = playback.toggleFavorite()
+    fun downloadTrack(track: Track) = playback.downloadTrack(track)
     fun setQuality(quality: String) = playback.setQuality(quality)
 
     fun setLyricsPanelMode(mode: LyricsPanelMode) = lyrics.setLyricsPanelMode(mode)

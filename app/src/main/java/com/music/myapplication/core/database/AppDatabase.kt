@@ -11,9 +11,11 @@ import com.music.myapplication.core.database.entity.*
         RecentPlayEntity::class,
         PlaylistEntity::class,
         PlaylistSongEntity::class,
-        LyricsCacheEntity::class
+        LyricsCacheEntity::class,
+        DownloadedTrackEntity::class,
+        LocalTrackEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -22,4 +24,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun playlistsDao(): PlaylistsDao
     abstract fun playlistSongsDao(): PlaylistSongsDao
     abstract fun lyricsCacheDao(): LyricsCacheDao
+    abstract fun downloadedTracksDao(): DownloadedTracksDao
+    abstract fun localTracksDao(): LocalTracksDao
 }

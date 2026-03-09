@@ -3,6 +3,7 @@ package com.music.myapplication.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
@@ -24,6 +25,7 @@ data class LibraryUiState(
     val topPlayedTracks: List<Pair<Track, Int>> = emptyList(),
     val totalPlayCount: Int = 0,
     val totalListenDurationMs: Long = 0L,
+    val downloadedCount: Int = 0,
     val showCreateDialog: Boolean = false,
     val showImportDialog: Boolean = false,
     val isImporting: Boolean = false,
@@ -39,16 +41,18 @@ data class ImportedPlaylistDestination(
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val localRepo: LocalLibraryRepository,
-    private val onlineRepo: OnlineMusicRepository
+    private val onlineRepo: OnlineMusicRepository,
+    private val downloadManager: DownloadManager
 ) : ViewModel() {
 
     private val _uiExtras = MutableStateFlow(LibraryExtras())
 
     private val statsFlow = combine(
         localRepo.getTotalPlayCount(),
-        localRepo.getTotalListenDurationMs()
-    ) { count, duration ->
-        StatsBundle(count, duration)
+        localRepo.getTotalListenDurationMs(),
+        downloadManager.getDownloadedCount()
+    ) { count, duration, dlCount ->
+        StatsBundle(count, duration, dlCount)
     }
 
     val state: StateFlow<LibraryUiState> = combine(
@@ -64,6 +68,7 @@ class LibraryViewModel @Inject constructor(
             topPlayedTracks = topPlayed,
             totalPlayCount = stats.totalPlayCount,
             totalListenDurationMs = stats.totalListenDurationMs,
+            downloadedCount = stats.downloadedCount,
             showCreateDialog = extras.showCreateDialog,
             showImportDialog = extras.showImportDialog,
             isImporting = extras.isImporting,
@@ -201,7 +206,8 @@ class LibraryViewModel @Inject constructor(
 
     private data class StatsBundle(
         val totalPlayCount: Int,
-        val totalListenDurationMs: Long
+        val totalListenDurationMs: Long,
+        val downloadedCount: Int
     )
 }
 
@@ -241,6 +247,7 @@ internal fun extractImportedPlaylistId(platform: Platform, rawInput: String): St
             Regex("""playlist(?:_detail)?/(\d+)""", RegexOption.IGNORE_CASE),
             Regex("""[?&](?:id|pid)=(\d+)""", RegexOption.IGNORE_CASE)
         )
+        Platform.LOCAL -> return null
     }
 
     patterns.forEach { regex ->

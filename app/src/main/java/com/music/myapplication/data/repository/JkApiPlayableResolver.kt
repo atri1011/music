@@ -20,6 +20,7 @@ class JkApiPlayableResolver @Inject constructor(
             Platform.NETEASE -> "wy"
             Platform.QQ -> "qq"
             Platform.KUWO -> return Result.Error(AppError.Api(message = "JKAPI 不支持酷我音乐"))
+            Platform.LOCAL -> return Result.Error(AppError.Api(message = "本地文件无需解析"))
         }
 
         val apiKey = preferences.currentJkapiKey

@@ -17,7 +17,7 @@ fun PlatformFilterChips(
     selectedPlatform: Platform,
     onPlatformSelected: (Platform) -> Unit,
     modifier: Modifier = Modifier,
-    platforms: List<Platform> = Platform.entries.toList()
+    platforms: List<Platform> = Platform.onlinePlatforms
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),

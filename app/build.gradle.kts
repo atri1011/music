@@ -96,6 +96,10 @@ dependencies {
     // Palette
     implementation(libs.palette.ktx)
 
+    // WorkManager
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.work.hilt)
+
     // Metrics / JankStats
     implementation(libs.androidx.metrics.performance)
 

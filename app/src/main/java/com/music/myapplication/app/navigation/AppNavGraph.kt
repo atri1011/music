@@ -16,6 +16,7 @@ import androidx.navigation.toRoute
 import com.music.myapplication.feature.album.AlbumDetailScreen
 import com.music.myapplication.feature.artist.ArtistDetailScreen
 import com.music.myapplication.feature.home.HomeScreen
+import com.music.myapplication.feature.library.DownloadedScreen
 import com.music.myapplication.feature.library.LibraryScreen
 import com.music.myapplication.feature.more.MoreScreen
 import com.music.myapplication.feature.playlist.PlaylistDetailScreen
@@ -70,11 +71,41 @@ fun AppNavGraph(
                 onNavigateToPlaylist = { id, name ->
                     navController.navigate(Routes.PlaylistDetail(id, "local", name, "local"))
                 },
+                onNavigateToDownloaded = {
+                    navController.navigate(Routes.Downloaded)
+                },
                 playerViewModel = playerViewModel
             )
         }
         composable<Routes.More> {
             MoreScreen()
+        }
+
+        // Downloaded: slide in from right
+        composable<Routes.Downloaded>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            DownloadedScreen(
+                onBack = { navController.popBackStack() },
+                playerViewModel = playerViewModel
+            )
         }
 
         // Detail page: slide in from right

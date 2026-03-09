@@ -5,6 +5,8 @@ import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.datastore.SearchHistoryStore
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.SearchResultItem
+import com.music.myapplication.domain.model.SearchType
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -12,11 +14,13 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -27,6 +31,64 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModelTest {
+
+    @Test
+    fun switchingFromSongToAlbumIgnoresStaleSongResponse() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val preferences = mockk<PlayerPreferences>()
+            every { preferences.platform } returns flow { emit(Platform.NETEASE.id) }
+            coEvery { preferences.setPlatform(any()) } returns Unit
+            coEvery { onlineRepo.getHotSearchKeywords(any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.getSearchSuggestions(any(), any()) } returns Result.Success(emptyList())
+            coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
+            coEvery { onlineRepo.search(Platform.NETEASE, "夜曲", 1, any()) } coAnswers {
+                try {
+                    delay(100)
+                } catch (_: CancellationException) {
+                }
+                Result.Success(listOf(testTrack(Platform.NETEASE, "song-1")))
+            }
+            coEvery { onlineRepo.searchAlbums(Platform.NETEASE, "夜曲", 1, any()) } returns Result.Success(
+                listOf(
+                    SearchResultItem(
+                        id = "album-1",
+                        title = "叶惠美",
+                        subtitle = "周杰伦",
+                        platform = Platform.NETEASE,
+                        type = SearchType.ALBUM,
+                        trackCount = 11
+                    )
+                )
+            )
+            coEvery { onlineRepo.searchArtists(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.searchPlaylists(any(), any(), any(), any()) } returns Result.Success(emptyList())
+
+            val historyStore = mockk<SearchHistoryStore>(relaxed = true)
+            every { historyStore.history } returns flow { emit(emptyList<String>()) }
+
+            val viewModel = SearchViewModel(onlineRepo, localRepo, preferences, historyStore)
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("夜曲")
+            viewModel.submitSearch()
+            advanceTimeBy(1)
+            viewModel.onSearchTypeChange(SearchType.ALBUM)
+            advanceUntilIdle()
+
+            assertEquals(SearchType.ALBUM, viewModel.state.value.searchType)
+            assertTrue(viewModel.state.value.tracks.isEmpty())
+            assertEquals(1, viewModel.state.value.genericResults.size)
+            assertEquals("album-1", viewModel.state.value.genericResults.first().id)
+            coVerify(exactly = 1) { onlineRepo.search(Platform.NETEASE, "夜曲", 1, any()) }
+            coVerify(exactly = 1) { onlineRepo.searchAlbums(Platform.NETEASE, "夜曲", 1, any()) }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
 
     @Test
     fun switchBackToPlatformRestoresCachedHotKeywordsWhenReloadFails() = runTest {

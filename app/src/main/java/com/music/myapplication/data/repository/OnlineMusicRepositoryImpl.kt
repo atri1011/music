@@ -390,6 +390,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             Platform.NETEASE -> enrichNeteaseCoverIfNeeded(tracks)
             Platform.QQ -> enrichQqCoverIfNeeded(tracks)
             Platform.KUWO -> enrichKuwoCoverIfNeeded(tracks)
+            Platform.LOCAL -> tracks
         }
     }
 
@@ -1184,6 +1185,8 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                     }
                     extractKuwoSearchResults(response, type)
                 }
+
+                Platform.LOCAL -> emptyList()
             }
             Result.Success(result)
         } catch (e: Exception) {

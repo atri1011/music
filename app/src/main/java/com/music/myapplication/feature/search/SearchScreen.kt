@@ -50,7 +50,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,11 +70,13 @@ import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.SearchResultItem
 import com.music.myapplication.domain.model.SearchType
 import com.music.myapplication.domain.model.SuggestionType
+import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.components.PlatformFilterChips
 import com.music.myapplication.feature.components.ShimmerMediaListItem
+import com.music.myapplication.feature.player.TrackMoreMenu
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.glassSurface
 
@@ -89,6 +93,7 @@ fun SearchScreen(
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
 
     val resultCount = if (state.searchType == SearchType.SONG) state.tracks.size else state.genericResults.size
 
@@ -357,7 +362,7 @@ fun SearchScreen(
                                         playerViewModel.playTrack(track, state.tracks, index)
                                     },
                                     onMoreClick = {
-                                        ShareUtils.shareTrack(context, track)
+                                        selectedTrackForMenu = track
                                     },
                                     onArtistClick = if (track.platform != Platform.KUWO) {
                                         onNavigateToArtist?.let { nav ->
@@ -408,6 +413,14 @@ fun SearchScreen(
                 }
             }
         }
+    }
+
+    selectedTrackForMenu?.let { track ->
+        TrackMoreMenu(
+            onDismiss = { selectedTrackForMenu = null },
+            onDownload = { playerViewModel.downloadTrack(track) },
+            onShare = { ShareUtils.shareTrack(context, track) }
+        )
     }
 }
 

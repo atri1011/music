@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.music.myapplication.domain.model.Track
 
 @Composable
@@ -31,6 +32,8 @@ fun MediaListItem(
     onClick: () -> Unit,
     onMoreClick: (() -> Unit)? = null,
     onArtistClick: ((Track) -> Unit)? = null,
+    moreIcon: ImageVector = Icons.Default.MoreVert,
+    moreContentDescription: String = "更多",
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -95,8 +98,8 @@ fun MediaListItem(
         if (onMoreClick != null) {
             IconButton(onClick = onMoreClick) {
                 Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "更多",
+                    imageVector = moreIcon,
+                    contentDescription = moreContentDescription,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
