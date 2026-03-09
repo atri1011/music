@@ -3,6 +3,7 @@ package com.music.myapplication.core.datastore
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -52,6 +53,7 @@ class PlayerPreferences @Inject constructor(
         val QUALITY = stringPreferencesKey("quality")
         val PLATFORM = stringPreferencesKey("platform")
         val API_KEY = stringPreferencesKey("api_key")
+        val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
         val AUDIO_SOURCE = stringPreferencesKey("audio_source")
         val JKAPI_KEY = stringPreferencesKey("jkapi_key")
         val DARK_MODE = stringPreferencesKey("dark_mode")
@@ -77,6 +79,10 @@ class PlayerPreferences @Inject constructor(
 
     val platform: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.PLATFORM] ?: "netease"
+    }
+
+    val playbackSpeed: Flow<Float> = context.dataStore.data.map { prefs ->
+        (prefs[Keys.PLAYBACK_SPEED] ?: 1.0f).coerceIn(0.5f, 2.0f)
     }
 
     val audioSource: Flow<AudioSource> = context.dataStore.data.map { prefs ->
@@ -149,6 +155,10 @@ class PlayerPreferences @Inject constructor(
 
     suspend fun setAudioSource(source: AudioSource) {
         context.dataStore.edit { it[Keys.AUDIO_SOURCE] = source.id }
+    }
+
+    suspend fun setPlaybackSpeed(speed: Float) {
+        context.dataStore.edit { it[Keys.PLAYBACK_SPEED] = speed.coerceIn(0.5f, 2.0f) }
     }
 
     suspend fun setApiKey(apiKey: String) {

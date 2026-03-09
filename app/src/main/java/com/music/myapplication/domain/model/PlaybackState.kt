@@ -8,5 +8,6 @@ data class PlaybackState(
     val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
     val queue: List<Track> = emptyList(),
     val currentIndex: Int = -1,
-    val quality: String = "128k"
+    val quality: String = "128k",
+    val speed: Float = 1.0f
 )

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +46,9 @@ fun PlayerMoreMenu(
     onSleepTimer: () -> Unit,
     onQueueManager: () -> Unit,
     onShare: () -> Unit,
+    onSpeedPicker: () -> Unit,
+    onEqualizer: () -> Unit,
+    currentSpeed: Float = 1.0f,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -59,6 +63,14 @@ fun PlayerMoreMenu(
             }
         ),
         MenuActionItem(
+            icon = Icons.Default.Speed,
+            label = if (currentSpeed != 1.0f) "倍速 (${currentSpeed}x)" else "倍速",
+            onClick = {
+                onDismiss()
+                onSpeedPicker()
+            }
+        ),
+        MenuActionItem(
             icon = Icons.AutoMirrored.Filled.QueueMusic,
             label = "播放队列",
             onClick = {
@@ -68,10 +80,12 @@ fun PlayerMoreMenu(
         ),
         MenuActionItem(
             icon = Icons.Default.GraphicEq,
-            label = "音质选择",
-            enabled = false,
-            disabledHint = "待后续能力接入"
-        ) {},
+            label = "均衡器",
+            onClick = {
+                onDismiss()
+                onEqualizer()
+            }
+        ),
         MenuActionItem(
             icon = Icons.AutoMirrored.Filled.PlaylistAdd,
             label = "添加到歌单",

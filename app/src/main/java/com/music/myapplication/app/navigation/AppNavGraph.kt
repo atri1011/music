@@ -21,6 +21,7 @@ import com.music.myapplication.feature.library.LibraryScreen
 import com.music.myapplication.feature.library.LocalMusicScreen
 import com.music.myapplication.feature.more.MoreScreen
 import com.music.myapplication.feature.playlist.PlaylistDetailScreen
+import com.music.myapplication.feature.player.EqualizerScreen
 import com.music.myapplication.feature.player.PlayerLyricsScreen
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.feature.search.SearchScreen
@@ -224,6 +225,32 @@ fun AppNavGraph(
             )
         }
 
+        // Equalizer: slide in from right
+        composable<Routes.Equalizer>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            EqualizerScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         // Player: slide up from bottom
         composable<Routes.PlayerLyrics>(
             enterTransition = {
@@ -252,6 +279,9 @@ fun AppNavGraph(
                     navController.navigate(
                         Routes.AlbumDetail(albumId, platformId, albumName, artistName, coverUrl)
                     )
+                },
+                onNavigateToEqualizer = {
+                    navController.navigate(Routes.Equalizer)
                 }
             )
         }

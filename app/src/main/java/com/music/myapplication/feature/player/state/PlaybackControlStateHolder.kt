@@ -88,7 +88,7 @@ class PlaybackControlStateHolder @Inject constructor(
             .map { s ->
                 PlayerStaticUiState(
                     s.currentTrack, s.isPlaying, s.playbackMode,
-                    s.queue, s.currentIndex, s.quality
+                    s.queue, s.currentIndex, s.quality, s.speed
                 )
             }
             .distinctUntilChanged()
@@ -96,7 +96,7 @@ class PlaybackControlStateHolder @Inject constructor(
                 scope, SharingStarted.Eagerly,
                 PlayerStaticUiState(
                     initial.currentTrack, initial.isPlaying, initial.playbackMode,
-                    initial.queue, initial.currentIndex, initial.quality
+                    initial.queue, initial.currentIndex, initial.quality, initial.speed
                 )
             )
 
@@ -140,6 +140,11 @@ class PlaybackControlStateHolder @Inject constructor(
             preferences.quality.collect { quality ->
                 currentQuality = quality
                 stateStore.updateQuality(quality)
+            }
+        }
+        scope.launch {
+            preferences.playbackSpeed.collect { speed ->
+                connector.setPlaybackSpeed(speed)
             }
         }
     }
@@ -303,6 +308,13 @@ class PlaybackControlStateHolder @Inject constructor(
         scope.launch {
             preferences.setQuality(quality)
             stateStore.updateQuality(quality)
+        }
+    }
+
+    fun setSpeed(speed: Float) {
+        val clamped = speed.coerceIn(0.5f, 2.0f)
+        scope.launch {
+            preferences.setPlaybackSpeed(clamped)
         }
     }
 

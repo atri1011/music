@@ -4,6 +4,7 @@ import com.music.myapplication.core.database.dao.*
 import com.music.myapplication.core.database.entity.LyricsCacheEntity
 import com.music.myapplication.core.database.entity.PlaylistEntity
 import com.music.myapplication.core.database.mapper.*
+import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.core.local.LocalMusicScanner
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
@@ -26,7 +27,9 @@ class LocalLibraryRepositoryImpl @Inject constructor(
 ) : LocalLibraryRepository {
 
     override fun getFavorites(): Flow<List<Track>> =
-        favoritesDao.getAll().map { list -> list.map { it.toTrack() } }
+        favoritesDao.getAll().map { list ->
+            rehydrateLocalPlayableUrls(list.map { it.toTrack() })
+        }
 
     override suspend fun isFavorite(songId: String, platform: String): Boolean =
         favoritesDao.isFavorite(songId, platform)
@@ -54,7 +57,9 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     }
 
     override fun getRecentPlays(limit: Int): Flow<List<Track>> =
-        recentPlaysDao.getRecent(limit).map { list -> list.map { it.toTrack() } }
+        recentPlaysDao.getRecent(limit).map { list ->
+            rehydrateLocalPlayableUrls(list.map { it.toTrack() })
+        }
 
     override suspend fun recordRecentPlay(track: Track, positionMs: Long) {
         recentPlaysDao.insertOrUpdate(
@@ -101,7 +106,9 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     }
 
     override fun getPlaylistSongs(playlistId: String): Flow<List<Track>> =
-        playlistSongsDao.getSongsByPlaylist(playlistId).map { list -> list.map { it.toTrack() } }
+        playlistSongsDao.getSongsByPlaylist(playlistId).map { list ->
+            rehydrateLocalPlayableUrls(list.map { it.toTrack() })
+        }
 
     override suspend fun addToPlaylist(playlistId: String, track: Track) {
         addAllToPlaylist(playlistId, listOf(track))
@@ -160,11 +167,12 @@ class LocalLibraryRepositoryImpl @Inject constructor(
         recentPlaysDao.getFirstPlayDate(songId, platform)
 
     override suspend fun getRandomRecentTrack(): Track? =
-        recentPlaysDao.getRandomTrack()?.toTrack()
+        recentPlaysDao.getRandomTrack()?.toTrack()?.let { rehydrateLocalPlayableUrl(it) }
 
     override fun getTopPlayedTracks(limit: Int): Flow<List<Pair<Track, Int>>> =
         recentPlaysDao.getTopPlayed(limit).map { list ->
-            list.map { entity -> entity.toTrack() to entity.playCount }
+            val tracks = rehydrateLocalPlayableUrls(list.map { entity -> entity.toTrack() })
+            tracks.mapIndexed { index, track -> track to list[index].playCount }
         }
 
     override fun getTotalPlayCount(): Flow<Int> =
@@ -183,6 +191,39 @@ class LocalLibraryRepositoryImpl @Inject constructor(
         localMusicScanner.sync()
 
     private fun favoriteKeyOf(track: Track): String = "${track.platform.id}:${track.id}"
+
+    private suspend fun rehydrateLocalPlayableUrls(tracks: List<Track>): List<Track> {
+        if (tracks.isEmpty()) return tracks
+
+        val localTrackIds = tracks.asSequence()
+            .filter { it.platform == Platform.LOCAL && it.playableUrl.isBlank() }
+            .mapNotNull { it.id.toLongOrNull() }
+            .distinct()
+            .toList()
+        if (localTrackIds.isEmpty()) return tracks
+
+        val localTracksById = localTracksDao.getByIds(localTrackIds)
+            .associateBy { it.mediaStoreId.toString() }
+
+        if (localTracksById.isEmpty()) return tracks
+
+        return tracks.map { track ->
+            if (track.platform != Platform.LOCAL || track.playableUrl.isNotBlank()) {
+                track
+            } else {
+                localTracksById[track.id]?.let { localTrack ->
+                    track.copy(
+                        album = track.album.ifBlank { localTrack.album },
+                        durationMs = track.durationMs.takeIf { it > 0L } ?: localTrack.durationMs,
+                        playableUrl = localTrack.filePath
+                    )
+                } ?: track
+            }
+        }
+    }
+
+    private suspend fun rehydrateLocalPlayableUrl(track: Track): Track =
+        rehydrateLocalPlayableUrls(listOf(track)).first()
 
     private suspend fun touchPlaylist(playlistId: String) {
         val entity = playlistsDao.getById(playlistId) ?: return

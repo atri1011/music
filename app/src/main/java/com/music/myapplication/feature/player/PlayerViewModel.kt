@@ -31,7 +31,8 @@ data class PlayerStaticUiState(
     val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
     val queue: List<Track> = emptyList(),
     val currentIndex: Int = -1,
-    val quality: String = "128k"
+    val quality: String = "128k",
+    val speed: Float = 1.0f
 )
 
 data class PlaybackProgressUiState(
@@ -119,6 +120,7 @@ class PlayerViewModel @Inject constructor(
     fun toggleFavorite() = playback.toggleFavorite()
     fun downloadTrack(track: Track) = playback.downloadTrack(track)
     fun setQuality(quality: String) = playback.setQuality(quality)
+    fun setSpeed(speed: Float) = playback.setSpeed(speed)
 
     fun setLyricsPanelMode(mode: LyricsPanelMode) = lyrics.setLyricsPanelMode(mode)
     fun showLyricsPanel() = lyrics.showLyricsPanel()

@@ -87,6 +87,15 @@ class MediaControllerConnector @Inject constructor(
         stateStore.updatePosition(positionMs)
     }
 
+    fun setPlaybackSpeed(speed: Float) {
+        val clamped = speed.coerceIn(0.5f, 2.0f)
+        withController {
+            if (availableCommands.contains(Player.COMMAND_SET_SPEED_AND_PITCH)) {
+                setPlaybackSpeed(clamped)
+            }
+        }
+    }
+
     fun skipToNext(track: Track?) {
         if (track == null) return
         loadTrack(track = track, queue = queueManager.queue, index = queueManager.currentIndex, autoPlay = true)

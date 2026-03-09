@@ -91,6 +91,7 @@ fun PlayerLyricsScreen(
     playerViewModel: PlayerViewModel,
     onBack: () -> Unit,
     onNavigateToAlbum: ((String, String, String, String, String) -> Unit)? = null,
+    onNavigateToEqualizer: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val staticState by playerViewModel.staticUiState.collectAsStateWithLifecycle()
@@ -103,6 +104,7 @@ fun PlayerLyricsScreen(
     var hasLoadedTrack by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showSleepTimerPicker by remember { mutableStateOf(false) }
+    var showSpeedPicker by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -317,7 +319,10 @@ fun PlayerLyricsScreen(
                 onDismiss = { showMoreMenu = false },
                 onSleepTimer = { showSleepTimerPicker = true },
                 onQueueManager = { showQueueSheet = true },
-                onShare = { ShareUtils.shareTrack(context, currentTrack) }
+                onShare = { ShareUtils.shareTrack(context, currentTrack) },
+                onSpeedPicker = { showSpeedPicker = true },
+                onEqualizer = { onNavigateToEqualizer?.invoke() },
+                currentSpeed = staticState.speed
             )
         }
 
@@ -325,6 +330,14 @@ fun PlayerLyricsScreen(
             SleepTimerPickerSheet(
                 playerViewModel = playerViewModel,
                 onDismiss = { showSleepTimerPicker = false }
+            )
+        }
+
+        if (showSpeedPicker) {
+            SpeedPickerSheet(
+                currentSpeed = staticState.speed,
+                onSpeedSelected = { playerViewModel.setSpeed(it) },
+                onDismiss = { showSpeedPicker = false }
             )
         }
 

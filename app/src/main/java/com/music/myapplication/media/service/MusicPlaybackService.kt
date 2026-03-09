@@ -5,12 +5,15 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.music.myapplication.core.datastore.EqualizerPreferences
 import com.music.myapplication.feature.player.state.SleepTimerStateHolder
+import com.music.myapplication.media.equalizer.EqualizerManager
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.state.PlaybackStateStore
@@ -21,6 +24,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,10 +37,17 @@ class MusicPlaybackService : MediaSessionService() {
     @Inject lateinit var queueManager: QueueManager
     @Inject lateinit var modeManager: PlaybackModeManager
     @Inject lateinit var sleepTimer: SleepTimerStateHolder
+    @Inject lateinit var equalizerManager: EqualizerManager
+    @Inject lateinit var equalizerPreferences: EqualizerPreferences
 
     private var mediaSession: MediaSession? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var positionUpdateJob: Job? = null
+    private var equalizerSettingsJob: Job? = null
+
+    private var cachedEqEnabled = false
+    private var cachedEqPresetIndex = 0
+    private var cachedEqCustomBands: Map<Int, Int> = emptyMap()
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -53,6 +64,10 @@ class MusicPlaybackService : MediaSessionService() {
         exoPlayer.addListener(playerListener)
 
         mediaSession = MediaSession.Builder(this, exoPlayer).build()
+
+        stateStore.updateSpeed(exoPlayer.playbackParameters.speed)
+        bindEqualizerToAudioSession(exoPlayer.audioSessionId)
+        observeEqualizerSettings()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
@@ -66,9 +81,13 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        positionUpdateJob?.cancel()
+        equalizerSettingsJob?.cancel()
+        equalizerManager.release()
         mediaSession?.run {
             player.removeListener(playerListener)
-            player.release()
+            player.stop()
+            player.clearMediaItems()
             release()
         }
         mediaSession = null
@@ -91,6 +110,43 @@ class MusicPlaybackService : MediaSessionService() {
         positionUpdateJob = null
     }
 
+    private fun bindEqualizerToAudioSession(audioSessionId: Int) {
+        if (audioSessionId == C.AUDIO_SESSION_ID_UNSET || audioSessionId <= 0) {
+            equalizerManager.release()
+            return
+        }
+        equalizerManager.bindToAudioSession(audioSessionId)
+        applyEqualizerSettings()
+    }
+
+    private fun observeEqualizerSettings() {
+        equalizerSettingsJob?.cancel()
+        equalizerSettingsJob = serviceScope.launch {
+            combine(
+                equalizerPreferences.enabled,
+                equalizerPreferences.presetIndex,
+                equalizerPreferences.customBandLevels
+            ) { enabled, presetIndex, customBands ->
+                Triple(enabled, presetIndex, customBands)
+            }.collect { (enabled, presetIndex, customBands) ->
+                cachedEqEnabled = enabled
+                cachedEqPresetIndex = presetIndex
+                cachedEqCustomBands = customBands
+                applyEqualizerSettings()
+            }
+        }
+    }
+
+    private fun applyEqualizerSettings() {
+        equalizerManager.setEnabled(cachedEqEnabled)
+        if (!cachedEqEnabled) return
+        if (cachedEqPresetIndex >= 0) {
+            equalizerManager.setPreset(cachedEqPresetIndex)
+        } else {
+            equalizerManager.setBandLevels(cachedEqCustomBands)
+        }
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             stateStore.updatePlaying(isPlaying)
@@ -105,6 +161,7 @@ class MusicPlaybackService : MediaSessionService() {
             when (playbackState) {
                 Player.STATE_READY -> {
                     stateStore.updateDuration(exoPlayer.duration.coerceAtLeast(0))
+                    bindEqualizerToAudioSession(exoPlayer.audioSessionId)
                 }
                 Player.STATE_ENDED -> {
                     if (sleepTimer.shouldPauseAfterCurrentTrack()) {
@@ -125,6 +182,14 @@ class MusicPlaybackService : MediaSessionService() {
                 }
                 else -> {}
             }
+        }
+
+        override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+            stateStore.updateSpeed(playbackParameters.speed)
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            bindEqualizerToAudioSession(audioSessionId)
         }
     }
 }

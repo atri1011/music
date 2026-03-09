@@ -45,5 +45,9 @@ class PlaybackStateStore @Inject constructor() {
         if (current.quality == quality) current else current.copy(quality = quality)
     }
 
+    fun updateSpeed(speed: Float) = _state.update { current ->
+        if (current.speed == speed) current else current.copy(speed = speed)
+    }
+
     fun reset() = _state.update { PlaybackState() }
 }
