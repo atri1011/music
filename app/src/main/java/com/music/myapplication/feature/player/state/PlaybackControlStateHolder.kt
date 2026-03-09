@@ -1,6 +1,7 @@
 package com.music.myapplication.feature.player.state
 
 import com.music.myapplication.core.common.DispatchersProvider
+import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.PlaybackState
@@ -11,6 +12,7 @@ import com.music.myapplication.feature.player.PlaybackProgressUiState
 import com.music.myapplication.feature.player.PlayerStaticUiState
 import com.music.myapplication.feature.player.TrackActionUiState
 import com.music.myapplication.media.player.PlaybackModeManager
+import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.MediaControllerConnector
 import com.music.myapplication.media.state.PlaybackStateStore
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -30,6 +33,7 @@ class PlaybackControlStateHolder @Inject constructor(
     private val stateStore: PlaybackStateStore,
     private val connector: MediaControllerConnector,
     private val modeManager: PlaybackModeManager,
+    private val queueManager: QueueManager,
     private val localRepo: LocalLibraryRepository,
     private val preferences: PlayerPreferences,
     private val resolver: TrackPlaybackResolver,
@@ -39,6 +43,7 @@ class PlaybackControlStateHolder @Inject constructor(
 
     private val _trackActionState = MutableStateFlow(TrackActionUiState())
     val trackActionState: StateFlow<TrackActionUiState> = _trackActionState.asStateFlow()
+    private var nextTrackActionErrorId = 0L
 
     @Volatile
     private var currentQuality: String = "128k"
@@ -123,67 +128,93 @@ class PlaybackControlStateHolder @Inject constructor(
     }
 
     fun playTrack(track: Track, queue: List<Track>, index: Int) {
-        scope.launch {
-            if (_trackActionState.value.isResolving) return@launch
-            _trackActionState.value = TrackActionUiState(
-                isResolving = true,
-                resolvingTrackKey = track.songKey()
-            )
-            try {
-                val playable = withContext(dispatchers.io) {
-                    resolver.resolve(track, currentQuality)
-                } ?: return@launch
-                connector.playTrack(playable, queue, index)
+        resolveTrackAction(track) { playable ->
+            connector.playTrack(playable, queue, index)
+            withContext(dispatchers.io) { localRepo.recordRecentPlay(playable) }
+        }
+    }
+
+    fun loadQueueTrack(track: Track, queue: List<Track>, index: Int, autoPlay: Boolean) {
+        resolveTrackAction(
+            track = track,
+            onFailure = {
+                syncQueueState(currentTrack = track, clearPreparedTrack = true)
+            }
+        ) { playable ->
+            connector.loadTrack(playable, queue, index, autoPlay)
+            if (autoPlay) {
                 withContext(dispatchers.io) { localRepo.recordRecentPlay(playable) }
-            } finally {
-                _trackActionState.value = TrackActionUiState()
             }
         }
     }
 
     fun togglePlayPause() {
-        if (playbackState.value.isPlaying) connector.pause() else connector.play()
+        if (playbackState.value.isPlaying) {
+            connector.pause()
+            return
+        }
+
+        val currentTrack = playbackState.value.currentTrack ?: run {
+            connector.play()
+            return
+        }
+        val queue = queueManager.queue.ifEmpty { playbackState.value.queue }
+        val targetQueue = if (queue.isEmpty()) listOf(currentTrack) else queue
+        val targetIndex = when {
+            queueManager.currentIndex >= 0 -> queueManager.currentIndex
+            playbackState.value.currentIndex >= 0 -> playbackState.value.currentIndex
+            else -> 0
+        }.coerceIn(0, targetQueue.lastIndex)
+
+        if (!connector.hasMediaItem()) {
+            playTrack(currentTrack, targetQueue, targetIndex)
+            return
+        }
+
+        connector.play()
     }
+
+    fun pausePlayback() {
+        if (playbackState.value.isPlaying) {
+            connector.pause()
+        }
+    }
+
+    fun stopPlayback() = connector.stop()
 
     fun seekTo(positionMs: Long) = connector.seekTo(positionMs)
 
     fun skipNext() {
-        scope.launch {
-            if (_trackActionState.value.isResolving) return@launch
-            val next = modeManager.getNextTrack() ?: return@launch
-            _trackActionState.value = TrackActionUiState(
-                isResolving = true,
-                resolvingTrackKey = next.songKey()
-            )
-            try {
-                val playable = withContext(dispatchers.io) {
-                    resolver.resolve(next, currentQuality)
-                } ?: return@launch
-                connector.skipToNext(playable)
-                withContext(dispatchers.io) { localRepo.recordRecentPlay(playable) }
-            } finally {
-                _trackActionState.value = TrackActionUiState()
+        val previousIndex = queueManager.currentIndex
+        val nextTrack = modeManager.getNextTrack() ?: return
+        resolveTrackAction(
+            track = nextTrack,
+            onFailure = {
+                if (previousIndex >= 0) {
+                    queueManager.moveToIndex(previousIndex)
+                }
+                refreshQueueState()
             }
+        ) { playable ->
+            connector.skipToNext(playable)
+            withContext(dispatchers.io) { localRepo.recordRecentPlay(playable) }
         }
     }
 
     fun skipPrevious() {
-        scope.launch {
-            if (_trackActionState.value.isResolving) return@launch
-            val prev = modeManager.getPreviousTrack() ?: return@launch
-            _trackActionState.value = TrackActionUiState(
-                isResolving = true,
-                resolvingTrackKey = prev.songKey()
-            )
-            try {
-                val playable = withContext(dispatchers.io) {
-                    resolver.resolve(prev, currentQuality)
-                } ?: return@launch
-                connector.skipToPrevious(playable)
-                withContext(dispatchers.io) { localRepo.recordRecentPlay(playable) }
-            } finally {
-                _trackActionState.value = TrackActionUiState()
+        val previousIndex = queueManager.currentIndex
+        val previousTrack = modeManager.getPreviousTrack() ?: return
+        resolveTrackAction(
+            track = previousTrack,
+            onFailure = {
+                if (previousIndex >= 0) {
+                    queueManager.moveToIndex(previousIndex)
+                }
+                refreshQueueState()
             }
+        ) { playable ->
+            connector.skipToPrevious(playable)
+            withContext(dispatchers.io) { localRepo.recordRecentPlay(playable) }
         }
     }
 
@@ -204,6 +235,74 @@ class PlaybackControlStateHolder @Inject constructor(
         scope.launch {
             preferences.setQuality(quality)
             stateStore.updateQuality(quality)
+        }
+    }
+
+    fun clearTrackActionError() {
+        _trackActionState.update { current ->
+            if (current.errorMessage.isNullOrBlank()) current else current.copy(errorMessage = null)
+        }
+    }
+
+    fun refreshQueueState() {
+        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+    }
+
+    fun syncQueueState(currentTrack: Track? = playbackState.value.currentTrack, clearPreparedTrack: Boolean = false) {
+        if (clearPreparedTrack) {
+            connector.clearPlayback()
+        }
+        stateStore.updateTrack(currentTrack)
+        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+    }
+
+    private fun resolveTrackAction(
+        track: Track,
+        onFailure: () -> Unit = {},
+        onResolved: suspend (Track) -> Unit
+    ) {
+        scope.launch {
+            if (_trackActionState.value.isResolving) return@launch
+            _trackActionState.update {
+                it.copy(
+                    isResolving = true,
+                    resolvingTrackKey = track.songKey()
+                )
+            }
+            try {
+                when (val result = withContext(dispatchers.io) {
+                    resolver.resolve(track, currentQuality)
+                }) {
+                    is Result.Success -> {
+                        clearTrackActionError()
+                        onResolved(result.data)
+                    }
+                    is Result.Error -> {
+                        onFailure()
+                        publishTrackActionError(
+                            result.error.message.ifBlank { "解析播放地址失败，请稍后重试" }
+                        )
+                    }
+                    Result.Loading -> Unit
+                }
+            } finally {
+                _trackActionState.update {
+                    it.copy(
+                        isResolving = false,
+                        resolvingTrackKey = null
+                    )
+                }
+            }
+        }
+    }
+
+    private fun publishTrackActionError(message: String) {
+        nextTrackActionErrorId += 1L
+        _trackActionState.update {
+            it.copy(
+                errorMessage = message,
+                errorId = nextTrackActionErrorId
+            )
         }
     }
 }

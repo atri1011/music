@@ -11,7 +11,10 @@ import com.music.myapplication.domain.repository.TrackCommentSort
 import com.music.myapplication.feature.player.state.CommentsStateHolder
 import com.music.myapplication.feature.player.state.LyricsStateHolder
 import com.music.myapplication.feature.player.state.PlaybackControlStateHolder
+import com.music.myapplication.feature.player.state.SleepTimerState
+import com.music.myapplication.feature.player.state.SleepTimerStateHolder
 import com.music.myapplication.feature.player.state.TrackInfoStateHolder
+import com.music.myapplication.media.player.QueueManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -38,7 +41,9 @@ data class PlaybackProgressUiState(
 
 data class TrackActionUiState(
     val isResolving: Boolean = false,
-    val resolvingTrackKey: String? = null
+    val resolvingTrackKey: String? = null,
+    val errorMessage: String? = null,
+    val errorId: Long = 0L
 )
 
 data class TrackInfoUiState(
@@ -78,7 +83,9 @@ class PlayerViewModel @Inject constructor(
     private val playback: PlaybackControlStateHolder,
     private val lyrics: LyricsStateHolder,
     private val comments: CommentsStateHolder,
-    private val trackInfo: TrackInfoStateHolder
+    private val trackInfo: TrackInfoStateHolder,
+    private val sleepTimer: SleepTimerStateHolder,
+    private val queueManager: QueueManager
 ) : ViewModel() {
 
     val playbackState: StateFlow<PlaybackState> get() = playback.playbackState
@@ -92,11 +99,15 @@ class PlayerViewModel @Inject constructor(
     val commentsUiState: StateFlow<TrackCommentsUiState> get() = comments.uiState
     val trackInfoState: StateFlow<TrackInfoUiState> get() = trackInfo.uiState
 
+    val sleepTimerState: StateFlow<SleepTimerState> get() = sleepTimer.state
+
     init {
         playback.bind(viewModelScope)
         lyrics.bind(viewModelScope)
         comments.bind(viewModelScope)
         trackInfo.bind(viewModelScope)
+        sleepTimer.bind(viewModelScope)
+        sleepTimer.onTimerExpired = playback::pausePlayback
     }
 
     fun playTrack(track: Track, queue: List<Track>, index: Int) = playback.playTrack(track, queue, index)
@@ -110,14 +121,61 @@ class PlayerViewModel @Inject constructor(
 
     fun setLyricsPanelMode(mode: LyricsPanelMode) = lyrics.setLyricsPanelMode(mode)
     fun showLyricsPanel() = lyrics.showLyricsPanel()
+    fun clearTrackActionError() = playback.clearTrackActionError()
 
     fun showComments() = comments.showComments()
     fun hideComments() = comments.hideComments()
     fun retryLoadComments() = comments.retryLoadComments()
     fun selectCommentSort(sort: TrackCommentSort) = comments.selectCommentSort(sort)
 
+    // Sleep timer
+    fun startSleepTimer(minutes: Int) = sleepTimer.startCountdown(minutes)
+    fun startSleepTimerAfterTrack() = sleepTimer.startAfterCurrentTrack()
+    fun cancelSleepTimer() = sleepTimer.cancel()
+
+    // Queue management
+    fun moveQueueItem(from: Int, to: Int) {
+        queueManager.moveItem(from, to)
+        playback.refreshQueueState()
+    }
+
+    fun removeFromQueue(index: Int) {
+        val wasCurrent = index == queueManager.currentIndex
+        val shouldAutoPlay = playbackState.value.isPlaying
+        queueManager.removeFromQueue(index)
+        when {
+            queueManager.isEmpty -> playback.stopPlayback()
+            wasCurrent -> {
+                val replacement = queueManager.currentTrack ?: run {
+                    playback.refreshQueueState()
+                    return
+                }
+                playback.syncQueueState(currentTrack = replacement)
+                playback.loadQueueTrack(
+                    track = replacement,
+                    queue = queueManager.queue,
+                    index = queueManager.currentIndex,
+                    autoPlay = shouldAutoPlay
+                )
+            }
+            else -> playback.refreshQueueState()
+        }
+    }
+
+    fun clearQueue() {
+        if (queueManager.isEmpty) return
+        queueManager.clear()
+        playback.stopPlayback()
+    }
+
+    fun playQueueItem(index: Int) {
+        val track = queueManager.queue.getOrNull(index) ?: return
+        playback.playTrack(track, queueManager.queue, index)
+    }
+
     override fun onCleared() {
         playback.unbind()
+        sleepTimer.cancel()
         super.onCleared()
     }
 }

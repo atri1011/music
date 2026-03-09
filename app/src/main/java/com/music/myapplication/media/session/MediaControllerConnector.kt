@@ -37,17 +37,30 @@ class MediaControllerConnector @Inject constructor(
         controllerFuture = null
     }
 
-    fun playTrack(track: Track, queue: List<Track>, index: Int) {
+    fun hasMediaItem(): Boolean {
+        val future = controllerFuture ?: return false
+        if (!future.isDone) return false
+        return runCatching { future.get().mediaItemCount > 0 }.getOrDefault(false)
+    }
+
+    fun loadTrack(track: Track, queue: List<Track>, index: Int, autoPlay: Boolean) {
         queueManager.setQueue(queue, index)
         stateStore.updateTrack(track)
-        stateStore.updateQueue(queue, index)
+        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
         if (track.playableUrl.isNotBlank()) {
             withController {
                 setMediaItem(MediaItem.fromUri(track.playableUrl))
                 prepare()
-                play()
+                if (autoPlay) play() else pause()
             }
         }
+        if (!autoPlay) {
+            stateStore.updatePlaying(false)
+        }
+    }
+
+    fun playTrack(track: Track, queue: List<Track>, index: Int) {
+        loadTrack(track = track, queue = queue, index = index, autoPlay = true)
     }
 
     fun play() = withController { play() }
@@ -60,28 +73,22 @@ class MediaControllerConnector @Inject constructor(
 
     fun skipToNext(track: Track?) {
         if (track == null) return
-        stateStore.updateTrack(track)
-        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
-        if (track.playableUrl.isNotBlank()) {
-            withController {
-                setMediaItem(MediaItem.fromUri(track.playableUrl))
-                prepare()
-                play()
-            }
-        }
+        loadTrack(track = track, queue = queueManager.queue, index = queueManager.currentIndex, autoPlay = true)
     }
 
     fun skipToPrevious(track: Track?) {
         if (track == null) return
-        stateStore.updateTrack(track)
-        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
-        if (track.playableUrl.isNotBlank()) {
-            withController {
-                setMediaItem(MediaItem.fromUri(track.playableUrl))
-                prepare()
-                play()
-            }
+        loadTrack(track = track, queue = queueManager.queue, index = queueManager.currentIndex, autoPlay = true)
+    }
+
+    fun clearPlayback() {
+        withController {
+            stop()
+            clearMediaItems()
         }
+        stateStore.updatePlaying(false)
+        stateStore.updatePosition(0L)
+        stateStore.updateDuration(0L)
     }
 
     fun stop() {

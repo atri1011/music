@@ -4,6 +4,7 @@ import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
 import com.music.myapplication.core.network.retrofit.TuneHubApi
+import com.music.myapplication.data.remote.dto.ParseResponseDto
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.ToplistInfo
@@ -832,5 +833,33 @@ class OnlineMusicRepositoryImplTest {
         assertEquals(1, data.latestComments.size)
         assertTrue(data.hotComments.isEmpty())
         assertTrue(data.recommendedComments.isEmpty())
+    }
+    @Test
+    fun getLyrics_returnsEmptyLyricsAsSuccess() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        coEvery {
+            api.parse(any(), any())
+        } returns ParseResponseDto(
+            code = 0,
+            data = json.parseToJsonElement(
+                """
+                {
+                  "lyric": "",
+                  "trans": "副歌重复一遍"
+                }
+                """.trimIndent()
+            )
+        )
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getLyrics(Platform.QQ, "track-1")
+
+        val data = (result as Result.Success).data
+        assertEquals("", data.lyric)
+        assertEquals("副歌重复一遍", data.translation)
     }
 }

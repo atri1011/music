@@ -10,6 +10,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.music.myapplication.feature.player.state.SleepTimerStateHolder
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.state.PlaybackStateStore
@@ -31,6 +32,7 @@ class MusicPlaybackService : MediaSessionService() {
     @Inject lateinit var stateStore: PlaybackStateStore
     @Inject lateinit var queueManager: QueueManager
     @Inject lateinit var modeManager: PlaybackModeManager
+    @Inject lateinit var sleepTimer: SleepTimerStateHolder
 
     private var mediaSession: MediaSession? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -105,6 +107,11 @@ class MusicPlaybackService : MediaSessionService() {
                     stateStore.updateDuration(exoPlayer.duration.coerceAtLeast(0))
                 }
                 Player.STATE_ENDED -> {
+                    if (sleepTimer.shouldPauseAfterCurrentTrack()) {
+                        sleepTimer.handleCurrentTrackEnded()
+                        stateStore.updatePlaying(false)
+                        return
+                    }
                     val next = modeManager.getNextTrack()
                     if (next != null && next.playableUrl.isNotBlank()) {
                         exoPlayer.setMediaItem(MediaItem.fromUri(next.playableUrl))

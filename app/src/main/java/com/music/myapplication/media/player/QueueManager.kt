@@ -17,7 +17,11 @@ class QueueManager @Inject constructor() {
     fun setQueue(tracks: List<Track>, startIndex: Int = 0) {
         _queue.clear()
         _queue.addAll(tracks)
-        currentIndex = startIndex.coerceIn(0, _queue.lastIndex.coerceAtLeast(0))
+        currentIndex = if (_queue.isEmpty()) {
+            -1
+        } else {
+            startIndex.coerceIn(0, _queue.lastIndex)
+        }
     }
 
     fun hasNext(): Boolean = currentIndex < _queue.lastIndex
@@ -49,9 +53,23 @@ class QueueManager @Inject constructor() {
     fun removeFromQueue(index: Int) {
         if (index !in _queue.indices) return
         _queue.removeAt(index)
-        if (index < currentIndex) currentIndex--
-        else if (index == currentIndex && currentIndex >= _queue.size) {
-            currentIndex = (_queue.size - 1).coerceAtLeast(0)
+        currentIndex = when {
+            _queue.isEmpty() -> -1
+            index < currentIndex -> currentIndex - 1
+            index == currentIndex -> currentIndex.coerceAtMost(_queue.lastIndex)
+            else -> currentIndex
+        }
+    }
+
+    fun moveItem(from: Int, to: Int) {
+        if (from !in _queue.indices || to !in _queue.indices || from == to) return
+        val item = _queue.removeAt(from)
+        _queue.add(to, item)
+        currentIndex = when {
+            currentIndex == from -> to
+            from < to && currentIndex in (from + 1)..to -> currentIndex - 1
+            from > to && currentIndex in to until from -> currentIndex + 1
+            else -> currentIndex
         }
     }
 

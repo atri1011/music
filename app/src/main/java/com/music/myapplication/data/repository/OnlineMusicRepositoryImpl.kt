@@ -252,11 +252,8 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                 )
             } else {
                 val lyric = extractLyric(response.data)
-                if (lyric.isNullOrBlank()) Result.Error(AppError.Parse(message = "歌词为空"))
-                else {
-                    val translation = extractTranslation(response.data)
-                    Result.Success(LyricsResult(lyric = lyric, translation = translation))
-                }
+                val translation = extractTranslation(response.data)
+                Result.Success(LyricsResult(lyric = lyric.orEmpty(), translation = translation))
             }
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
