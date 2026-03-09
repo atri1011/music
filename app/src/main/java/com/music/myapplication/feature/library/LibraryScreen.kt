@@ -3,6 +3,7 @@ package com.music.myapplication.feature.library
 import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,12 +21,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -68,8 +70,18 @@ import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.ui.theme.LocalGlassColors
 import com.music.myapplication.ui.theme.QQMusicGreen
 import kotlin.math.abs
+
+// Medal colors for top-3 rankings
+private val RankGold = Color(0xFFFFD700)
+private val RankSilver = Color(0xFFB0B8C4)
+private val RankBronze = Color(0xFFCD7F32)
+
+// Accent colors for quick-access tiles
+private val FavoriteAccent = Color(0xFFFF6B8A)
+private val LocalAccent = Color(0xFF5B8DEF)
 
 @Composable
 fun LibraryScreen(
@@ -111,13 +123,18 @@ fun LibraryScreen(
                 TopCoversHeader(topTracks = state.topPlayedTracks)
             }
 
-            // Unified stats + favorites panel
+            // Stats capsules (listening time + play count)
             item {
-                StatsAndFavoritesPanel(
+                StatsCapsules(
                     totalPlayCount = state.totalPlayCount,
-                    totalListenDurationMs = state.totalListenDurationMs,
+                    totalListenDurationMs = state.totalListenDurationMs
+                )
+            }
+
+            // Quick access grid (Favorites / Downloaded / Local)
+            item {
+                QuickAccessGrid(
                     favoritesCount = state.favorites.size,
-                    favoritesCoverUrl = state.favorites.firstOrNull()?.coverUrl.orEmpty(),
                     onFavoritesClick = {
                         if (state.favorites.isNotEmpty()) {
                             playerViewModel.playTrack(
@@ -125,12 +142,18 @@ fun LibraryScreen(
                             )
                         }
                     },
-                    onImportClick = { viewModel.showImportDialog(true) },
-                    onCreateClick = { viewModel.showCreateDialog(true) },
-                    onDownloadedClick = onNavigateToDownloaded,
                     downloadedCount = state.downloadedCount,
-                    onLocalMusicClick = onNavigateToLocalMusic,
-                    localTrackCount = state.localTrackCount
+                    onDownloadedClick = onNavigateToDownloaded,
+                    localTrackCount = state.localTrackCount,
+                    onLocalMusicClick = onNavigateToLocalMusic
+                )
+            }
+
+            // Playlist section header with import/create actions
+            item {
+                PlaylistSectionHeader(
+                    onImportClick = { viewModel.showImportDialog(true) },
+                    onCreateClick = { viewModel.showCreateDialog(true) }
                 )
             }
 
@@ -152,14 +175,8 @@ fun LibraryScreen(
             // Play ranking section
             if (state.topPlayedTracks.isNotEmpty()) {
                 item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "播放排行 Top ${state.topPlayedTracks.size}",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    RankingSectionHeader(count = state.topPlayedTracks.size)
                 }
 
                 val rankedTracks = state.topPlayedTracks
@@ -235,7 +252,7 @@ private fun LibraryBlurredBackground(coverUrl: String) {
             contentScale = ContentScale.Crop
         )
 
-        // Gradient: semi-transparent at top → fully opaque theme bg at bottom
+        // Gradient: semi-transparent at top -> fully opaque theme bg at bottom
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -320,258 +337,234 @@ private fun TopCoversHeader(topTracks: List<Pair<Track, Int>>) {
     }
 }
 
-// ── Stats + Favorites Panel ─────────────────────────────────────────────────────
+// ── Stats Capsules ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun StatsAndFavoritesPanel(
+private fun StatsCapsules(
     totalPlayCount: Int,
-    totalListenDurationMs: Long,
-    favoritesCount: Int,
-    favoritesCoverUrl: String,
-    onFavoritesClick: () -> Unit,
-    onImportClick: () -> Unit,
-    onCreateClick: () -> Unit,
-    onDownloadedClick: () -> Unit = {},
-    downloadedCount: Int = 0,
-    onLocalMusicClick: () -> Unit = {},
-    localTrackCount: Int = 0
+    totalListenDurationMs: Long
 ) {
-    val surfaceColor = MaterialTheme.colorScheme.surface
-
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(surfaceColor.copy(alpha = 0.38f))
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ── Stats row ──
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CompactStatItem(
-                icon = Icons.Outlined.Timer,
-                value = formatDuration(totalListenDurationMs),
-                label = "聆听时长",
-                modifier = Modifier.weight(1f)
-            )
-
-            Box(
-                modifier = Modifier
-                    .width(0.5.dp)
-                    .height(28.dp)
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
-            )
-
-            CompactStatItem(
-                icon = Icons.Filled.PlayArrow,
-                value = "$totalPlayCount",
-                label = "播放次数",
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        // ── Divider ──
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .height(0.5.dp)
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        StatCapsule(
+            icon = Icons.Outlined.Timer,
+            value = formatDuration(totalListenDurationMs),
+            label = "聆听时长",
+            modifier = Modifier.weight(1f)
         )
-
-        // ── Favorites row ──
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onFavoritesClick)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (favoritesCoverUrl.isNotEmpty()) {
-                CoverImage(
-                    url = favoritesCoverUrl,
-                    contentDescription = "我的收藏",
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Outlined.FavoriteBorder,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "我的收藏",
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
-                )
-                Text(
-                    "$favoritesCount 首歌曲",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            IconButton(onClick = onImportClick, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    Icons.Outlined.CloudDownload,
-                    contentDescription = "导入歌单",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            IconButton(onClick = onCreateClick, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    Icons.Filled.AddCircle,
-                    contentDescription = "新建歌单",
-                    tint = QQMusicGreen,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        // ── Divider ──
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .height(0.5.dp)
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        StatCapsule(
+            icon = Icons.Filled.PlayArrow,
+            value = "$totalPlayCount",
+            label = "播放次数",
+            modifier = Modifier.weight(1f)
         )
-
-        // ── Downloaded row ──
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onDownloadedClick)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Outlined.MusicNote,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "已下载",
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
-                )
-                Text(
-                    "$downloadedCount 首歌曲",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .height(0.5.dp)
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onLocalMusicClick)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.QueueMusic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "本地音乐",
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
-                )
-                Text(
-                    "$localTrackCount 首歌曲",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     }
 }
 
 @Composable
-private fun CompactStatItem(
+private fun StatCapsule(
     icon: ImageVector,
     value: String,
     label: String,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+    val glassColors = LocalGlassColors.current
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(glassColors.surface)
+            .border(0.5.dp, glassColors.border, RoundedCornerShape(16.dp))
+            .padding(vertical = 16.dp, horizontal = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = QQMusicGreen,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(22.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// ── Quick Access Grid ───────────────────────────────────────────────────────────
+
+@Composable
+private fun QuickAccessGrid(
+    favoritesCount: Int,
+    onFavoritesClick: () -> Unit,
+    downloadedCount: Int,
+    onDownloadedClick: () -> Unit,
+    localTrackCount: Int,
+    onLocalMusicClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        QuickAccessTile(
+            icon = Icons.Outlined.FavoriteBorder,
+            title = "收藏",
+            count = favoritesCount,
+            onClick = onFavoritesClick,
+            accentColor = FavoriteAccent,
+            modifier = Modifier.weight(1f)
+        )
+        QuickAccessTile(
+            icon = Icons.Outlined.MusicNote,
+            title = "下载",
+            count = downloadedCount,
+            onClick = onDownloadedClick,
+            accentColor = QQMusicGreen,
+            modifier = Modifier.weight(1f)
+        )
+        QuickAccessTile(
+            icon = Icons.AutoMirrored.Outlined.QueueMusic,
+            title = "本地",
+            count = localTrackCount,
+            onClick = onLocalMusicClick,
+            accentColor = LocalAccent,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun QuickAccessTile(
+    icon: ImageVector,
+    title: String,
+    count: Int,
+    onClick: () -> Unit,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val glassColors = LocalGlassColors.current
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(glassColors.surface)
+            .border(0.5.dp, glassColors.border, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 16.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(accentColor.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(20.dp)
             )
         }
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = "$count 首",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// ── Section Headers ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun PlaylistSectionHeader(
+    onImportClick: () -> Unit,
+    onCreateClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(QQMusicGreen)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = "我的歌单",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onImportClick, modifier = Modifier.size(36.dp)) {
+            Icon(
+                Icons.Outlined.CloudDownload,
+                contentDescription = "导入歌单",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        IconButton(onClick = onCreateClick, modifier = Modifier.size(36.dp)) {
+            Icon(
+                Icons.Filled.AddCircle,
+                contentDescription = "新建歌单",
+                tint = QQMusicGreen,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RankingSectionHeader(count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(QQMusicGreen)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = "播放排行",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "Top $count",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+            color = QQMusicGreen
+        )
     }
 }
 
@@ -597,14 +590,14 @@ private fun PlaylistRow(
                 url = coverUrl,
                 contentDescription = name,
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(10.dp))
             )
         } else {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
@@ -616,7 +609,7 @@ private fun PlaylistRow(
                 )
             }
         }
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = name,
@@ -624,18 +617,19 @@ private fun PlaylistRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "${trackCount}首歌",
+                text = "$trackCount 首歌曲",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        IconButton(onClick = onDelete) {
+        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
             Icon(
                 Icons.Default.Delete,
                 contentDescription = "删除",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.size(20.dp)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.size(18.dp)
             )
         }
     }
@@ -650,24 +644,47 @@ private fun RankedTrackItem(
     playCount: Int,
     onClick: () -> Unit
 ) {
+    val isTopThree = rank <= 3
+    val rankColor = when (rank) {
+        1 -> RankGold
+        2 -> RankSilver
+        3 -> RankBronze
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .then(
+                if (isTopThree) Modifier.background(rankColor.copy(alpha = 0.06f))
+                else Modifier
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .padding(
+                horizontal = if (isTopThree) 8.dp else 0.dp,
+                vertical = 8.dp
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Rank number
+        // Rank indicator
         Box(
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier
+                .size(28.dp)
+                .then(
+                    if (isTopThree) Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(rankColor.copy(alpha = 0.15f))
+                    else Modifier
+                ),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "$rank",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = if (rank <= 3) QQMusicGreen
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = if (isTopThree) FontWeight.ExtraBold else FontWeight.Bold,
+                    color = rankColor
                 )
             )
         }
@@ -679,8 +696,8 @@ private fun RankedTrackItem(
             url = track.coverUrl,
             contentDescription = track.title,
             modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .size(if (isTopThree) 52.dp else 48.dp)
+                .clip(RoundedCornerShape(if (isTopThree) 10.dp else 8.dp))
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -707,7 +724,7 @@ private fun RankedTrackItem(
             Text(
                 text = "$playCount 次",
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (isTopThree) rankColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = track.platform.displayName,
