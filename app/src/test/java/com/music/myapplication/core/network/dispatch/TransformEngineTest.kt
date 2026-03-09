@@ -117,4 +117,41 @@ class TransformEngineTest {
         assertTrue(tracks.isNotEmpty())
         assertEquals("0034T1fQ2xY9yC", tracks.first().id)
     }
+
+    @Test
+    fun transform_withRule_mapsAlbumIdFromKnownAliases() {
+        val response = """
+            {
+              "result": [
+                {
+                  "id": "185811",
+                  "name": "晴天",
+                  "artist": "周杰伦",
+                  "album": {
+                    "id": "32311",
+                    "name": "叶惠美"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+        val rule = Json.parseToJsonElement(
+            """
+            {
+              "root": "result",
+              "fields": {
+                "id": "id",
+                "title": "name",
+                "artist": "artist",
+                "album": "album.name"
+              }
+            }
+            """.trimIndent()
+        )
+
+        val tracks = engine.transform(responseBody = response, rule = rule, platform = Platform.NETEASE)
+
+        assertTrue(tracks.isNotEmpty())
+        assertEquals("32311", tracks.first().albumId)
+    }
 }

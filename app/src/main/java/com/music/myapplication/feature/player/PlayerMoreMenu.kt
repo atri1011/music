@@ -43,6 +43,7 @@ fun PlayerMoreMenu(
     onDismiss: () -> Unit,
     onSleepTimer: () -> Unit,
     onQueueManager: () -> Unit,
+    onShare: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -85,9 +86,11 @@ fun PlayerMoreMenu(
         PlayerMenuItem(
             icon = Icons.Default.Share,
             label = "分享",
-            enabled = false,
-            disabledHint = "待后续能力接入"
-        ) {}
+            onClick = {
+                onDismiss()
+                onShare()
+            }
+        )
     )
 
     ModalBottomSheet(

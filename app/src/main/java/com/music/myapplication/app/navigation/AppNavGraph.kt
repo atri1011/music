@@ -186,7 +186,12 @@ fun AppNavGraph(
         ) {
             PlayerLyricsScreen(
                 playerViewModel = playerViewModel,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToAlbum = { albumId, platformId, albumName, artistName, coverUrl ->
+                    navController.navigate(
+                        Routes.AlbumDetail(albumId, platformId, albumName, artistName, coverUrl)
+                    )
+                }
             )
         }
     }

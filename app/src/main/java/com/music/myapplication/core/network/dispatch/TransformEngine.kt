@@ -61,7 +61,7 @@ class TransformEngine @Inject constructor(private val json: Json) {
                 (value as? JsonPrimitive)?.contentOrNull?.let { key to it }
             }.toMap()
         } else {
-            listOf("id", "title", "artist", "album", "coverUrl", "durationMs")
+            listOf("id", "title", "artist", "album", "albumId", "coverUrl", "durationMs")
                 .mapNotNull { field ->
                     findStringByKeys(obj, listOf(field))?.let { field to it }
                 }.toMap()
@@ -120,6 +120,7 @@ class TransformEngine @Inject constructor(private val json: Json) {
         val title = findStringByKeys(obj, TITLE_KEYS) ?: ""
         val artist = findStringByKeys(obj, ARTIST_KEYS) ?: ""
         val album = findStringByKeys(obj, ALBUM_KEYS) ?: ""
+        val albumId = findStringByKeys(obj, ALBUM_ID_KEYS) ?: ""
         val cover = findStringByKeys(obj, COVER_KEYS) ?: ""
         val duration = findDurationByKeys(obj, DURATION_KEYS) ?: 0L
         return Track(
@@ -128,6 +129,7 @@ class TransformEngine @Inject constructor(private val json: Json) {
             title = title,
             artist = artist,
             album = album,
+            albumId = albumId,
             coverUrl = cover,
             durationMs = duration
         )
@@ -185,6 +187,9 @@ class TransformEngine @Inject constructor(private val json: Json) {
             title = extractString(obj, fields["title"] ?: "name") ?: "",
             artist = extractString(obj, fields["artist"] ?: "artist") ?: "",
             album = extractString(obj, fields["album"] ?: "album") ?: "",
+            albumId = extractString(obj, fields["albumId"] ?: "albumId")
+                ?: findStringByKeys(obj, ALBUM_ID_KEYS)
+                ?: "",
             coverUrl = extractString(obj, fields["coverUrl"] ?: "cover") ?: "",
             durationMs = extractLong(obj, fields["durationMs"] ?: "duration") ?: 0L
         )
@@ -259,6 +264,10 @@ class TransformEngine @Inject constructor(private val json: Json) {
         )
         val ALBUM_KEYS = listOf(
             "album", "albumName", "albumname", "al.name"
+        )
+        val ALBUM_ID_KEYS = listOf(
+            "albumId", "albumid", "albumID", "al.id", "album.id",
+            "album.mid", "albumMid", "albumMID", "albummid", "al.mid"
         )
         val COVER_KEYS = listOf(
             "cover", "coverUrl", "coverImgUrl", "pic", "picUrl", "img", "imgurl", "logo",

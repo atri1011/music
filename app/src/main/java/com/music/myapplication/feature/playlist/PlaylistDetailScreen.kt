@@ -34,12 +34,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
@@ -57,6 +59,7 @@ fun PlaylistDetailScreen(
     playerViewModel: PlayerViewModel
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     LaunchedEffect(playlistId, platform, source) {
         viewModel.loadPlaylist(playlistId, platform, title, source)
@@ -116,6 +119,9 @@ fun PlaylistDetailScreen(
                             index = index,
                             onClick = {
                                 playerViewModel.playTrack(track, state.tracks, index)
+                            },
+                            onMoreClick = {
+                                ShareUtils.shareTrack(context, track)
                             }
                         )
                     }

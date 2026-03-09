@@ -73,6 +73,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Scale
+import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.domain.model.LyricLine
 import com.music.myapplication.domain.model.Platform
@@ -89,6 +90,7 @@ import java.util.Locale
 fun PlayerLyricsScreen(
     playerViewModel: PlayerViewModel,
     onBack: () -> Unit,
+    onNavigateToAlbum: ((String, String, String, String, String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val staticState by playerViewModel.staticUiState.collectAsStateWithLifecycle()
@@ -96,6 +98,7 @@ fun PlayerLyricsScreen(
     val lyricsState by playerViewModel.lyricsUiState.collectAsStateWithLifecycle()
     val trackInfoState by playerViewModel.trackInfoState.collectAsStateWithLifecycle()
     val commentsState by playerViewModel.commentsUiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val currentTrack = staticState.currentTrack
     var hasLoadedTrack by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -252,7 +255,8 @@ fun PlayerLyricsScreen(
                     2 -> SongInfoPage(
                         track = currentTrack,
                         trackInfoState = trackInfoState,
-                        playerViewModel = playerViewModel
+                        playerViewModel = playerViewModel,
+                        onNavigateToAlbum = onNavigateToAlbum
                     )
                 }
             }
@@ -312,7 +316,8 @@ fun PlayerLyricsScreen(
             PlayerMoreMenu(
                 onDismiss = { showMoreMenu = false },
                 onSleepTimer = { showSleepTimerPicker = true },
-                onQueueManager = { showQueueSheet = true }
+                onQueueManager = { showQueueSheet = true },
+                onShare = { ShareUtils.shareTrack(context, currentTrack) }
             )
         }
 
@@ -809,9 +814,11 @@ private fun LyricsPanelContent(
 private fun SongInfoPage(
     track: Track,
     trackInfoState: TrackInfoUiState,
-    playerViewModel: PlayerViewModel
+    playerViewModel: PlayerViewModel,
+    onNavigateToAlbum: ((String, String, String, String, String) -> Unit)? = null
 ) {
     val scrollState = rememberScrollState()
+    val canOpenAlbum = track.albumId.isNotBlank() && onNavigateToAlbum != null
 
     Column(
         modifier = Modifier
@@ -830,6 +837,49 @@ private fun SongInfoPage(
             style = MaterialTheme.typography.bodyLarge,
             color = Color.White.copy(alpha = 0.6f)
         )
+        if (track.album.isNotBlank()) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            SectionHeader("所属专辑")
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White.copy(alpha = if (canOpenAlbum) 0.14f else 0.08f))
+                    .then(
+                        if (canOpenAlbum) {
+                            Modifier.clickable {
+                                onNavigateToAlbum?.invoke(
+                                    track.albumId,
+                                    track.platform.id,
+                                    track.album,
+                                    track.artist,
+                                    track.coverUrl
+                                )
+                            }
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                Column {
+                    Text(
+                        text = track.album,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = Color.White
+                    )
+                    Text(
+                        text = if (canOpenAlbum) "点一下进入专辑详情" else "当前来源暂不支持打开专辑详情",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.65f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 

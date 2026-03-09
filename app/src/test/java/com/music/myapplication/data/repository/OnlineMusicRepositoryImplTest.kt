@@ -1407,6 +1407,7 @@ class OnlineMusicRepositoryImplTest {
                     { "name": "周杰伦" }
                   ],
                   "album": {
+                    "id": 32311,
                     "name": "叶惠美",
                     "picUrl": "https://example.com/yhm.jpg"
                   }
@@ -1427,6 +1428,7 @@ class OnlineMusicRepositoryImplTest {
         assertEquals("晴天", data.first().title)
         assertEquals("周杰伦", data.first().artist)
         assertEquals("叶惠美", data.first().album)
+        assertEquals("32311", data.first().albumId)
         coVerify(exactly = 1) { api.getNeteaseAlbumDetail("32311", any()) }
         coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), eq("albumDetail"), any()) }
     }
@@ -1455,6 +1457,7 @@ class OnlineMusicRepositoryImplTest {
                           { "name": "周杰伦" }
                         ],
                         "album": {
+                          "id": 8220,
                           "mid": "000MkMni19ClKG",
                           "name": "叶惠美"
                         }
@@ -1481,6 +1484,7 @@ class OnlineMusicRepositoryImplTest {
         assertEquals("晴天", data.first().title)
         assertEquals("周杰伦", data.first().artist)
         assertEquals("叶惠美", data.first().album)
+        assertEquals("8220", data.first().albumId)
         assertEquals(
             "https://y.qq.com/music/photo_new/T002R300x300M000000MkMni19ClKG.jpg",
             data.first().coverUrl

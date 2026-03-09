@@ -528,7 +528,9 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                 )
             }
 
-            val tracks = extractNeteaseSongTracks(response)
+            val tracks = extractNeteaseSongTracks(response).map { track ->
+                if (track.albumId.isBlank()) track.copy(albumId = id) else track
+            }
             if (tracks.isEmpty()) {
                 return Result.Error(AppError.Parse(message = "解析网易专辑详情失败"))
             }
@@ -555,7 +557,9 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                 )
             }
 
-            val tracks = extractQqAlbumTracks(response)
+            val tracks = extractQqAlbumTracks(response).map { track ->
+                if (track.albumId.isBlank()) track.copy(albumId = albumId) else track
+            }
             if (tracks.isEmpty()) {
                 return Result.Error(AppError.Parse(message = "解析 QQ 音乐专辑详情失败"))
             }
@@ -1799,22 +1803,23 @@ private fun extractNeteaseArtistText(track: JsonObject): String {
     }.joinToString("/")
 }
 
-private fun extractNeteaseTrack(track: JsonObject?): Track? {
-    val item = track ?: return null
-    val id = item.firstStringOf("id").orEmpty()
-    if (id.isBlank()) return null
+    private fun extractNeteaseTrack(track: JsonObject?): Track? {
+        val item = track ?: return null
+        val id = item.firstStringOf("id").orEmpty()
+        if (id.isBlank()) return null
 
-    val album = (item.getIgnoreCase("al") ?: item.getIgnoreCase("album")) as? JsonObject
-    return Track(
-        id = id,
-        platform = Platform.NETEASE,
-        title = item.firstStringOf("name", "title").orEmpty(),
-        artist = extractNeteaseArtistText(item),
-        album = album?.firstStringOf("name").orEmpty(),
-        coverUrl = album?.firstStringOf("picUrl", "blurPicUrl").orEmpty(),
-        durationMs = item.firstLongOf("dt", "duration", "durationMs") ?: 0L
-    )
-}
+        val album = (item.getIgnoreCase("al") ?: item.getIgnoreCase("album")) as? JsonObject
+        return Track(
+            id = id,
+            platform = Platform.NETEASE,
+            title = item.firstStringOf("name", "title").orEmpty(),
+            artist = extractNeteaseArtistText(item),
+            album = album?.firstStringOf("name").orEmpty(),
+            albumId = album?.firstStringOf("id", "albumId", "albumID").orEmpty(),
+            coverUrl = album?.firstStringOf("picUrl", "blurPicUrl").orEmpty(),
+            durationMs = item.firstLongOf("dt", "duration", "durationMs") ?: 0L
+        )
+    }
 
 private fun extractApiCode(data: JsonElement?): Int? {
     val root = data as? JsonObject ?: return null
@@ -2582,6 +2587,7 @@ private fun extractQqArtistSong(song: JsonObject?): Track? {
         title = item.firstStringOf("name", "title").orEmpty(),
         artist = artist,
         album = albumObj?.firstStringOf("name").orEmpty(),
+        albumId = albumObj?.firstStringOf("id", "albumID", "albumId", "mid", "albumMID", "albumMid", "albummid").orEmpty(),
         coverUrl = buildQqAlbumCoverUrl(albumMid),
         durationMs = (item.firstLongOf("interval") ?: 0L) * 1000
     )

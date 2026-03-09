@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.SearchResultItem
 import com.music.myapplication.domain.model.SearchType
@@ -85,6 +87,7 @@ fun SearchScreen(
 ) {
     val state by searchViewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
     val resultCount = if (state.searchType == SearchType.SONG) state.tracks.size else state.genericResults.size
@@ -352,6 +355,9 @@ fun SearchScreen(
                                     index = index,
                                     onClick = {
                                         playerViewModel.playTrack(track, state.tracks, index)
+                                    },
+                                    onMoreClick = {
+                                        ShareUtils.shareTrack(context, track)
                                     },
                                     onArtistClick = if (track.platform != Platform.KUWO) {
                                         onNavigateToArtist?.let { nav ->
