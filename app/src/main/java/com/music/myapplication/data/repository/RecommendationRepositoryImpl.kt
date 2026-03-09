@@ -100,12 +100,12 @@ class RecommendationRepositoryImpl @Inject constructor(
         val recentTracks = localRepo.getRecentPlays(limit = GUESS_HISTORY_LIMIT).firstOrNull().orEmpty()
 
         if (favorites.isEmpty() && recentTracks.isEmpty()) {
-            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit))
+            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit, refreshCount))
         }
 
         val tasteSeeds = buildTasteSeeds(favorites, recentTracks)
         if (tasteSeeds.isEmpty()) {
-            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit))
+            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit, refreshCount))
         }
 
         val artistScores = mutableMapOf<String, Double>()
@@ -117,7 +117,7 @@ class RecommendationRepositoryImpl @Inject constructor(
             if (artist !in artistPlatform) artistPlatform[artist] = seed.track.platform
         }
         if (artistScores.isEmpty()) {
-            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit))
+            return GuessYouLikeResult("热门推荐", getColdStartTracks(limit, refreshCount))
         }
 
         val rankedArtists = artistScores.entries.sortedByDescending { it.value }.map { it.key }
@@ -161,12 +161,17 @@ class RecommendationRepositoryImpl @Inject constructor(
             }
         }
 
-        val tracks = if (recommended.isNotEmpty()) {
-            localRepo.applyFavoriteState(recommended.values.take(limit))
-        } else {
-            emptyList()
+        if (recommended.isNotEmpty()) {
+            return GuessYouLikeResult(
+                label = seedArtists.firstOrNull() ?: "热门推荐",
+                tracks = localRepo.applyFavoriteState(recommended.values.take(limit))
+            )
         }
-        return GuessYouLikeResult(label = seedArtists.first(), tracks = tracks)
+
+        return GuessYouLikeResult(
+            label = "热门推荐",
+            tracks = getColdStartTracks(limit, refreshCount)
+        )
     }
 
     override suspend fun getSimilarTracks(track: Track, limit: Int): List<Track> {
@@ -223,14 +228,26 @@ class RecommendationRepositoryImpl @Inject constructor(
         }.sortedByDescending { it.score }
     }
 
-    private suspend fun getColdStartTracks(limit: Int): List<Track> {
+    private suspend fun getColdStartTracks(limit: Int, refreshCount: Int = 0): List<Track> {
         val toplists = when (val result = onlineRepo.getToplists(Platform.NETEASE)) {
             is Result.Success -> result.data
             else -> return emptyList()
         }
-        val firstId = toplists.firstOrNull()?.id ?: return emptyList()
-        return when (val detail = onlineRepo.getToplistDetail(Platform.NETEASE, firstId)) {
-            is Result.Success -> detail.data.take(limit)
+        if (toplists.isEmpty()) return emptyList()
+        val toplist = toplists[refreshCount % toplists.size]
+        return when (val detail = onlineRepo.getToplistDetail(Platform.NETEASE, toplist.id)) {
+            is Result.Success -> {
+                if (detail.data.size <= limit) {
+                    detail.data
+                } else {
+                    val startIndex = (refreshCount * limit) % detail.data.size
+                    buildList(limit) {
+                        repeat(limit) { index ->
+                            add(detail.data[(startIndex + index) % detail.data.size])
+                        }
+                    }
+                }
+            }
             else -> emptyList()
         }
     }

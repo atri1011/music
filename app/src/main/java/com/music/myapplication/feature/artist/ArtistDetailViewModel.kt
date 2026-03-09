@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.domain.model.ArtistAlbum
+import com.music.myapplication.domain.model.ArtistDetail
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -34,14 +35,14 @@ class ArtistDetailViewModel @Inject constructor(
     private val onlineRepo: OnlineMusicRepository
 ) : ViewModel() {
 
-    private val songId: String = savedStateHandle["artistId"] ?: ""
+    private val artistOrSongId: String = savedStateHandle["artistId"] ?: ""
     private val platformId: String = savedStateHandle["platform"] ?: "netease"
     private val artistName: String = savedStateHandle["artistName"] ?: ""
     private val platform = Platform.fromId(platformId)
 
     private val _state = MutableStateFlow(
         ArtistDetailUiState(
-            artistId = songId,
+            artistId = artistOrSongId,
             artistName = artistName,
             platform = platform
         )
@@ -56,32 +57,30 @@ class ArtistDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
 
-            // Step 1: Resolve song ID -> artist ID
-            val dummyTrack = Track(id = songId, platform = platform, title = "", artist = artistName)
+            when (val directResult = onlineRepo.getArtistDetail(artistOrSongId, platform)) {
+                is Result.Success -> {
+                    applyArtistDetail(directResult.data)
+                    return@launch
+                }
+
+                else -> Unit
+            }
+
+            val dummyTrack = Track(id = artistOrSongId, platform = platform, title = "", artist = artistName)
             val resolvedId = when (val ref = onlineRepo.resolveArtistRef(dummyTrack)) {
-                is Result.Success -> ref.data.id
+                is Result.Success -> {
+                    _state.update { it.copy(artistId = ref.data.id) }
+                    ref.data.id
+                }
+
                 else -> {
                     _state.update { it.copy(isLoading = false, error = "无法解析歌手信息") }
                     return@launch
                 }
             }
 
-            _state.update { it.copy(artistId = resolvedId) }
-
-            // Step 2: Load artist detail with resolved artist ID
             when (val result = onlineRepo.getArtistDetail(resolvedId, platform)) {
-                is Result.Success -> {
-                    val detail = result.data
-                    _state.update {
-                        it.copy(
-                            artistName = detail.name.ifBlank { artistName },
-                            avatarUrl = detail.avatarUrl,
-                            hotSongs = detail.hotSongs,
-                            albums = detail.albums,
-                            isLoading = false
-                        )
-                    }
-                }
+                is Result.Success -> applyArtistDetail(result.data)
                 is Result.Error -> {
                     _state.update {
                         it.copy(
@@ -90,8 +89,22 @@ class ArtistDetailViewModel @Inject constructor(
                         )
                     }
                 }
-                is Result.Loading -> {}
+                is Result.Loading -> Unit
             }
+        }
+    }
+
+    private fun applyArtistDetail(detail: ArtistDetail) {
+        _state.update {
+            it.copy(
+                artistId = detail.id.ifBlank { it.artistId },
+                artistName = detail.name.ifBlank { artistName },
+                avatarUrl = detail.avatarUrl,
+                hotSongs = detail.hotSongs,
+                albums = detail.albums,
+                isLoading = false,
+                error = null
+            )
         }
     }
 

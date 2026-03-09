@@ -159,6 +159,38 @@ class RecommendationRepositoryImplTest {
     }
 
     @Test
+    fun getGuessYouLikeTracks_fallsBackToColdStartWhenSearchHasNoResults() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val onlineRepo = mockk<OnlineMusicRepository>()
+        val localRepo = mockk<LocalLibraryRepository>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val favorite = testTrack(id = "fav-1", artist = "Aimer").copy(isFavorite = true)
+        val recent = testTrack(id = "recent-1", artist = "宇多田ヒカル", platform = Platform.QQ)
+        val hotTrack1 = testTrack(id = "hot-1", artist = "热门歌手")
+        val hotTrack2 = testTrack(id = "hot-2", artist = "热门歌手")
+
+        every { localRepo.getFavorites() } returns flowOf(listOf(favorite))
+        every { localRepo.getRecentPlays(any()) } returns flowOf(listOf(recent))
+        coEvery { localRepo.getTrackPlayCount(any(), any()) } returns 1
+        coEvery { localRepo.getFirstPlayDate(any(), any()) } returns null
+        coEvery { onlineRepo.search(any(), any(), any(), any()) } returns Result.Success(emptyList())
+        coEvery { onlineRepo.getToplists(Platform.NETEASE) } returns Result.Success(
+            listOf(ToplistInfo(id = "19723756", name = "飙升榜"))
+        )
+        coEvery { onlineRepo.getToplistDetail(Platform.NETEASE, "19723756") } returns Result.Success(
+            listOf(hotTrack1, hotTrack2)
+        )
+
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo, cacheStore)
+
+        val result = repository.getGuessYouLikeTracks(refreshCount = 0, limit = 6)
+
+        assertEquals("热门推荐", result.label)
+        assertEquals(listOf("hot-1", "hot-2"), result.tracks.map { it.id })
+        coVerify(exactly = 1) { onlineRepo.getToplists(Platform.NETEASE) }
+    }
+
+    @Test
     fun getRecommendedPlaylists_returnsCachedDataWithoutRequest() = runTest {
         val api = mockk<TuneHubApi>(relaxed = true)
         val onlineRepo = mockk<OnlineMusicRepository>(relaxed = true)

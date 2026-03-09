@@ -131,12 +131,16 @@ class HomeViewModel @Inject constructor(
         guessYouLikeJob = viewModelScope.launch {
             try {
                 val result = recommendationRepo.getGuessYouLikeTracks(refreshCount)
-                _state.update {
-                    it.copy(
-                        guessYouLikeLabel = result.label,
-                        guessYouLikeTracks = result.tracks,
-                        isGuessYouLikeLoading = false
-                    )
+                _state.update { current ->
+                    if (result.tracks.isNotEmpty()) {
+                        current.copy(
+                            guessYouLikeLabel = result.label.takeIf { it.isNotBlank() } ?: current.guessYouLikeLabel,
+                            guessYouLikeTracks = result.tracks,
+                            isGuessYouLikeLoading = false
+                        )
+                    } else {
+                        current.copy(isGuessYouLikeLoading = false)
+                    }
                 }
             } catch (_: Exception) {
                 _state.update { it.copy(isGuessYouLikeLoading = false) }
