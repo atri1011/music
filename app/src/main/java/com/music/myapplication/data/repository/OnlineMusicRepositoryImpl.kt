@@ -187,6 +187,21 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         return enrichTrackCoverIfNeeded(platform, result)
     }
 
+    override suspend fun getAlbumDetail(platform: Platform, albumId: String): Result<List<Track>> {
+        if (platform == Platform.NETEASE) {
+            return fetchNeteaseAlbumDetailDirect(albumId)
+        }
+        if (platform == Platform.QQ) {
+            return fetchQqAlbumDetailDirect(albumId)
+        }
+        val result = dispatchExecutor.executeByMethod(
+            platform = platform,
+            function = "albumDetail",
+            args = mapOf("id" to albumId, "albumId" to albumId)
+        )
+        return enrichTrackCoverIfNeeded(platform, result)
+    }
+
     override suspend fun resolveShareUrl(url: String): String = withContext(Dispatchers.IO) {
         val normalizedUrl = url.trim()
         if (normalizedUrl.isBlank()) return@withContext normalizedUrl
@@ -498,6 +513,66 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
         }
+    }
+
+    private suspend fun fetchNeteaseAlbumDetailDirect(id: String): Result<List<Track>> {
+        return try {
+            val response = api.getNeteaseAlbumDetail(id = id)
+            val code = extractApiCode(response)
+            if (code != null && code != 200) {
+                return Result.Error(
+                    AppError.Api(
+                        message = extractApiMessage(response).ifBlank { "获取网易专辑详情失败" },
+                        code = code
+                    )
+                )
+            }
+
+            val tracks = extractNeteaseSongTracks(response)
+            if (tracks.isEmpty()) {
+                return Result.Error(AppError.Parse(message = "解析网易专辑详情失败"))
+            }
+
+            Result.Success(enrichTrackCoverIfNeeded(Platform.NETEASE, tracks))
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun fetchQqAlbumDetailDirect(idOrMid: String): Result<List<Track>> {
+        return try {
+            val albumId = resolveQqAlbumId(idOrMid)
+                ?: return Result.Error(AppError.Parse(message = "解析 QQ 音乐专辑信息失败"))
+            val response = api.postQqMusicu(buildQqAlbumSongListBody(albumId))
+            val songsResponse = (response as? JsonObject)?.get("songs")
+            val code = extractApiCode(songsResponse)
+            if (code != null && code != 0) {
+                return Result.Error(
+                    AppError.Api(
+                        message = extractApiMessage(songsResponse).ifBlank { "获取 QQ 音乐专辑详情失败" },
+                        code = code
+                    )
+                )
+            }
+
+            val tracks = extractQqAlbumTracks(response)
+            if (tracks.isEmpty()) {
+                return Result.Error(AppError.Parse(message = "解析 QQ 音乐专辑详情失败"))
+            }
+
+            Result.Success(enrichTrackCoverIfNeeded(Platform.QQ, tracks))
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun resolveQqAlbumId(idOrMid: String): String? {
+        if (idOrMid.isBlank()) return null
+        if (idOrMid.isDigitsOnly()) return idOrMid
+
+        return runCatching {
+            api.postQqMusicu(buildQqAlbumInfoBody(idOrMid))
+        }.getOrNull()?.let(::extractQqAlbumId)
     }
 
     private suspend fun resolveNeteasePlaylistTracks(response: JsonElement): List<Track> {
@@ -911,6 +986,10 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                     val albumResp = runCatching { api.getNeteaseArtistAlbums(artistId) }.getOrNull()
                     val albums = extractNeteaseArtistAlbums(albumResp)
 
+                    if (name.isBlank() && avatarUrl.isBlank() && hotSongs.isEmpty() && albums.isEmpty()) {
+                        return@withContext Result.Error(AppError.Api(message = "artist not found"))
+                    }
+
                     Result.Success(
                         ArtistDetail(artistId, name, platform, avatarUrl, hotSongs, albums)
                     )
@@ -919,17 +998,35 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                     val body = buildQqArtistDetailBody(artistId)
                     val resp = api.postQqMusicu(body)
                     val root = resp as? JsonObject ?: return@withContext Result.Error(AppError.Api(message = "empty"))
-                    val singerData = (root["singerDetail"] as? JsonObject)?.get("data") as? JsonObject
-                    val singerInfo = singerData?.get("singer_info") as? JsonObject
-                    val name = singerInfo?.firstStringOf("name").orEmpty()
-                    val avatarUrl = normalizeQqImageUrl(singerInfo?.firstStringOf("pic").orEmpty())
-
-                    val songList = (singerData?.get("songlist") as? JsonArray)?.mapNotNull { el ->
+                    val songsData = (root["songs"] as? JsonObject)?.get("data") as? JsonObject
+                    val albumsData = (root["albums"] as? JsonObject)?.get("data") as? JsonObject
+                    val albumListRaw = albumsData?.get("albumList") as? JsonArray
+                    val songList = (songsData?.get("songList") as? JsonArray)?.mapNotNull { el ->
                         extractQqArtistSong(el as? JsonObject)
                     } ?: emptyList()
+                    val albums = albumListRaw?.mapNotNull { el ->
+                        extractQqArtistAlbum(el as? JsonObject)
+                    } ?: emptyList()
+                    val firstSongArtist = songList.firstOrNull()?.artist.orEmpty()
+                    val firstAlbumArtist = (albumListRaw?.firstOrNull() as? JsonObject)
+                        ?.firstStringOf("singerName")
+                        .orEmpty()
+                    val name = firstSongArtist.ifBlank { firstAlbumArtist }.ifBlank { artistId }
+                    val avatarUrl = buildQqSingerCoverUrl(artistId)
+
+                    if (songList.isEmpty() && albums.isEmpty()) {
+                        return@withContext Result.Error(AppError.Api(message = "artist not found"))
+                    }
 
                     Result.Success(
-                        ArtistDetail(artistId, name, platform, avatarUrl, songList, emptyList())
+                        ArtistDetail(
+                            artistId,
+                            name = name,
+                            platform = platform,
+                            avatarUrl = avatarUrl,
+                            hotSongs = songList,
+                            albums = albums
+                        )
                     )
                 }
                 else -> Result.Error(AppError.Api(message = "unsupported platform"))
@@ -1030,58 +1127,121 @@ class OnlineMusicRepositoryImpl @Inject constructor(
     override suspend fun searchArtists(
         platform: Platform, keyword: String, page: Int, pageSize: Int
     ): Result<List<SearchResultItem>> {
-        return executeGenericSearch(platform, "searchArtist", keyword, page, pageSize, SearchType.ARTIST)
+        return executeOfficialSearch(platform, keyword, page, pageSize, SearchType.ARTIST)
     }
 
     override suspend fun searchAlbums(
         platform: Platform, keyword: String, page: Int, pageSize: Int
     ): Result<List<SearchResultItem>> {
-        return executeGenericSearch(platform, "searchAlbum", keyword, page, pageSize, SearchType.ALBUM)
+        return executeOfficialSearch(platform, keyword, page, pageSize, SearchType.ALBUM)
     }
 
     override suspend fun searchPlaylists(
         platform: Platform, keyword: String, page: Int, pageSize: Int
     ): Result<List<SearchResultItem>> {
-        return executeGenericSearch(platform, "searchPlaylist", keyword, page, pageSize, SearchType.PLAYLIST)
+        return executeOfficialSearch(platform, keyword, page, pageSize, SearchType.PLAYLIST)
     }
 
-    private suspend fun executeGenericSearch(
+    private suspend fun executeOfficialSearch(
         platform: Platform,
-        function: String,
         keyword: String,
         page: Int,
         pageSize: Int,
         type: SearchType
-    ): Result<List<SearchResultItem>> {
-        val result = dispatchExecutor.executeByMethod(
-            platform = platform,
-            function = function,
-            args = mapOf(
-                "keyword" to keyword,
-                "page" to page.toString(),
-                "pageSize" to pageSize.toString(),
-                "limit" to pageSize.toString(),
-                "page_num" to page.toString(),
-                "num_per_page" to pageSize.toString()
+    ): Result<List<SearchResultItem>> = withContext(Dispatchers.IO) {
+        val safeKeyword = keyword.trim()
+        if (safeKeyword.isBlank()) return@withContext Result.Success(emptyList())
+
+        val safePage = page.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, OFFICIAL_SEARCH_PAGE_SIZE_LIMIT)
+
+        try {
+            val result = when (platform) {
+                Platform.NETEASE -> {
+                    val response = api.searchNeteaseByType(
+                        keyword = safeKeyword,
+                        type = type.toNeteaseOfficialSearchType(),
+                        offset = (safePage - 1) * safePageSize,
+                        limit = safePageSize
+                    )
+                    extractNeteaseSearchResults(response, type)
+                }
+
+                Platform.QQ -> {
+                    fetchQqOfficialSearchResults(safeKeyword, safePage, safePageSize, type)
+                }
+
+                Platform.KUWO -> {
+                    val response = when (type) {
+                        SearchType.ARTIST -> api.searchKuwoArtists(safeKeyword, safePage, safePageSize)
+                        SearchType.ALBUM -> api.searchKuwoAlbums(safeKeyword, safePage, safePageSize)
+                        SearchType.PLAYLIST -> api.searchKuwoPlaylists(safeKeyword, safePage, safePageSize)
+                        SearchType.SONG -> null
+                    }
+                    extractKuwoSearchResults(response, type)
+                }
+            }
+            Result.Success(result)
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun fetchQqOfficialSearchResults(
+        keyword: String,
+        page: Int,
+        pageSize: Int,
+        type: SearchType
+    ): List<SearchResultItem> {
+        if (type == SearchType.PLAYLIST) {
+            val response = api.postQqMusicu(
+                buildQqSearchByTypeBody(
+                    keyword = keyword,
+                    page = page,
+                    pageSize = pageSize,
+                    type = type
+                )
+            )
+            return extractQqSearchResults(response, type)
+        }
+
+        val generalResponse = api.postQqMusicu(
+            buildQqGeneralSearchBody(
+                keyword = keyword,
+                page = page,
+                pageSize = pageSize
             )
         )
-        return when (result) {
-            is Result.Success -> Result.Success(
-                result.data.map { track ->
-                    SearchResultItem(
-                        id = track.id,
-                        title = track.title,
-                        subtitle = track.artist,
-                        coverUrl = track.coverUrl,
-                        platform = platform,
-                        type = type,
-                        trackCount = track.durationMs.toInt().coerceAtLeast(0)
+
+        val directResults = extractQqDirectSearchResults(generalResponse, type)
+        if (directResults.isNotEmpty()) return directResults
+
+        if (type == SearchType.ALBUM) {
+            val singerMid = extractQqDirectSingerMid(generalResponse)
+            if (!singerMid.isNullOrBlank()) {
+                val albumsResponse = api.postQqMusicu(
+                    buildQqSingerAlbumsBody(
+                        singerMid = singerMid,
+                        page = page,
+                        pageSize = pageSize
                     )
+                )
+                val singerAlbums = extractQqSingerAlbumSearchResults(albumsResponse)
+                if (singerAlbums.isNotEmpty()) {
+                    return singerAlbums
                 }
-            )
-            is Result.Error -> Result.Error(result.error)
-            is Result.Loading -> Result.Loading
+            }
         }
+
+        val typedResponse = api.postQqMusicu(
+            buildQqSearchByTypeBody(
+                keyword = keyword,
+                page = page,
+                pageSize = pageSize,
+                type = type
+            )
+        )
+        return extractQqSearchResults(typedResponse, type)
     }
 
     private companion object {
@@ -1090,6 +1250,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         const val NETEASE_COMMENT_SORT_LATEST = 3
         const val QQ_DETAIL_BATCH_SIZE = 20
         const val KUWO_DETAIL_BATCH_SIZE = 50
+        const val OFFICIAL_SEARCH_PAGE_SIZE_LIMIT = 50
     }
 }
 
@@ -1531,6 +1692,11 @@ private fun buildQqAlbumCoverUrl(albumMid: String): String {
     return "https://y.qq.com/music/photo_new/T002R300x300M000$albumMid.jpg"
 }
 
+private fun buildQqSingerCoverUrl(singerMid: String): String {
+    if (singerMid.isBlank()) return ""
+    return "https://y.qq.com/music/photo_new/T001R300x300M000$singerMid.jpg"
+}
+
 private fun normalizeQqImageUrl(rawUrl: String): String {
     val url = rawUrl.trim()
     if (url.isBlank()) return ""
@@ -1684,6 +1850,490 @@ private fun JsonObject.firstLongOf(vararg keys: String): Long? {
     return null
 }
 
+private fun SearchType.toNeteaseOfficialSearchType(): Int = when (this) {
+    SearchType.SONG -> 1
+    SearchType.ARTIST -> 100
+    SearchType.ALBUM -> 10
+    SearchType.PLAYLIST -> 1000
+}
+
+private fun SearchType.toQqOfficialSearchType(): Int = when (this) {
+    SearchType.SONG -> 0
+    SearchType.ARTIST -> 1
+    SearchType.ALBUM -> 2
+    SearchType.PLAYLIST -> 3
+}
+
+private fun buildQqSearchByTypeBody(
+    keyword: String,
+    page: Int,
+    pageSize: Int,
+    type: SearchType
+): JsonElement = buildJsonObject {
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("search", buildJsonObject {
+        put("module", "music.search.SearchCgiService")
+        put("method", "DoSearchForQQMusicMobile")
+        put("param", buildJsonObject {
+            put("searchid", buildQqSearchId())
+            put("query", keyword)
+            put("search_type", type.toQqOfficialSearchType())
+            put("page_num", page.coerceAtLeast(1))
+            put("num_per_page", pageSize.coerceIn(1, 50))
+            put("highlight", 1)
+            put("nqc_flag", 0)
+            put("grp", 1)
+        })
+    })
+}
+
+private fun buildQqGeneralSearchBody(
+    keyword: String,
+    page: Int,
+    pageSize: Int
+): JsonElement = buildJsonObject {
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("req", buildJsonObject {
+        put("method", "do_search_v2")
+        put("module", "music.adaptor.SearchAdaptor")
+        put("param", buildJsonObject {
+            put("query", keyword)
+            put("search_type", 100)
+            put("page_num", page.coerceAtLeast(1))
+            put("num_per_page", pageSize.coerceIn(1, 50))
+            put("highlight", true)
+            put("grp", 1)
+        })
+    })
+}
+
+private fun buildQqSearchId(): String {
+    val now = System.currentTimeMillis()
+    val suffix = (now % 1_000_000).toString().padStart(6, '0')
+    return "$now$suffix"
+}
+
+internal fun extractNeteaseSearchResults(
+    data: JsonElement?,
+    type: SearchType
+): List<SearchResultItem> {
+    val result = ((data as? JsonObject)?.getIgnoreCase("result") as? JsonObject) ?: return emptyList()
+    val items = when (type) {
+        SearchType.ARTIST -> extractNestedArray(result, "artists", "artist")
+        SearchType.ALBUM -> extractNestedArray(result, "albums", "album")
+        SearchType.PLAYLIST -> extractNestedArray(result, "playlists", "playlist")
+        SearchType.SONG -> null
+    } ?: return emptyList()
+
+    return items.mapNotNull { element ->
+        when (type) {
+            SearchType.ARTIST -> parseNeteaseArtistSearchItem(element as? JsonObject)
+            SearchType.ALBUM -> parseNeteaseAlbumSearchItem(element as? JsonObject)
+            SearchType.PLAYLIST -> parseNeteasePlaylistSearchItem(element as? JsonObject)
+            SearchType.SONG -> null
+        }
+    }
+}
+
+internal fun extractQqSearchResults(
+    data: JsonElement?,
+    type: SearchType
+): List<SearchResultItem> {
+    val body = extractQqSearchBody(data) ?: return emptyList()
+    val items = when (type) {
+        SearchType.ARTIST -> extractQqSearchItems(
+            body,
+            "singer", "item_singer", "zhida", "singerlist", "itemlist", "list", "zhida_singer"
+        )
+
+        SearchType.ALBUM -> extractQqSearchItems(
+            body,
+            "album", "item_album", "albumlist", "itemlist", "list"
+        )
+
+        SearchType.PLAYLIST -> extractQqSearchItems(
+            body,
+            "songlist", "item_songlist", "playlist", "itemlist", "list"
+        )
+
+        SearchType.SONG -> emptyList()
+    }
+
+    return items.mapNotNull { element ->
+        when (type) {
+            SearchType.ARTIST -> parseQqArtistSearchItem(element as? JsonObject)
+            SearchType.ALBUM -> parseQqAlbumSearchItem(element as? JsonObject)
+            SearchType.PLAYLIST -> parseQqPlaylistSearchItem(element as? JsonObject)
+            SearchType.SONG -> null
+        }
+    }
+}
+
+private fun extractQqDirectSearchResults(
+    data: JsonElement?,
+    type: SearchType
+): List<SearchResultItem> {
+    val body = extractQqSearchBody(data) ?: return emptyList()
+    val items = (((body.getIgnoreCase("direct_result") as? JsonObject)
+        ?.getIgnoreCase("items")) as? JsonArray).orEmpty()
+
+    val restype = when (type) {
+        SearchType.ARTIST -> "singer"
+        SearchType.ALBUM -> "album"
+        SearchType.PLAYLIST -> "songlist"
+        SearchType.SONG -> return emptyList()
+    }
+
+    return items.mapNotNull { element ->
+        val item = element as? JsonObject ?: return@mapNotNull null
+        if (!item.firstStringOf("restype").orEmpty().equals(restype, ignoreCase = true)) {
+            return@mapNotNull null
+        }
+        when (type) {
+            SearchType.ARTIST -> parseQqArtistSearchItem(item)
+            SearchType.ALBUM -> parseQqAlbumSearchItem(item)
+            SearchType.PLAYLIST -> parseQqPlaylistSearchItem(item)
+            SearchType.SONG -> null
+        }
+    }
+}
+
+private fun extractQqDirectSingerMid(data: JsonElement?): String? {
+    val body = extractQqSearchBody(data) ?: return null
+    val items = (((body.getIgnoreCase("direct_result") as? JsonObject)
+        ?.getIgnoreCase("items")) as? JsonArray).orEmpty()
+
+    return items.firstNotNullOfOrNull { element ->
+        val item = element as? JsonObject ?: return@firstNotNullOfOrNull null
+        if (!item.firstStringOf("restype").orEmpty().equals("singer", ignoreCase = true)) {
+            return@firstNotNullOfOrNull null
+        }
+        val customInfo = item.getIgnoreCase("custom_info") as? JsonObject
+        customInfo?.firstStringOf("mid", "singer_mid")
+            ?: item.firstStringOf("mid", "singerMID", "singerMid", "singer_mid")
+    }
+}
+
+private fun extractQqSingerAlbumSearchResults(data: JsonElement?): List<SearchResultItem> {
+    val albumList = (((data as? JsonObject)?.getIgnoreCase("albums") as? JsonObject)
+        ?.getIgnoreCase("data") as? JsonObject)
+        ?.getIgnoreCase("albumList") as? JsonArray ?: return emptyList()
+
+    return albumList.mapNotNull { element ->
+        parseQqAlbumSearchItem(element as? JsonObject)
+    }
+}
+
+internal fun extractKuwoSearchResults(
+    data: JsonElement?,
+    type: SearchType
+): List<SearchResultItem> {
+    val root = data as? JsonObject ?: return emptyList()
+    val container = root.getIgnoreCase("data") ?: root
+    val items = when (type) {
+        SearchType.ARTIST -> extractNestedArray(container, "artistList", "artistlist", "list")
+        SearchType.ALBUM -> extractNestedArray(container, "albumList", "albumlist", "list")
+        SearchType.PLAYLIST -> extractNestedArray(container, "playList", "playlist", "playlists", "list")
+        SearchType.SONG -> null
+    } ?: return emptyList()
+
+    return items.mapNotNull { element ->
+        when (type) {
+            SearchType.ARTIST -> parseKuwoArtistSearchItem(element as? JsonObject)
+            SearchType.ALBUM -> parseKuwoAlbumSearchItem(element as? JsonObject)
+            SearchType.PLAYLIST -> parseKuwoPlaylistSearchItem(element as? JsonObject)
+            SearchType.SONG -> null
+        }
+    }
+}
+
+private fun parseNeteaseArtistSearchItem(item: JsonObject?): SearchResultItem? {
+    val artist = item ?: return null
+    val id = artist.firstStringOf("id") ?: return null
+    val name = artist.firstStringOf("name")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        coverUrl = artist.firstStringOf("picUrl", "img1v1Url", "coverImgUrl").orEmpty(),
+        platform = Platform.NETEASE,
+        type = SearchType.ARTIST,
+        trackCount = artist.firstLongOf("musicSize", "songCount", "trackCount").toSearchCount()
+    )
+}
+
+private fun parseNeteaseAlbumSearchItem(item: JsonObject?): SearchResultItem? {
+    val album = item ?: return null
+    val id = album.firstStringOf("id") ?: return null
+    val name = album.firstStringOf("name")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        subtitle = extractJoinedNames(album.getIgnoreCase("artists") ?: album.getIgnoreCase("artist")),
+        coverUrl = album.firstStringOf("picUrl", "blurPicUrl", "coverImgUrl").orEmpty(),
+        platform = Platform.NETEASE,
+        type = SearchType.ALBUM,
+        trackCount = album.firstLongOf("size", "songCount", "trackCount").toSearchCount()
+    )
+}
+
+private fun parseNeteasePlaylistSearchItem(item: JsonObject?): SearchResultItem? {
+    val playlist = item ?: return null
+    val id = playlist.firstStringOf("id") ?: return null
+    val name = playlist.firstStringOf("name")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    val creator = playlist.getIgnoreCase("creator") as? JsonObject
+    return SearchResultItem(
+        id = id,
+        title = name,
+        subtitle = creator?.firstStringOf("nickname").orEmpty(),
+        coverUrl = playlist.firstStringOf("coverImgUrl", "picUrl", "imgUrl").orEmpty(),
+        platform = Platform.NETEASE,
+        type = SearchType.PLAYLIST,
+        trackCount = playlist.firstLongOf("trackCount", "songCount", "count").toSearchCount()
+    )
+}
+
+private fun parseQqArtistSearchItem(item: JsonObject?): SearchResultItem? {
+    val artist = item ?: return null
+    val customInfo = artist.getIgnoreCase("custom_info") as? JsonObject
+    val id = customInfo?.firstStringOf("mid", "singer_mid")
+        ?: artist.firstStringOf("singerMID", "singerMid", "singer_mid", "singerid", "mid", "id")
+        ?: return null
+    val name = artist.firstStringOf("singerName", "singer_name", "name", "title")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        coverUrl = normalizeQqImageUrl(artist.firstStringOf("singerPic", "pic", "avatar", "imgurl").orEmpty()),
+        platform = Platform.QQ,
+        type = SearchType.ARTIST,
+        trackCount = (
+            customInfo?.firstLongOf("song_num", "songNum")
+                ?: artist.firstLongOf("songNum", "songnum", "musicNum", "song_count", "totalSongNum")
+            ).toSearchCount()
+    )
+}
+
+private fun parseQqAlbumSearchItem(item: JsonObject?): SearchResultItem? {
+    val album = item ?: return null
+    val customInfo = album.getIgnoreCase("custom_info") as? JsonObject
+    val albumMid = customInfo?.firstStringOf("mid")
+        ?: album.firstStringOf("albumMID", "albumMid", "albummid", "mid")
+    val id = album.firstStringOf("albumID", "albumId", "id") ?: albumMid ?: return null
+    val name = album.firstStringOf("albumName", "album_name", "name", "title")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    val subtitle = album.firstStringOf("singerName", "singer_name", "artistName", "artist", "singer").orEmpty()
+        .ifBlank {
+            customInfo?.firstStringOf("quality_album_title_prefix")
+                .orEmpty()
+        }.ifBlank {
+            extractJoinedNames(album.getIgnoreCase("singerList") ?: album.getIgnoreCase("singer"))
+        }
+    val coverUrl = album.firstStringOf("albumPic", "pic", "imgurl")
+        ?.let(::normalizeQqImageUrl)
+        .orEmpty()
+        .ifBlank { buildQqAlbumCoverUrl(albumMid.orEmpty()) }
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
+        platform = Platform.QQ,
+        type = SearchType.ALBUM,
+        trackCount = (customInfo?.firstLongOf("track_num")
+            ?: album.firstLongOf("song_count", "songNum", "songnum", "musicNum", "trackCount", "totalNum")).toSearchCount()
+    )
+}
+
+private fun parseQqPlaylistSearchItem(item: JsonObject?): SearchResultItem? {
+    val playlist = item ?: return null
+    val id = playlist.firstStringOf("dissid", "tid", "id") ?: return null
+    val name = playlist.firstStringOf("dissname", "diss_name", "name", "title")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        subtitle = playlist.firstStringOf("creatorName", "nick", "nickname").orEmpty(),
+        coverUrl = normalizeQqImageUrl(
+            playlist.firstStringOf("imgurl", "cover_url_big", "coverUrl", "logo").orEmpty()
+        ),
+        platform = Platform.QQ,
+        type = SearchType.PLAYLIST,
+        trackCount = playlist.firstLongOf("song_count", "songNum", "songnum", "total_song_num").toSearchCount()
+    )
+}
+
+private fun parseKuwoArtistSearchItem(item: JsonObject?): SearchResultItem? {
+    val artist = item ?: return null
+    val id = artist.firstStringOf("id", "artistid", "artistId") ?: return null
+    val name = artist.firstStringOf("name", "artist", "artistName")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        coverUrl = normalizeQqImageUrl(artist.firstStringOf("pic", "htsPic", "pic300").orEmpty()),
+        platform = Platform.KUWO,
+        type = SearchType.ARTIST,
+        trackCount = artist.firstLongOf("musicNum", "songNum", "songnum", "trackCount").toSearchCount()
+    )
+}
+
+private fun parseKuwoAlbumSearchItem(item: JsonObject?): SearchResultItem? {
+    val album = item ?: return null
+    val id = album.firstStringOf("albumid", "albumId", "id") ?: return null
+    val name = album.firstStringOf("album", "name", "albumName", "title")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        subtitle = album.firstStringOf("artist", "artistName", "singer", "artist_name").orEmpty()
+            .ifBlank {
+                extractJoinedNames(album.getIgnoreCase("artistList") ?: album.getIgnoreCase("artists"))
+            },
+        coverUrl = normalizeKuwoSearchCoverUrl(
+            album.firstStringOf("pic", "img", "albumPic", "picUrl", "htsPic").orEmpty()
+        ),
+        platform = Platform.KUWO,
+        type = SearchType.ALBUM,
+        trackCount = album.firstLongOf("songnum", "songNum", "musicNum", "trackCount", "count").toSearchCount()
+    )
+}
+
+private fun parseKuwoPlaylistSearchItem(item: JsonObject?): SearchResultItem? {
+    val playlist = item ?: return null
+    val id = playlist.firstStringOf("id", "playlistid", "pid") ?: return null
+    val name = playlist.firstStringOf("name", "playlist", "title")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    return SearchResultItem(
+        id = id,
+        title = name,
+        subtitle = playlist.firstStringOf("uname", "nickName", "nickname").orEmpty(),
+        coverUrl = normalizeKuwoSearchCoverUrl(
+            playlist.firstStringOf("img", "pic", "imgurl", "coverUrl").orEmpty()
+        ),
+        platform = Platform.KUWO,
+        type = SearchType.PLAYLIST,
+        trackCount = playlist.firstLongOf("musicNum", "songNum", "songnum", "trackCount", "count").toSearchCount()
+    )
+}
+
+private fun extractQqSearchBody(data: JsonElement?): JsonObject? {
+    val root = data as? JsonObject ?: return null
+    val candidates = buildList {
+        add(root)
+        root.values.forEach { value ->
+            if (value is JsonObject) add(value)
+        }
+    }
+
+    candidates.forEach { candidate ->
+        (candidate.getIgnoreCase("body") as? JsonObject)?.let { return it }
+        val dataNode = candidate.getIgnoreCase("data") as? JsonObject ?: return@forEach
+        (dataNode.getIgnoreCase("body") as? JsonObject)?.let { return it }
+    }
+    return null
+}
+
+private fun extractQqSearchItems(node: JsonElement?, vararg preferredKeys: String): List<JsonElement> {
+    return when (node) {
+        is JsonArray -> node.toList()
+        is JsonObject -> {
+            preferredKeys.forEach { key ->
+                val child = node.getIgnoreCase(key) ?: return@forEach
+                val items = extractQqSearchItems(child, *preferredKeys)
+                if (items.isNotEmpty()) return items
+                if (child is JsonObject && child.isQqSearchTerminalItem()) {
+                    return listOf(child)
+                }
+            }
+            if (node.isQqSearchTerminalItem()) listOf(node) else emptyList()
+        }
+
+        else -> emptyList()
+    }
+}
+
+private fun JsonObject.isQqSearchTerminalItem(): Boolean {
+    return firstStringOf(
+        "singerMID", "singerMid", "singer_mid", "albumMID", "albumMid",
+        "albummid", "dissid", "tid", "mid", "id"
+    ) != null
+}
+
+private fun extractNestedArray(node: JsonElement?, vararg preferredKeys: String): JsonArray? {
+    return when (node) {
+        is JsonArray -> node
+        is JsonObject -> {
+            preferredKeys.firstNotNullOfOrNull { key ->
+                extractNestedArray(node.getIgnoreCase(key), *preferredKeys)
+            }
+        }
+
+        else -> null
+    }
+}
+
+private fun extractJoinedNames(node: JsonElement?): String {
+    return when (node) {
+        is JsonArray -> node.mapNotNull { item ->
+            when (item) {
+                is JsonObject -> item.firstStringOf("name", "artistName", "singerName", "title")
+                is JsonPrimitive -> item.contentOrNull
+                else -> null
+            }?.trim()?.takeIf(String::isNotBlank)
+        }.distinct().joinToString("/")
+
+        is JsonObject -> node.firstStringOf("name", "artistName", "singerName", "title").orEmpty()
+        is JsonPrimitive -> node.contentOrNull.orEmpty()
+        else -> ""
+    }
+}
+
+private fun Long?.toSearchCount(): Int {
+    val value = this ?: return 0
+    return value.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+}
+
+private fun normalizeKuwoSearchCoverUrl(rawUrl: String): String {
+    val trimmed = rawUrl.trim()
+    if (trimmed.isBlank()) return ""
+    return if (
+        trimmed.startsWith("http://", ignoreCase = true) ||
+        trimmed.startsWith("https://", ignoreCase = true) ||
+        trimmed.startsWith("//")
+    ) {
+        normalizeQqImageUrl(trimmed)
+    } else {
+        normalizeKuwoAlbumCoverUrl(trimmed)
+    }
+}
+
 // ── Artist / Playlist Browse helpers ──
 
 private fun buildQqArtistDetailBody(singerMid: String): JsonElement = buildJsonObject {
@@ -1695,19 +2345,96 @@ private fun buildQqArtistDetailBody(singerMid: String): JsonElement = buildJsonO
         put("outCharset", "utf-8")
         put("uin", 0)
     })
-    put("singerDetail", buildJsonObject {
-        put("module", "musichall.singer_info_server")
-        put("method", "GetSingerDetail")
+    put("songs", buildJsonObject {
+        put("module", "musichall.song_list_server")
+        put("method", "GetSingerSongList")
         put("param", buildJsonObject {
-            put("singer_mid", singerMid)
+            put("singerMid", singerMid)
             put("order", 1)
             put("begin", 0)
             put("num", 50)
         })
     })
+    put("albums", buildJsonObject {
+        put("module", "music.musichallAlbum.AlbumListServer")
+        put("method", "GetAlbumList")
+        put("param", buildJsonObject {
+            put("singerMid", singerMid)
+            put("order", 1)
+            put("begin", 0)
+            put("num", 20)
+        })
+    })
+}
+
+private fun buildQqSingerAlbumsBody(singerMid: String, page: Int, pageSize: Int): JsonElement = buildJsonObject {
+    val safePage = page.coerceAtLeast(1)
+    val safePageSize = pageSize.coerceIn(1, 50)
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("albums", buildJsonObject {
+        put("module", "music.musichallAlbum.AlbumListServer")
+        put("method", "GetAlbumList")
+        put("param", buildJsonObject {
+            put("singerMid", singerMid)
+            put("order", 1)
+            put("begin", (safePage - 1) * safePageSize)
+            put("num", safePageSize)
+        })
+    })
 }
 
 private const val QQ_DEFAULT_PLAYLIST_CATEGORY_ID = 6
+private const val QQ_ALBUM_DETAIL_PAGE_SIZE = 300
+
+private fun buildQqAlbumInfoBody(albumMid: String): JsonElement = buildJsonObject {
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("album", buildJsonObject {
+        put("module", "music.musichallAlbum.AlbumInfoServer")
+        put("method", "GetAlbumDetail")
+        put("param", buildJsonObject {
+            put("albumMid", albumMid)
+        })
+    })
+}
+
+private fun buildQqAlbumSongListBody(albumId: String): JsonElement = buildJsonObject {
+    val numericAlbumId = albumId.toLongOrNull()
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("songs", buildJsonObject {
+        put("module", "music.musichallAlbum.AlbumSongList")
+        put("method", "GetAlbumSongList")
+        put("param", buildJsonObject {
+            if (numericAlbumId != null) {
+                put("albumId", numericAlbumId)
+            } else {
+                put("albumId", albumId)
+            }
+            put("begin", 0)
+            put("num", QQ_ALBUM_DETAIL_PAGE_SIZE)
+        })
+    })
+}
 
 private val qqPlaylistCategoryIdMap = linkedMapOf(
     "流行" to 6, "经典" to 22, "轻音乐" to 12, "摇滚" to 19,
@@ -1754,7 +2481,7 @@ private fun extractNeteaseArtistAlbums(data: JsonElement?): List<ArtistAlbum> {
 }
 
 private fun extractQqArtistSong(song: JsonObject?): Track? {
-    val item = song ?: return null
+    val item = ((song?.getIgnoreCase("songInfo")) ?: song) as? JsonObject ?: return null
     val mid = item.firstStringOf("mid", "songmid") ?: return null
     val singers = item.get("singer") as? JsonArray
     val artist = singers?.mapNotNull { (it as? JsonObject)?.firstStringOf("name") }?.joinToString("/").orEmpty()
@@ -1768,5 +2495,32 @@ private fun extractQqArtistSong(song: JsonObject?): Track? {
         album = albumObj?.firstStringOf("name").orEmpty(),
         coverUrl = buildQqAlbumCoverUrl(albumMid),
         durationMs = (item.firstLongOf("interval") ?: 0L) * 1000
+    )
+}
+
+private fun extractQqAlbumId(data: JsonElement?): String? {
+    val basicInfo = ((((data as? JsonObject)?.get("album") as? JsonObject)
+        ?.get("data") as? JsonObject)
+        ?.get("basicInfo") as? JsonObject) ?: return null
+    return basicInfo.firstStringOf("albumID", "albumId", "id")
+}
+
+private fun extractQqAlbumTracks(data: JsonElement?): List<Track> {
+    val songs = ((((data as? JsonObject)?.get("songs") as? JsonObject)
+        ?.get("data") as? JsonObject)
+        ?.get("songList") as? JsonArray) ?: return emptyList()
+    return songs.mapNotNull { extractQqArtistSong(it as? JsonObject) }
+}
+
+private fun extractQqArtistAlbum(album: JsonObject?): ArtistAlbum? {
+    val item = album ?: return null
+    val id = item.firstStringOf("albumID", "albumId", "id") ?: return null
+    val albumMid = item.firstStringOf("albumMid", "albumMID", "mid").orEmpty()
+    return ArtistAlbum(
+        id = id,
+        name = item.firstStringOf("albumName", "name", "title").orEmpty(),
+        coverUrl = buildQqAlbumCoverUrl(albumMid),
+        publishTime = item.firstStringOf("publishDate", "public_time", "time_public").orEmpty(),
+        songCount = (item.firstLongOf("totalNum", "track_num", "song_count") ?: 0L).toInt()
     )
 }

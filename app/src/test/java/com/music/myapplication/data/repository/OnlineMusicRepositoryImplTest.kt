@@ -6,6 +6,7 @@ import com.music.myapplication.core.network.dispatch.DispatchExecutor
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.data.remote.dto.ParseResponseDto
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.SearchType
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.ToplistInfo
 import io.mockk.coEvery
@@ -861,5 +862,568 @@ class OnlineMusicRepositoryImplTest {
         val data = (result as Result.Success).data
         assertEquals("", data.lyric)
         assertEquals("副歌重复一遍", data.translation)
+    }
+
+    @Test
+    fun searchArtists_forNetease_usesOfficialApiInsteadOfDispatchTemplate() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "result": {
+                "artists": [
+                  {
+                    "id": 6452,
+                    "name": "周杰伦",
+                    "picUrl": "https://example.com/jay.jpg",
+                    "musicSize": 686
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.searchNeteaseByType("周杰伦", 100, 0, 20, any(), any(), any()) } returns payload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.searchArtists(Platform.NETEASE, "周杰伦", 1, 20)
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("6452", data.first().id)
+        assertEquals("周杰伦", data.first().title)
+        assertEquals("https://example.com/jay.jpg", data.first().coverUrl)
+        assertEquals(686, data.first().trackCount)
+        coVerify(exactly = 1) { api.searchNeteaseByType("周杰伦", 100, 0, 20, any(), any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
+    fun searchAlbums_forQq_usesOfficialApiInsteadOfDispatchTemplate() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val requestBody = slot<JsonElement>()
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "req": {
+                "data": {
+                  "body": {
+                    "direct_result": {
+                      "items": [
+                        {
+                          "id": "8220",
+                          "restype": "album",
+                          "title": "叶惠美",
+                          "pic": "http://y.gtimg.cn/music/photo_new/T002R180x180M000000MkMni19ClKG_5.jpg",
+                          "custom_info": {
+                            "mid": "000MkMni19ClKG",
+                            "quality_album_title_prefix": "周杰伦",
+                            "track_num": "11"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } answers {
+            requestBody.captured = firstArg()
+            payload
+        }
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.searchAlbums(Platform.QQ, "周杰伦", 1, 20)
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("8220", data.first().id)
+        assertEquals("叶惠美", data.first().title)
+        assertEquals("周杰伦", data.first().subtitle)
+        assertEquals(
+            "https://y.gtimg.cn/music/photo_new/T002R180x180M000000MkMni19ClKG_5.jpg",
+            data.first().coverUrl
+        )
+        assertEquals(11, data.first().trackCount)
+
+        val root = requestBody.captured as JsonObject
+        val params = ((root["req"] as JsonObject)["param"]) as JsonObject
+        assertEquals(100, (params["search_type"] as JsonPrimitive).content.toInt())
+        assertEquals("周杰伦", (params["query"] as JsonPrimitive).content)
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
+    fun searchArtists_forQq_usesGeneralSearchDirectResult() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "req": {
+                "data": {
+                  "body": {
+                    "direct_result": {
+                      "items": [
+                        {
+                          "id": "4558",
+                          "restype": "singer",
+                          "title": "周杰伦",
+                          "pic": "http://y.gtimg.cn/music/photo_new/T001R150x150M0000025NhlN2yWrP4_10.jpg",
+                          "custom_info": {
+                            "mid": "0025NhlN2yWrP4",
+                            "song_num": "997"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } returns payload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.searchArtists(Platform.QQ, "周杰伦", 1, 20)
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("0025NhlN2yWrP4", data.first().id)
+        assertEquals("周杰伦", data.first().title)
+        assertEquals("https://y.gtimg.cn/music/photo_new/T001R150x150M0000025NhlN2yWrP4_10.jpg", data.first().coverUrl)
+        assertEquals(997, data.first().trackCount)
+        coVerify(exactly = 1) { api.postQqMusicu(any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
+    fun searchAlbums_forQq_fallsBackToSingerAlbumListWhenDirectAlbumMissing() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val generalPayload = json.parseToJsonElement(
+            """
+            {
+              "req": {
+                "data": {
+                  "body": {
+                    "direct_result": {
+                      "items": [
+                        {
+                          "id": "4558",
+                          "restype": "singer",
+                          "title": "周杰伦",
+                          "custom_info": {
+                            "mid": "0025NhlN2yWrP4"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        val albumsPayload = json.parseToJsonElement(
+            """
+            {
+              "albums": {
+                "data": {
+                  "albumList": [
+                    {
+                      "albumID": 8220,
+                      "albumMid": "000MkMni19ClKG",
+                      "albumName": "叶惠美",
+                      "publishDate": "2003-07-31",
+                      "singerName": "周杰伦",
+                      "totalNum": 11
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } returnsMany listOf(generalPayload, albumsPayload)
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.searchAlbums(Platform.QQ, "周杰伦", 1, 20)
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("8220", data.first().id)
+        assertEquals("叶惠美", data.first().title)
+        assertEquals("周杰伦", data.first().subtitle)
+        assertEquals("https://y.qq.com/music/photo_new/T002R300x300M000000MkMni19ClKG.jpg", data.first().coverUrl)
+        assertEquals(11, data.first().trackCount)
+        coVerify(exactly = 2) { api.postQqMusicu(any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
+    fun searchPlaylists_forKuwo_usesOfficialApiInsteadOfDispatchTemplate() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "list": [
+                  {
+                    "id": "2891238463",
+                    "name": "华语精选",
+                    "img": "https://img4.kuwo.cn/star/albumcover/example.jpg",
+                    "musicNum": 30,
+                    "nickName": "酷我用户"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.searchKuwoPlaylists("华语", 1, 20, 1, any(), any()) } returns payload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.searchPlaylists(Platform.KUWO, "华语", 1, 20)
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("2891238463", data.first().id)
+        assertEquals("华语精选", data.first().title)
+        assertEquals("酷我用户", data.first().subtitle)
+        assertEquals("https://img4.kuwo.cn/star/albumcover/example.jpg", data.first().coverUrl)
+        assertEquals(30, data.first().trackCount)
+        coVerify(exactly = 1) { api.searchKuwoPlaylists("华语", 1, 20, 1, any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), any(), any()) }
+    }
+
+    @Test
+    fun extractNeteaseSearchResults_readsAlbumAndPlaylistStructure() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "result": {
+                "albums": [
+                  {
+                    "id": 1,
+                    "name": "叶惠美",
+                    "picUrl": "https://example.com/yhm.jpg",
+                    "size": 11,
+                    "artists": [
+                      { "name": "周杰伦" }
+                    ]
+                  }
+                ],
+                "playlists": [
+                  {
+                    "id": 2,
+                    "name": "周杰伦热门歌单",
+                    "coverImgUrl": "https://example.com/playlist.jpg",
+                    "trackCount": 50,
+                    "creator": { "nickname": "测试用户" }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val albums = extractNeteaseSearchResults(payload, SearchType.ALBUM)
+        val playlists = extractNeteaseSearchResults(payload, SearchType.PLAYLIST)
+
+        assertEquals("叶惠美", albums.first().title)
+        assertEquals("周杰伦", albums.first().subtitle)
+        assertEquals(11, albums.first().trackCount)
+        assertEquals("周杰伦热门歌单", playlists.first().title)
+        assertEquals("测试用户", playlists.first().subtitle)
+        assertEquals(50, playlists.first().trackCount)
+    }
+
+    @Test
+    fun extractQqSearchResults_readsArtistAndPlaylistStructure() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "search": {
+                "data": {
+                  "body": {
+                    "singer": {
+                      "list": [
+                        {
+                          "singerMID": "0025NhlN2yWrP4",
+                          "singerName": "周杰伦",
+                          "pic": "//y.gtimg.cn/music/photo_new/T001R300x300M0000025NhlN2yWrP4.jpg",
+                          "songNum": 686
+                        }
+                      ]
+                    },
+                    "songlist": {
+                      "list": [
+                        {
+                          "dissid": "9209322004",
+                          "dissname": "周杰伦循环专区",
+                          "imgurl": "http://p.qpic.cn/music_cover/example/600?n=1",
+                          "song_count": 40,
+                          "creatorName": "QQ用户"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val artists = extractQqSearchResults(payload, SearchType.ARTIST)
+        val playlists = extractQqSearchResults(payload, SearchType.PLAYLIST)
+
+        assertEquals("0025NhlN2yWrP4", artists.first().id)
+        assertEquals("周杰伦", artists.first().title)
+        assertEquals(
+            "https://y.gtimg.cn/music/photo_new/T001R300x300M0000025NhlN2yWrP4.jpg",
+            artists.first().coverUrl
+        )
+        assertEquals(686, artists.first().trackCount)
+        assertEquals("9209322004", playlists.first().id)
+        assertEquals("周杰伦循环专区", playlists.first().title)
+        assertEquals("QQ用户", playlists.first().subtitle)
+        assertEquals(40, playlists.first().trackCount)
+    }
+
+    @Test
+    fun extractKuwoSearchResults_readsArtistAndAlbumStructure() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "artistList": [
+                  {
+                    "id": "123",
+                    "name": "周杰伦",
+                    "pic": "https://img4.kuwo.cn/star/artistcover/jay.jpg",
+                    "musicNum": 686
+                  }
+                ],
+                "albumList": [
+                  {
+                    "albumid": "456",
+                    "album": "范特西",
+                    "artist": "周杰伦",
+                    "pic": "starheads/202/32/12/example.jpg",
+                    "songnum": 10
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val artists = extractKuwoSearchResults(payload, SearchType.ARTIST)
+        val albums = extractKuwoSearchResults(payload, SearchType.ALBUM)
+
+        assertEquals("123", artists.first().id)
+        assertEquals("周杰伦", artists.first().title)
+        assertEquals(686, artists.first().trackCount)
+        assertEquals("456", albums.first().id)
+        assertEquals("范特西", albums.first().title)
+        assertEquals("周杰伦", albums.first().subtitle)
+        assertEquals("https://img4.kuwo.cn/star/albumcover/starheads/202/32/12/example.jpg", albums.first().coverUrl)
+        assertEquals(10, albums.first().trackCount)
+    }
+
+    @Test
+    fun getAlbumDetail_forNetease_usesOfficialApiInsteadOfDispatchTemplate() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "songs": [
+                {
+                  "id": 185811,
+                  "name": "晴天",
+                  "dt": 269000,
+                  "artists": [
+                    { "name": "周杰伦" }
+                  ],
+                  "album": {
+                    "name": "叶惠美",
+                    "picUrl": "https://example.com/yhm.jpg"
+                  }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseAlbumDetail("32311", any()) } returns payload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumDetail(Platform.NETEASE, "32311")
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("185811", data.first().id)
+        assertEquals("晴天", data.first().title)
+        assertEquals("周杰伦", data.first().artist)
+        assertEquals("叶惠美", data.first().album)
+        coVerify(exactly = 1) { api.getNeteaseAlbumDetail("32311", any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), eq("albumDetail"), any()) }
+    }
+
+    @Test
+    fun getAlbumDetail_forQq_usesOfficialApiInsteadOfDispatchTemplate() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val requestBody = slot<JsonElement>()
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "songs": {
+                "code": 0,
+                "data": {
+                  "totalNum": 1,
+                  "songList": [
+                    {
+                      "songInfo": {
+                        "mid": "0039MnYb0qxYhV",
+                        "title": "晴天",
+                        "interval": 269,
+                        "singer": [
+                          { "name": "周杰伦" }
+                        ],
+                        "album": {
+                          "mid": "000MkMni19ClKG",
+                          "name": "叶惠美"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } answers {
+            requestBody.captured = firstArg()
+            payload
+        }
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumDetail(Platform.QQ, "8220")
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("0039MnYb0qxYhV", data.first().id)
+        assertEquals("晴天", data.first().title)
+        assertEquals("周杰伦", data.first().artist)
+        assertEquals("叶惠美", data.first().album)
+        assertEquals(
+            "https://y.qq.com/music/photo_new/T002R300x300M000000MkMni19ClKG.jpg",
+            data.first().coverUrl
+        )
+        assertEquals(269000L, data.first().durationMs)
+
+        val root = requestBody.captured as JsonObject
+        val songs = root["songs"] as JsonObject
+        val params = songs["param"] as JsonObject
+        assertEquals("music.musichallAlbum.AlbumSongList", (songs["module"] as JsonPrimitive).content)
+        assertEquals("GetAlbumSongList", (songs["method"] as JsonPrimitive).content)
+        assertEquals(8220L, (params["albumId"] as JsonPrimitive).content.toLong())
+        assertEquals(300, (params["num"] as JsonPrimitive).content.toInt())
+        coVerify(exactly = 1) { api.postQqMusicu(any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), eq("albumDetail"), any()) }
+    }
+
+    @Test
+    fun getArtistDetail_forQq_usesSingerSongAndAlbumEndpoints() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "songs": {
+                "data": {
+                  "songList": [
+                    {
+                      "songInfo": {
+                        "mid": "0039MnYb0qxYhV",
+                        "title": "晴天",
+                        "interval": 269,
+                        "singer": [
+                          { "name": "周杰伦", "mid": "0025NhlN2yWrP4" }
+                        ],
+                        "album": {
+                          "name": "叶惠美",
+                          "mid": "000MkMni19ClKG"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "albums": {
+                "data": {
+                  "albumList": [
+                    {
+                      "albumID": 8220,
+                      "albumMid": "000MkMni19ClKG",
+                      "albumName": "叶惠美",
+                      "publishDate": "2003-07-31",
+                      "singerName": "周杰伦",
+                      "totalNum": 11
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } returns payload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getArtistDetail("0025NhlN2yWrP4", Platform.QQ)
+
+        val data = (result as Result.Success).data
+        assertEquals("周杰伦", data.name)
+        assertEquals("https://y.qq.com/music/photo_new/T001R300x300M0000025NhlN2yWrP4.jpg", data.avatarUrl)
+        assertEquals(1, data.hotSongs.size)
+        assertEquals("晴天", data.hotSongs.first().title)
+        assertEquals(1, data.albums.size)
+        assertEquals("叶惠美", data.albums.first().name)
+        coVerify(exactly = 1) { api.postQqMusicu(any(), any()) }
     }
 }

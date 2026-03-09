@@ -14,5 +14,6 @@ data class SearchResultItem(
     val coverUrl: String = "",
     val platform: Platform,
     val type: SearchType,
-    val trackCount: Int = 0
+    val trackCount: Int = 0,
+    val extra: String = ""
 )

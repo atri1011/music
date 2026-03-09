@@ -13,6 +13,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import com.music.myapplication.feature.album.AlbumDetailScreen
 import com.music.myapplication.feature.artist.ArtistDetailScreen
 import com.music.myapplication.feature.home.HomeScreen
 import com.music.myapplication.feature.library.LibraryScreen
@@ -55,6 +56,12 @@ fun AppNavGraph(
                 playerViewModel = playerViewModel,
                 onNavigateToArtist = { trackId, platformId, artistName ->
                     navController.navigate(Routes.ArtistDetail(trackId, platformId, artistName))
+                },
+                onNavigateToAlbum = { albumId, platformId, albumName, artistName, coverUrl ->
+                    navController.navigate(Routes.AlbumDetail(albumId, platformId, albumName, artistName, coverUrl))
+                },
+                onNavigateToPlaylist = { id, platformId, name ->
+                    navController.navigate(Routes.PlaylistDetail(id, platformId, name, "playlist"))
                 }
             )
         }
@@ -124,6 +131,33 @@ fun AppNavGraph(
             }
         ) {
             ArtistDetailScreen(
+                onBack = { navController.popBackStack() },
+                playerViewModel = playerViewModel
+            )
+        }
+
+        // Album detail: slide in from right
+        composable<Routes.AlbumDetail>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            AlbumDetailScreen(
                 onBack = { navController.popBackStack() },
                 playerViewModel = playerViewModel
             )

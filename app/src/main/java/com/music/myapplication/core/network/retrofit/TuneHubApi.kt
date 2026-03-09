@@ -6,6 +6,8 @@ import com.music.myapplication.data.remote.dto.ParseResponseDto
 import kotlinx.serialization.json.JsonElement
 import okhttp3.ResponseBody
 import retrofit2.http.Body
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
@@ -43,6 +45,12 @@ interface TuneHubApi {
         @Query("id") id: String,
         @Query("n") n: Int = 100000,
         @Query("s") s: Int = 8,
+        @Header("Referer") referer: String = "https://music.163.com/"
+    ): JsonElement
+
+    @GET("https://music.163.com/api/album/{id}")
+    suspend fun getNeteaseAlbumDetail(
+        @Path("id") id: String,
         @Header("Referer") referer: String = "https://music.163.com/"
     ): JsonElement
 
@@ -123,6 +131,48 @@ interface TuneHubApi {
         @Query("key") keyword: String,
         @Query("format") format: String = "json",
         @Header("Referer") referer: String = "https://y.qq.com/"
+    ): JsonElement
+
+    @FormUrlEncoded
+    @POST("https://music.163.com/api/search/get/web")
+    suspend fun searchNeteaseByType(
+        @Field("s") keyword: String,
+        @Field("type") type: Int,
+        @Field("offset") offset: Int = 0,
+        @Field("limit") limit: Int = 20,
+        @Field("total") total: Boolean = true,
+        @Field("csrf_token") csrfToken: String = "",
+        @Header("Referer") referer: String = "https://music.163.com/"
+    ): JsonElement
+
+    @GET("https://www.kuwo.cn/api/www/search/searchArtistBykeyWord")
+    suspend fun searchKuwoArtists(
+        @Query("key") keyword: String,
+        @Query("pn") page: Int = 1,
+        @Query("rn") pageSize: Int = 20,
+        @Query("httpsStatus") httpsStatus: Int = 1,
+        @Header("Referer") referer: String = "https://www.kuwo.cn/",
+        @Header("csrf") csrf: String = ""
+    ): JsonElement
+
+    @GET("https://www.kuwo.cn/api/www/search/searchAlbumBykeyWord")
+    suspend fun searchKuwoAlbums(
+        @Query("key") keyword: String,
+        @Query("pn") page: Int = 1,
+        @Query("rn") pageSize: Int = 20,
+        @Query("httpsStatus") httpsStatus: Int = 1,
+        @Header("Referer") referer: String = "https://www.kuwo.cn/",
+        @Header("csrf") csrf: String = ""
+    ): JsonElement
+
+    @GET("https://www.kuwo.cn/api/www/search/searchPlayListBykeyWord")
+    suspend fun searchKuwoPlaylists(
+        @Query("key") keyword: String,
+        @Query("pn") page: Int = 1,
+        @Query("rn") pageSize: Int = 20,
+        @Query("httpsStatus") httpsStatus: Int = 1,
+        @Header("Referer") referer: String = "https://www.kuwo.cn/",
+        @Header("csrf") csrf: String = ""
     ): JsonElement
 
     // Artist

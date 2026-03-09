@@ -57,6 +57,7 @@ interface OnlineMusicRepository {
     suspend fun enrichToplistTracks(platform: Platform, id: String, tracks: List<Track>): List<Track>
     suspend fun getToplistDetail(platform: Platform, id: String): Result<List<Track>>
     suspend fun getPlaylistDetail(platform: Platform, id: String): Result<List<Track>>
+    suspend fun getAlbumDetail(platform: Platform, albumId: String): Result<List<Track>>
     suspend fun getTrackComments(track: Track, page: Int = 1, pageSize: Int = 20): Result<TrackCommentsResult>
     suspend fun resolveShareUrl(url: String): String
     suspend fun resolvePlayableUrl(platform: Platform, songId: String, quality: String = "128k"): Result<String>

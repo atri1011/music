@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.History
@@ -78,7 +79,9 @@ import com.music.myapplication.ui.theme.glassSurface
 fun SearchScreen(
     searchViewModel: SearchViewModel = hiltViewModel(),
     playerViewModel: PlayerViewModel,
-    onNavigateToArtist: ((String, String, String) -> Unit)? = null
+    onNavigateToArtist: ((String, String, String) -> Unit)? = null,
+    onNavigateToAlbum: ((String, String, String, String, String) -> Unit)? = null,
+    onNavigateToPlaylist: ((String, String, String) -> Unit)? = null
 ) {
     val state by searchViewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
@@ -378,7 +381,13 @@ fun SearchScreen(
                                             SearchType.ARTIST -> {
                                                 onNavigateToArtist?.invoke(item.id, item.platform.id, item.title)
                                             }
-                                            else -> { /* Album/Playlist navigation - TODO in week 2 */ }
+                                            SearchType.ALBUM -> {
+                                                onNavigateToAlbum?.invoke(item.id, item.platform.id, item.title, item.subtitle, item.coverUrl)
+                                            }
+                                            SearchType.PLAYLIST -> {
+                                                onNavigateToPlaylist?.invoke(item.id, item.platform.id, item.title)
+                                            }
+                                            else -> {}
                                         }
                                     }
                                 )
@@ -435,6 +444,9 @@ private fun SearchResultListItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val coverSize = if (item.type == SearchType.ARTIST) 52.dp else 56.dp
+    val coverShape = if (item.type == SearchType.ARTIST) CircleShape else RoundedCornerShape(8.dp)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -446,11 +458,8 @@ private fun SearchResultListItem(
             url = item.coverUrl,
             contentDescription = item.title,
             modifier = Modifier
-                .size(48.dp)
-                .clip(
-                    if (item.type == SearchType.ARTIST) CircleShape
-                    else RoundedCornerShape(8.dp)
-                )
+                .size(coverSize)
+                .clip(coverShape)
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -463,9 +472,10 @@ private fun SearchResultListItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (item.subtitle.isNotBlank()) {
+            val subtitleText = buildSubtitle(item)
+            if (subtitleText.isNotBlank()) {
                 Text(
-                    text = item.subtitle,
+                    text = subtitleText,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -476,15 +486,32 @@ private fun SearchResultListItem(
         }
 
         Icon(
-            imageVector = when (item.type) {
-                SearchType.ARTIST -> Icons.Outlined.Person
-                SearchType.ALBUM -> Icons.Outlined.Album
-                SearchType.PLAYLIST -> Icons.AutoMirrored.Outlined.QueueMusic
-                else -> Icons.Outlined.MusicNote
-            },
-            contentDescription = item.type.displayName,
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         )
     }
+}
+
+private fun buildSubtitle(item: SearchResultItem): String {
+    val parts = mutableListOf<String>()
+    when (item.type) {
+        SearchType.ARTIST -> {
+            if (item.trackCount > 0) parts.add("${item.trackCount}首歌曲")
+            parts.add(item.platform.displayName)
+        }
+        SearchType.ALBUM -> {
+            if (item.subtitle.isNotBlank()) parts.add(item.subtitle)
+            if (item.trackCount > 0) parts.add("${item.trackCount}首")
+        }
+        SearchType.PLAYLIST -> {
+            if (item.trackCount > 0) parts.add("${item.trackCount}首歌曲")
+            parts.add(item.platform.displayName)
+        }
+        else -> {
+            if (item.subtitle.isNotBlank()) parts.add(item.subtitle)
+        }
+    }
+    return parts.joinToString(" · ")
 }
