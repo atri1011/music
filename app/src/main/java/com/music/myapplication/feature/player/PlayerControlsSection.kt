@@ -1,6 +1,11 @@
 package com.music.myapplication.feature.player
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,8 +27,6 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,7 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.feature.components.QualitySelector
@@ -77,23 +85,85 @@ fun PlayerControlsSection(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Slider(
-            value = progressFraction.coerceIn(0f, 1f),
-            onValueChange = {
-                sliderDragging = true
-                sliderPosition = it
-            },
-            onValueChangeFinished = {
-                sliderDragging = false
-                onSeek((sliderPosition * progress.durationMs).toLong())
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = SliderDefaults.colors(
-                thumbColor = activeAccent,
-                activeTrackColor = activeAccent,
-                inactiveTrackColor = contentColor.copy(alpha = 0.2f)
-            )
+        // Custom Canvas-drawn slider
+        val density = LocalDensity.current
+        val trackHeightPx = with(density) { 4.dp.toPx() }
+        val thumbRadius by animateDpAsState(
+            targetValue = if (sliderDragging) 8.dp else 6.dp,
+            animationSpec = spring(),
+            label = "thumbRadius"
         )
+
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { offset ->
+                        val fraction = (offset.x / size.width).coerceIn(0f, 1f)
+                        sliderPosition = fraction
+                        onSeek((fraction * progress.durationMs).toLong())
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            sliderDragging = true
+                            sliderPosition = (offset.x / size.width).coerceIn(0f, 1f)
+                        },
+                        onDragEnd = {
+                            sliderDragging = false
+                            onSeek((sliderPosition * progress.durationMs).toLong())
+                        },
+                        onDragCancel = {
+                            sliderDragging = false
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            sliderPosition = (sliderPosition + dragAmount / size.width).coerceIn(0f, 1f)
+                        }
+                    )
+                }
+        ) {
+            val canvasWidth = size.width
+            val centerY = size.height / 2f
+            val trackCornerRadius = CornerRadius(trackHeightPx / 2f)
+            val currentFraction = progressFraction.coerceIn(0f, 1f)
+            val thumbRadiusPx = thumbRadius.toPx()
+
+            // Inactive track (full width capsule)
+            drawRoundRect(
+                color = contentColor.copy(alpha = 0.15f),
+                topLeft = Offset(0f, centerY - trackHeightPx / 2f),
+                size = Size(canvasWidth, trackHeightPx),
+                cornerRadius = trackCornerRadius
+            )
+
+            // Active track
+            if (currentFraction > 0f) {
+                drawRoundRect(
+                    color = activeAccent,
+                    topLeft = Offset(0f, centerY - trackHeightPx / 2f),
+                    size = Size(canvasWidth * currentFraction, trackHeightPx),
+                    cornerRadius = trackCornerRadius
+                )
+            }
+
+            // Thumb circle
+            val thumbX = canvasWidth * currentFraction
+            // Shadow
+            if (sliderDragging) {
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.15f),
+                    radius = thumbRadiusPx + 2.dp.toPx(),
+                    center = Offset(thumbX, centerY)
+                )
+            }
+            drawCircle(
+                color = activeAccent,
+                radius = thumbRadiusPx,
+                center = Offset(thumbX, centerY)
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -103,12 +173,16 @@ fun PlayerControlsSection(
                 text = formatDuration(
                     if (sliderDragging) (sliderPosition * progress.durationMs).toLong() else progress.positionMs
                 ),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFeatureSettings = "tnum"
+                ),
                 color = subtleColor
             )
             Text(
                 text = formatDuration(progress.durationMs),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFeatureSettings = "tnum"
+                ),
                 color = subtleColor
             )
         }

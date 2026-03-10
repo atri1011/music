@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,11 +51,12 @@ fun FullScreenPlayer(
         label = "dominant"
     )
     val baseColor = if (isDark) Color.Black else Color(0xFF1A1A2E)
+    val tintedBase = lerp(baseColor, animatedDominant, 0.05f)
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .playerGradientBackground(dominantColor = animatedDominant, baseColor = baseColor)
+            .playerGradientBackground(dominantColor = animatedDominant, baseColor = tintedBase)
     ) {
         Box(
             modifier = Modifier
@@ -62,9 +64,9 @@ fun FullScreenPlayer(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            baseColor.copy(alpha = 0.4f),
-                            baseColor.copy(alpha = 0.75f),
-                            baseColor.copy(alpha = 0.9f)
+                            tintedBase.copy(alpha = 0.4f),
+                            tintedBase.copy(alpha = 0.75f),
+                            tintedBase.copy(alpha = 0.9f)
                         )
                     )
                 )

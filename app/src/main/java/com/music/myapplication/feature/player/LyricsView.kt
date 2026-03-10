@@ -1,7 +1,8 @@
 package com.music.myapplication.feature.player
 
+import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -117,9 +119,16 @@ fun LyricsView(
                 }
                 val animatedAlpha by animateFloatAsState(
                     targetValue = targetAlpha,
-                    animationSpec = tween(400),
+                    animationSpec = spring(),
                     label = "lyricAlpha_$index"
                 )
+
+                // Blur modifier for distant lines (API 31+)
+                val blurModifier = if (distance >= 3 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    Modifier.blur(2.dp)
+                } else {
+                    Modifier
+                }
 
                 val lyricShadow = Shadow(
                     color = Color.Black.copy(alpha = 0.45f),
@@ -130,7 +139,14 @@ fun LyricsView(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .graphicsLayer { alpha = animatedAlpha }
+                        .graphicsLayer {
+                            alpha = animatedAlpha
+                            if (isCurrent) {
+                                scaleX = 1.05f
+                                scaleY = 1.05f
+                            }
+                        }
+                        .then(blurModifier)
                         .padding(vertical = if (isCurrent) 16.dp else 12.dp)
                 ) {
                     // Main lyric text

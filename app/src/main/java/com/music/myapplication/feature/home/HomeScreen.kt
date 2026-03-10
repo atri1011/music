@@ -86,11 +86,10 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val gradientColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-        Color(0xFF2D1B3D)
-    } else {
-        Color(0xFFFCE4EC)
-    }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val gradientColor = MaterialTheme.colorScheme.primary.copy(
+        alpha = if (isDark) 0.15f else 0.08f
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Top gradient scrim

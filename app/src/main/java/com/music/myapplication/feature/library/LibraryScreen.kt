@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -322,6 +323,17 @@ private fun TopCoversHeader(topTracks: List<Pair<Track, Int>>) {
         tracks.forEachIndexed { index, (track, _) ->
             val offsetFromCenter = index - centerIndex
             val zIdx = count.toFloat() - abs(index - count / 2).toFloat()
+            val distFromCenter = abs(offsetFromCenter).toInt()
+            val coverScale = when (distFromCenter) {
+                0 -> 1.0f
+                1 -> 0.90f
+                else -> 0.80f
+            }
+            val blurAmount = when (distFromCenter) {
+                0 -> 0.dp
+                1 -> 4.dp
+                else -> 8.dp
+            }
 
             CoverImage(
                 url = track.coverUrl,
@@ -329,7 +341,17 @@ private fun TopCoversHeader(topTracks: List<Pair<Track, Int>>) {
                 modifier = Modifier
                     .zIndex(zIdx)
                     .offset(x = spacing * offsetFromCenter)
-                    .graphicsLayer { rotationZ = angles[index] }
+                    .graphicsLayer {
+                        rotationZ = angles[index]
+                        scaleX = coverScale
+                        scaleY = coverScale
+                        shadowElevation = if (distFromCenter == 0) 8f else 2f
+                    }
+                    .then(
+                        if (blurAmount > 0.dp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                            Modifier.blur(blurAmount)
+                        else Modifier
+                    )
                     .size(coverSize)
                     .clip(RoundedCornerShape(12.dp))
             )
@@ -651,6 +673,12 @@ private fun RankedTrackItem(
         3 -> RankBronze
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val rankBrush = when (rank) {
+        1 -> Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFD4AF37)))
+        2 -> Brush.linearGradient(listOf(Color(0xFFC0C0C0), Color(0xFF8A8A8A)))
+        3 -> Brush.linearGradient(listOf(Color(0xFFCD7F32), Color(0xFFA0522D)))
+        else -> null
+    }
 
     Row(
         modifier = Modifier
@@ -682,10 +710,17 @@ private fun RankedTrackItem(
         ) {
             Text(
                 text = "$rank",
-                style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = if (isTopThree) FontWeight.ExtraBold else FontWeight.Bold,
-                    color = rankColor
-                )
+                style = if (rankBrush != null) {
+                    MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        brush = rankBrush
+                    )
+                } else {
+                    MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = rankColor
+                    )
+                }
             )
         }
 

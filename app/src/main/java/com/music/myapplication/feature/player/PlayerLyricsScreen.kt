@@ -2,6 +2,7 @@ package com.music.myapplication.feature.player
 
 import android.os.Build
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -60,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -383,11 +385,19 @@ private fun BlurredCoverBackground(coverUrl: String) {
             contentScale = ContentScale.Crop
         )
 
-        // Dark scrim overlay
+        // Dark scrim overlay — vertical gradient
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.35f))
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.15f),
+                            Color.Black.copy(alpha = 0.40f),
+                            Color.Black.copy(alpha = 0.65f)
+                        )
+                    )
+                )
         )
     }
 }
@@ -1064,11 +1074,16 @@ private fun PagerIndicator(
         verticalAlignment = Alignment.CenterVertically
     ) {
         repeat(pageCount) { index ->
+            val animatedWidth by animateDpAsState(
+                targetValue = if (index == currentPage) 20.dp else 6.dp,
+                label = "indicatorWidth_$index"
+            )
             Box(
                 modifier = Modifier
                     .padding(horizontal = 3.dp)
-                    .size(if (index == currentPage) 8.dp else 6.dp)
-                    .clip(CircleShape)
+                    .height(6.dp)
+                    .width(animatedWidth)
+                    .clip(RoundedCornerShape(3.dp))
                     .background(
                         if (index == currentPage) Color.White
                         else Color.White.copy(alpha = 0.3f)

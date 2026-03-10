@@ -36,10 +36,10 @@ fun AppNavGraph(
         navController = navController,
         startDestination = Routes.Home,
         modifier = modifier,
-        enterTransition = { fadeIn(animationSpec = tween(250)) },
-        exitTransition = { fadeOut(animationSpec = tween(200)) },
-        popEnterTransition = { fadeIn(animationSpec = tween(250)) },
-        popExitTransition = { fadeOut(animationSpec = tween(200)) }
+        enterTransition = { fadeIn(animationSpec = tween(300)) + slideInVertically(initialOffsetY = { it / 20 }) },
+        exitTransition = { fadeOut(animationSpec = tween(200)) + slideOutVertically(targetOffsetY = { -it / 20 }) },
+        popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInVertically(initialOffsetY = { -it / 20 }) },
+        popExitTransition = { fadeOut(animationSpec = tween(200)) + slideOutVertically(targetOffsetY = { it / 20 }) }
     ) {
         composable<Routes.Home> {
             HomeScreen(

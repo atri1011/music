@@ -1,8 +1,14 @@
 package com.music.myapplication.feature.player
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,6 +28,30 @@ fun RotatingCover(
 ) {
     val coverShape = RoundedCornerShape(24.dp)
 
+    // Breathing scale animation
+    val infiniteTransition = rememberInfiniteTransition(label = "breathing")
+    val breathingScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 1.02f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathingScale"
+    )
+    val breathingGlowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.55f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "breathingGlow"
+    )
+
+    val scale = if (isPlaying) breathingScale else 1.0f
+    val glowAlpha = if (isPlaying) breathingGlowAlpha else 0.35f
+
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center
@@ -34,7 +64,7 @@ fun RotatingCover(
                     .graphicsLayer {
                         scaleX = 1.15f
                         scaleY = 1.15f
-                        alpha = if (isPlaying) 0.6f else 0.25f
+                        alpha = glowAlpha
                     }
                     .clip(RoundedCornerShape(32.dp))
                     .drawBehind {
@@ -48,6 +78,10 @@ fun RotatingCover(
             contentDescription = "专辑封面",
             modifier = Modifier
                 .matchParentSize()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
                 .clip(coverShape),
             contentScale = ContentScale.Crop
         )

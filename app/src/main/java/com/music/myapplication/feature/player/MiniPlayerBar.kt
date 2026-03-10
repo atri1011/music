@@ -1,6 +1,7 @@
 package com.music.myapplication.feature.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -91,7 +92,7 @@ fun MiniPlayerBar(
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        modifier = Modifier.basicMarquee()
                     )
                     Text(
                         text = currentTrack.artist,
@@ -155,7 +156,8 @@ fun MiniPlayerBar(
                 progress = { progress.coerceIn(0f, 1f) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(2.dp),
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = Color.Transparent
             )
