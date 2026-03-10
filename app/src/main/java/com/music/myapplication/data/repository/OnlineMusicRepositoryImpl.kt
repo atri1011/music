@@ -6,6 +6,8 @@ import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.data.remote.dto.ParseRequestDto
+import com.music.myapplication.domain.model.AlbumDetailResult
+import com.music.myapplication.domain.model.AlbumInfo
 import com.music.myapplication.domain.model.ArtistAlbum
 import com.music.myapplication.domain.model.ArtistDetail
 import com.music.myapplication.domain.model.ArtistRef
@@ -35,6 +37,9 @@ import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -200,6 +205,45 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             args = mapOf("id" to albumId, "albumId" to albumId)
         )
         return enrichTrackCoverIfNeeded(platform, result)
+    }
+
+    override suspend fun getAlbumInfo(platform: Platform, albumId: String): Result<AlbumInfo> {
+        return when (platform) {
+            Platform.NETEASE -> fetchNeteaseAlbumInfo(albumId)
+            Platform.QQ -> fetchQqAlbumInfo(albumId)
+            else -> Result.Success(AlbumInfo(id = albumId, platform = platform))
+        }
+    }
+
+    override suspend fun getAlbumDetailFull(
+        platform: Platform,
+        albumId: String,
+        albumNameHint: String,
+        artistNameHint: String,
+        coverUrlHint: String
+    ): Result<AlbumDetailResult> {
+        return when (platform) {
+            Platform.NETEASE -> fetchNeteaseAlbumDetailFull(
+                id = albumId,
+                albumNameHint = albumNameHint,
+                artistNameHint = artistNameHint,
+                coverUrlHint = coverUrlHint
+            )
+            Platform.QQ -> fetchQqAlbumDetailFull(albumId)
+            else -> {
+                val tracksResult = getAlbumDetail(platform, albumId)
+                when (tracksResult) {
+                    is Result.Success -> Result.Success(
+                        AlbumDetailResult(
+                            info = AlbumInfo(id = albumId, platform = platform),
+                            tracks = tracksResult.data
+                        )
+                    )
+                    is Result.Error -> Result.Error(tracksResult.error)
+                    is Result.Loading -> Result.Loading
+                }
+            }
+        }
     }
 
     override suspend fun resolveShareUrl(url: String): String = withContext(Dispatchers.IO) {
@@ -715,6 +759,379 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             }
 
             Result.Success(enrichTrackCoverIfNeeded(Platform.QQ, tracks))
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun fetchNeteaseAlbumInfo(id: String): Result<AlbumInfo> {
+        return try {
+            val response = api.getNeteaseAlbumDetail(id = id)
+            val code = extractApiCode(response)
+            if (code != null && code != 200) {
+                return Result.Error(
+                    AppError.Api(
+                        message = extractApiMessage(response).ifBlank { "获取网易专辑信息失败" },
+                        code = code
+                    )
+                )
+            }
+            val root = response as? JsonObject
+            val album = root?.getIgnoreCase("album") as? JsonObject
+                ?: return Result.Error(AppError.Parse(message = "解析网易专辑信息失败"))
+
+            Result.Success(parseNeteaseAlbumInfo(id, album))
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun fetchQqAlbumInfo(idOrMid: String): Result<AlbumInfo> {
+        return when (val albumData = fetchQqAlbumInfoData(idOrMid)) {
+            is Result.Success -> Result.Success(parseQqAlbumInfo(idOrMid, albumData.data))
+            is Result.Error -> Result.Error(albumData.error)
+            is Result.Loading -> Result.Loading
+        }
+    }
+
+    private suspend fun fetchNeteaseAlbumDetailFull(
+        id: String,
+        albumNameHint: String = "",
+        artistNameHint: String = "",
+        coverUrlHint: String = ""
+    ): Result<AlbumDetailResult> {
+        return try {
+            val response = api.getNeteaseAlbumDetail(id = id)
+            val code = extractApiCode(response)
+            if (code != null && code != 200) {
+                val message = extractApiMessage(response).ifBlank { "获取网易专辑详情失败" }
+                if (shouldFallbackNeteaseAlbumDetail(code, message)) {
+                    return fetchNeteaseAlbumDetailFallback(
+                        albumId = id,
+                        albumNameHint = albumNameHint,
+                        artistNameHint = artistNameHint,
+                        coverUrlHint = coverUrlHint
+                    )
+                }
+                return Result.Error(
+                    AppError.Api(
+                        message = message,
+                        code = code
+                    )
+                )
+            }
+
+            val tracks = extractNeteaseSongTracks(response).map { track ->
+                if (track.albumId.isBlank()) track.copy(albumId = id) else track
+            }
+            val enrichedTracks = enrichTrackCoverIfNeeded(Platform.NETEASE, tracks)
+
+            val root = response as? JsonObject
+            val album = root?.getIgnoreCase("album") as? JsonObject
+            val info = if (album != null) parseNeteaseAlbumInfo(id, album) else AlbumInfo(
+                id = id,
+                platform = Platform.NETEASE
+            )
+
+            Result.Success(AlbumDetailResult(info = info, tracks = enrichedTracks))
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun fetchQqAlbumDetailFull(idOrMid: String): Result<AlbumDetailResult> {
+        return try {
+            val albumData = when (val result = fetchQqAlbumInfoData(idOrMid)) {
+                is Result.Success -> result.data
+                is Result.Error -> return Result.Error(result.error)
+                is Result.Loading -> return Result.Loading
+            }
+            val albumId = extractQqAlbumIdFromInfoData(albumData)
+                .orEmpty()
+                .ifBlank { idOrMid.takeIf { it.isDigitsOnly() }.orEmpty() }
+            if (albumId.isBlank()) {
+                return Result.Error(AppError.Parse(message = "解析 QQ 音乐专辑信息失败"))
+            }
+            val info = parseQqAlbumInfo(idOrMid, albumData).copy(
+                id = albumId
+            )
+
+            val response = api.postQqMusicu(buildQqAlbumSongListBody(albumId))
+            val songsResponse = (response as? JsonObject)?.get("songs")
+            val code = extractApiCode(songsResponse)
+            if (code != null && code != 0) {
+                return Result.Error(
+                    AppError.Api(
+                        message = extractApiMessage(songsResponse)
+                            .ifBlank { "获取 QQ 音乐专辑详情失败" },
+                        code = code
+                    )
+                )
+            }
+
+            val tracks = extractQqAlbumTracks(response).map { track ->
+                if (track.albumId.isBlank()) track.copy(albumId = albumId) else track
+            }
+            val enrichedTracks = enrichTrackCoverIfNeeded(Platform.QQ, tracks)
+
+            Result.Success(AlbumDetailResult(info = info, tracks = enrichedTracks))
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private fun parseNeteaseAlbumInfo(id: String, album: JsonObject): AlbumInfo {
+        val publishTimeMs = album.firstLongOf("publishTime") ?: 0L
+        val publishYear = if (publishTimeMs > 0) {
+            SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(publishTimeMs))
+        } else ""
+
+        val tags = extractTextList(album.getIgnoreCase("tags"))
+
+        return AlbumInfo(
+            id = id,
+            name = album.firstStringOf("name").orEmpty(),
+            artistName = extractJoinedNames(
+                album.getIgnoreCase("artists") ?: album.getIgnoreCase("artist")
+            ),
+            coverUrl = album.firstStringOf("picUrl", "blurPicUrl").orEmpty(),
+            publishTime = publishYear,
+            description = album.firstStringOf("description").orEmpty()
+                .ifBlank { album.firstStringOf("briefDesc").orEmpty() },
+            company = album.firstStringOf("company").orEmpty(),
+            subType = album.firstStringOf("subType", "type").orEmpty(),
+            tags = tags,
+            trackCount = (album.firstLongOf("size", "songCount") ?: 0L).toInt(),
+            platform = Platform.NETEASE
+        )
+    }
+
+    private suspend fun fetchNeteaseAlbumDetailFallback(
+        albumId: String,
+        albumNameHint: String,
+        artistNameHint: String,
+        coverUrlHint: String
+    ): Result<AlbumDetailResult> {
+        val keyword = buildNeteaseAlbumFallbackKeyword(albumNameHint, artistNameHint)
+            ?: return Result.Error(
+                AppError.Api(
+                    message = "网易云专辑详情当前需要登录，且缺少完整的专辑和歌手检索信息",
+                    code = -462
+                )
+            )
+
+        val albumSearchResponse = api.searchNeteaseByType(
+            keyword = keyword,
+            type = SearchType.ALBUM.toNeteaseOfficialSearchType(),
+            offset = 0,
+            limit = OFFICIAL_SEARCH_PAGE_SIZE_LIMIT
+        )
+        val albumItems = extractNestedArray(
+            ((albumSearchResponse as? JsonObject)?.getIgnoreCase("result") as? JsonObject),
+            "albums",
+            "album"
+        ).orEmpty().mapNotNull { it as? JsonObject }
+
+        val matchedAlbum = selectNeteaseAlbumFallbackCandidate(
+            albumId = albumId,
+            albumNameHint = albumNameHint,
+            artistNameHint = artistNameHint,
+            albums = albumItems
+        )
+        val resolvedAlbumId = matchedAlbum?.firstStringOf("id").orEmpty().ifBlank { albumId }
+        val info = matchedAlbum?.let { parseNeteaseAlbumInfo(resolvedAlbumId, it) } ?: AlbumInfo(
+            id = resolvedAlbumId,
+            name = albumNameHint,
+            artistName = artistNameHint,
+            coverUrl = coverUrlHint,
+            platform = Platform.NETEASE
+        )
+
+        val tracks = searchNeteaseAlbumTracksFallback(
+            keyword = keyword,
+            albumIds = setOf(albumId, resolvedAlbumId).filter(String::isNotBlank).toSet(),
+            albumNameHint = info.name.ifBlank { albumNameHint },
+            artistNameHint = info.artistName.ifBlank { artistNameHint },
+            expectedTrackCount = info.trackCount
+        )
+        val enrichedTracks = enrichTrackCoverIfNeeded(Platform.NETEASE, tracks)
+
+        if (matchedAlbum == null && enrichedTracks.isEmpty()) {
+            return Result.Error(
+                AppError.Api(
+                    message = "网易云专辑详情当前需要登录，且搜索回退未命中该专辑",
+                    code = -462
+                )
+            )
+        }
+
+        return Result.Success(
+            AlbumDetailResult(
+                info = info.copy(
+                    id = info.id.ifBlank { albumId },
+                    coverUrl = info.coverUrl.ifBlank { coverUrlHint }
+                ),
+                tracks = enrichedTracks
+            )
+        )
+    }
+
+    private suspend fun searchNeteaseAlbumTracksFallback(
+        keyword: String,
+        albumIds: Set<String>,
+        albumNameHint: String,
+        artistNameHint: String,
+        expectedTrackCount: Int
+    ): List<Track> {
+        val matchedTracks = LinkedHashMap<String, Track>()
+
+        for (page in 1..NETEASE_ALBUM_FALLBACK_MAX_PAGES) {
+            val offset = (page - 1) * OFFICIAL_SEARCH_PAGE_SIZE_LIMIT
+            val response = api.searchNeteaseByType(
+                keyword = keyword,
+                type = SearchType.SONG.toNeteaseOfficialSearchType(),
+                offset = offset,
+                limit = OFFICIAL_SEARCH_PAGE_SIZE_LIMIT
+            )
+            val result = (response as? JsonObject)?.getIgnoreCase("result") as? JsonObject ?: break
+            val items = extractNestedArray(result, "songs", "song")
+                .orEmpty()
+                .mapNotNull { extractNeteaseTrack(it as? JsonObject) }
+            if (items.isEmpty()) break
+
+            items.filter { track ->
+                track.albumId in albumIds ||
+                    (track.album.isLikelySameTitle(albumNameHint) &&
+                        track.artist.isLikelySameArtist(artistNameHint))
+            }.forEach { track ->
+                matchedTracks.putIfAbsent(track.id, track)
+            }
+
+            val totalCount = (result.firstLongOf("songCount") ?: 0L).toInt()
+            val reachedExpectedCount = expectedTrackCount > 0 && matchedTracks.size >= expectedTrackCount
+            val reachedLastPage = totalCount <= 0 || offset + items.size >= totalCount
+            if (reachedExpectedCount || reachedLastPage) break
+        }
+
+        return matchedTracks.values.toList()
+    }
+
+    private fun selectNeteaseAlbumFallbackCandidate(
+        albumId: String,
+        albumNameHint: String,
+        artistNameHint: String,
+        albums: List<JsonObject>
+    ): JsonObject? {
+        if (albums.isEmpty()) return null
+
+        return albums.firstOrNull { it.firstStringOf("id") == albumId }
+            ?: albums.firstOrNull { album ->
+                album.firstStringOf("name").orEmpty().isLikelySameTitle(albumNameHint) &&
+                    extractJoinedNames(
+                        album.getIgnoreCase("artists") ?: album.getIgnoreCase("artist")
+                    ).isLikelySameArtist(artistNameHint)
+            }
+    }
+
+    private fun buildNeteaseAlbumFallbackKeyword(
+        albumNameHint: String,
+        artistNameHint: String
+    ): String? {
+        val normalizedAlbumName = albumNameHint.trim()
+        val normalizedArtistName = artistNameHint.trim()
+        if (normalizedAlbumName.isBlank() || normalizedArtistName.isBlank()) return null
+
+        val parts = listOf(normalizedAlbumName, normalizedArtistName)
+            .filter(String::isNotBlank)
+            .distinct()
+        return parts.joinToString(" ")
+    }
+
+    private fun shouldFallbackNeteaseAlbumDetail(code: Int, message: String): Boolean {
+        return code == -462 ||
+            message.contains("登录", ignoreCase = true) ||
+            message.contains("绑定手机")
+    }
+
+    private fun parseQqAlbumInfo(idOrMid: String, albumData: JsonObject): AlbumInfo {
+        val basicInfo = albumData.getIgnoreCase("basicInfo") as? JsonObject
+            ?: return AlbumInfo(id = idOrMid, platform = Platform.QQ)
+        val companyInfo = albumData.getIgnoreCase("company") as? JsonObject
+        val singerList = (albumData.getIgnoreCase("singer") as? JsonObject)
+            ?.getIgnoreCase("singerList")
+
+        val company = companyInfo?.firstStringOf("name").orEmpty()
+            .ifBlank {
+                (basicInfo.getIgnoreCase("company") as? JsonObject)
+                    ?.firstStringOf("name")
+                    .orEmpty()
+            }
+            .ifBlank { basicInfo.firstStringOf("company").orEmpty() }
+
+        val genre = (basicInfo.getIgnoreCase("genre") as? JsonObject)
+            ?.firstStringOf("name")
+            .orEmpty()
+            .ifBlank { basicInfo.firstStringOf("genre", "genreNew").orEmpty() }
+
+        val language = (basicInfo.getIgnoreCase("language") as? JsonObject)
+            ?.firstStringOf("name")
+            .orEmpty()
+            .ifBlank { basicInfo.firstStringOf("language").orEmpty() }
+
+        val tags = extractTextList(basicInfo.getIgnoreCase("recLabels"))
+            .ifEmpty { extractTextList(basicInfo.getIgnoreCase("tags")) }
+            .ifEmpty { extractTextList(basicInfo.getIgnoreCase("tagList")) }
+            .ifEmpty { extractTextList(basicInfo.getIgnoreCase("genres")) }
+            .ifEmpty {
+                extractTextList(
+                    basicInfo.getIgnoreCase("awards"),
+                    "detailAward",
+                    "name"
+                )
+            }
+
+        val albumMid = basicInfo.firstStringOf("albumMid", "albumMID", "mid").orEmpty()
+        val publishYear = basicInfo.firstStringOf("publishDate", "public_time").orEmpty().take(4)
+
+        return AlbumInfo(
+            id = basicInfo.firstStringOf("albumID", "albumId", "id").orEmpty()
+                .ifBlank { idOrMid },
+            name = basicInfo.firstStringOf("albumName", "name", "title").orEmpty(),
+            artistName = basicInfo.firstStringOf("singerName", "singer_name").orEmpty()
+                .ifBlank { extractJoinedNames(singerList) },
+            coverUrl = buildQqAlbumCoverUrl(albumMid),
+            publishTime = publishYear,
+            description = basicInfo.firstStringOf("desc", "description", "introduction")
+                .orEmpty()
+                .ifBlank { basicInfo.firstStringOf("recText").orEmpty() }
+                .ifBlank { companyInfo?.firstStringOf("brief").orEmpty() },
+            company = company,
+            genre = genre,
+            language = language,
+            subType = basicInfo.firstStringOf("albumType", "subType", "type").orEmpty(),
+            tags = tags,
+            trackCount = (basicInfo.firstLongOf("totalNum", "track_num") ?: 0L).toInt(),
+            platform = Platform.QQ
+        )
+    }
+
+    private suspend fun fetchQqAlbumInfoData(idOrMid: String): Result<JsonObject> {
+        return try {
+            val response = api.postQqMusicu(buildQqAlbumInfoBody(idOrMid))
+            val albumResponse = (response as? JsonObject)?.get("album")
+            val code = extractApiCode(albumResponse)
+            if (code != null && code != 0) {
+                return Result.Error(
+                    AppError.Api(
+                        message = extractApiMessage(albumResponse).ifBlank { "获取 QQ 音乐专辑信息失败" },
+                        code = code
+                    )
+                )
+            }
+
+            val albumData = extractQqAlbumInfoData(response)
+                ?: return Result.Error(AppError.Parse(message = "解析 QQ 音乐专辑信息失败"))
+            Result.Success(albumData)
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
         }
@@ -1430,6 +1847,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
 
     private companion object {
         const val NETEASE_DETAIL_BATCH_SIZE = 50
+        const val NETEASE_ALBUM_FALLBACK_MAX_PAGES = 4
         const val NETEASE_COMMENT_SORT_RECOMMENDED = 1
         const val NETEASE_COMMENT_SORT_LATEST = 3
         const val QQ_DETAIL_BATCH_SIZE = 20
@@ -2732,6 +3150,32 @@ private fun extractJoinedNames(node: JsonElement?): String {
     }
 }
 
+private fun extractTextList(node: JsonElement?, vararg objectKeys: String): List<String> {
+    val candidateKeys = if (objectKeys.isEmpty()) {
+        listOf("name", "title", "label", "text")
+    } else {
+        objectKeys.toList()
+    }
+
+    return when (node) {
+        is JsonArray -> node.flatMap { child ->
+            extractTextList(child, *candidateKeys.toTypedArray())
+        }
+
+        is JsonObject -> candidateKeys.firstNotNullOfOrNull { key ->
+            node.firstStringOf(key)
+        }?.let(::listOf).orEmpty()
+
+        is JsonPrimitive -> node.contentOrNull
+            ?.split(',', '，')
+            ?.map(String::trim)
+            ?.filter(String::isNotBlank)
+            .orEmpty()
+
+        else -> emptyList()
+    }.distinct()
+}
+
 private fun Long?.toSearchCount(): Int {
     val value = this ?: return 0
     return value.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
@@ -2810,7 +3254,8 @@ private fun buildQqSingerAlbumsBody(singerMid: String, page: Int, pageSize: Int)
 private const val QQ_DEFAULT_PLAYLIST_CATEGORY_ID = 6
 private const val QQ_ALBUM_DETAIL_PAGE_SIZE = 300
 
-private fun buildQqAlbumInfoBody(albumMid: String): JsonElement = buildJsonObject {
+private fun buildQqAlbumInfoBody(idOrMid: String): JsonElement = buildJsonObject {
+    val numericAlbumId = idOrMid.toLongOrNull()
     put("comm", buildJsonObject {
         put("cv", 4747474)
         put("ct", 24)
@@ -2823,7 +3268,11 @@ private fun buildQqAlbumInfoBody(albumMid: String): JsonElement = buildJsonObjec
         put("module", "music.musichallAlbum.AlbumInfoServer")
         put("method", "GetAlbumDetail")
         put("param", buildJsonObject {
-            put("albumMid", albumMid)
+            if (numericAlbumId != null) {
+                put("albumId", numericAlbumId)
+            } else {
+                put("albumMid", idOrMid)
+            }
         })
     })
 }
@@ -2916,12 +3365,18 @@ private fun extractQqArtistSong(song: JsonObject?): Track? {
     )
 }
 
-private fun extractQqAlbumId(data: JsonElement?): String? {
-    val basicInfo = ((((data as? JsonObject)?.get("album") as? JsonObject)
+private fun extractQqAlbumInfoData(data: JsonElement?): JsonObject? {
+    return (((data as? JsonObject)?.get("album") as? JsonObject)
         ?.get("data") as? JsonObject)
-        ?.get("basicInfo") as? JsonObject) ?: return null
+}
+
+private fun extractQqAlbumIdFromInfoData(albumData: JsonObject?): String? {
+    val basicInfo = albumData?.getIgnoreCase("basicInfo") as? JsonObject ?: return null
     return basicInfo.firstStringOf("albumID", "albumId", "id")
 }
+
+private fun extractQqAlbumId(data: JsonElement?): String? =
+    extractQqAlbumIdFromInfoData(extractQqAlbumInfoData(data))
 
 private fun extractQqAlbumTracks(data: JsonElement?): List<Track> {
     val songs = ((((data as? JsonObject)?.get("songs") as? JsonObject)

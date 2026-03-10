@@ -1,6 +1,8 @@
 package com.music.myapplication.domain.repository
 
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.domain.model.AlbumDetailResult
+import com.music.myapplication.domain.model.AlbumInfo
 import com.music.myapplication.domain.model.ArtistDetail
 import com.music.myapplication.domain.model.ArtistRef
 import com.music.myapplication.domain.model.Platform
@@ -58,6 +60,14 @@ interface OnlineMusicRepository {
     suspend fun getToplistDetail(platform: Platform, id: String): Result<List<Track>>
     suspend fun getPlaylistDetail(platform: Platform, id: String): Result<List<Track>>
     suspend fun getAlbumDetail(platform: Platform, albumId: String): Result<List<Track>>
+    suspend fun getAlbumInfo(platform: Platform, albumId: String): Result<AlbumInfo>
+    suspend fun getAlbumDetailFull(
+        platform: Platform,
+        albumId: String,
+        albumNameHint: String = "",
+        artistNameHint: String = "",
+        coverUrlHint: String = ""
+    ): Result<AlbumDetailResult>
     suspend fun getTrackComments(track: Track, page: Int = 1, pageSize: Int = 20): Result<TrackCommentsResult>
     suspend fun resolveShareUrl(url: String): String
     suspend fun resolvePlayableUrl(platform: Platform, songId: String, quality: String = "128k"): Result<String>

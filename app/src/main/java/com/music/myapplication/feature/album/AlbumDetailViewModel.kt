@@ -20,6 +20,13 @@ data class AlbumDetailUiState(
     val albumName: String = "",
     val artistName: String = "",
     val coverUrl: String = "",
+    val publishTime: String = "",
+    val description: String = "",
+    val company: String = "",
+    val genre: String = "",
+    val language: String = "",
+    val subType: String = "",
+    val tags: List<String> = emptyList(),
     val tracks: List<Track> = emptyList(),
     val isLoading: Boolean = true,
     val error: String? = null
@@ -54,12 +61,38 @@ class AlbumDetailViewModel @Inject constructor(
     private fun loadAlbumDetail() {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
-            when (val result = onlineRepo.getAlbumDetail(platform, albumId)) {
+
+            when (
+                val result = onlineRepo.getAlbumDetailFull(
+                    platform = platform,
+                    albumId = albumId,
+                    albumNameHint = albumName,
+                    artistNameHint = artistName,
+                    coverUrlHint = coverUrl
+                )
+            ) {
                 is Result.Success -> {
+                    val data = result.data
+                    val info = data.info
                     _state.update {
-                        it.copy(tracks = result.data, isLoading = false)
+                        it.copy(
+                            tracks = data.tracks,
+                            isLoading = false,
+                            albumName = info.name.takeIf(String::isNotBlank) ?: it.albumName,
+                            artistName = info.artistName.takeIf(String::isNotBlank)
+                                ?: it.artistName,
+                            coverUrl = info.coverUrl.takeIf(String::isNotBlank) ?: it.coverUrl,
+                            publishTime = info.publishTime,
+                            description = info.description,
+                            company = info.company,
+                            genre = info.genre,
+                            language = info.language,
+                            subType = info.subType,
+                            tags = info.tags
+                        )
                     }
                 }
+
                 is Result.Error -> {
                     _state.update {
                         it.copy(
@@ -68,6 +101,7 @@ class AlbumDetailViewModel @Inject constructor(
                         )
                     }
                 }
+
                 is Result.Loading -> {}
             }
         }

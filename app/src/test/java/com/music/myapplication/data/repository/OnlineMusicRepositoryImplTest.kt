@@ -1,5 +1,6 @@
 package com.music.myapplication.data.repository
 
+import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
@@ -1579,6 +1580,223 @@ class OnlineMusicRepositoryImplTest {
     }
 
     @Test
+    fun getAlbumInfo_forNetease_returnsApiErrorWhenOfficialAlbumApiFails() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": -462,
+              "message": "请绑定手机后再试哦~"
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseAlbumDetail("32311", any()) } returns payload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumInfo(Platform.NETEASE, "32311")
+
+        assertTrue(result is Result.Error)
+        val error = (result as Result.Error).error
+        assertTrue(error is AppError.Api)
+        assertEquals(-462, (error as AppError.Api).code)
+        coVerify(exactly = 1) { api.getNeteaseAlbumDetail("32311", any()) }
+    }
+
+    @Test
+    fun getAlbumDetailFull_forNetease_fallsBackToSearchWhenOfficialAlbumApiRequiresLogin() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val officialPayload = json.parseToJsonElement(
+            """
+            {
+              "code": -462,
+              "message": "请绑定手机后再试哦~"
+            }
+            """.trimIndent()
+        )
+        val albumSearchPayload = json.parseToJsonElement(
+            """
+            {
+              "result": {
+                "albums": [
+                  {
+                    "name": "叶惠美",
+                    "id": 18905,
+                    "size": 11,
+                    "picUrl": "https://example.com/yhm.jpg",
+                    "publishTime": 1059580800000,
+                    "company": "杰威尔",
+                    "artist": {
+                      "name": "周杰伦"
+                    },
+                    "artists": [
+                      { "name": "周杰伦" }
+                    ]
+                  }
+                ]
+              },
+              "code": 200
+            }
+            """.trimIndent()
+        )
+        val songSearchPayload = json.parseToJsonElement(
+            """
+            {
+              "result": {
+                "songCount": 2,
+                "songs": [
+                  {
+                    "id": 186014,
+                    "name": "以父之名",
+                    "duration": 342000,
+                    "artists": [
+                      { "name": "周杰伦" }
+                    ],
+                    "album": {
+                      "id": 18905,
+                      "name": "叶惠美",
+                      "picUrl": "https://example.com/yhm.jpg"
+                    }
+                  },
+                  {
+                    "id": 186016,
+                    "name": "晴天",
+                    "duration": 269000,
+                    "artists": [
+                      { "name": "周杰伦" }
+                    ],
+                    "album": {
+                      "id": 18905,
+                      "name": "叶惠美",
+                      "picUrl": "https://example.com/yhm.jpg"
+                    }
+                  }
+                ]
+              },
+              "code": 200
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseAlbumDetail("32311", any()) } returns officialPayload
+        coEvery {
+            api.searchNeteaseByType(
+                keyword = "叶惠美 周杰伦",
+                type = 10,
+                offset = 0,
+                limit = 50,
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        } returns albumSearchPayload
+        coEvery {
+            api.searchNeteaseByType(
+                keyword = "叶惠美 周杰伦",
+                type = 1,
+                offset = 0,
+                limit = 50,
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        } returns songSearchPayload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumDetailFull(
+            platform = Platform.NETEASE,
+            albumId = "32311",
+            albumNameHint = "叶惠美",
+            artistNameHint = "周杰伦"
+        )
+
+        val data = (result as Result.Success).data
+        assertEquals("18905", data.info.id)
+        assertEquals("叶惠美", data.info.name)
+        assertEquals("周杰伦", data.info.artistName)
+        assertEquals("https://example.com/yhm.jpg", data.info.coverUrl)
+        assertEquals("2003", data.info.publishTime)
+        assertEquals("杰威尔", data.info.company)
+        assertEquals(11, data.info.trackCount)
+        assertEquals(listOf("186014", "186016"), data.tracks.map { it.id })
+        assertEquals(listOf("以父之名", "晴天"), data.tracks.map { it.title })
+        assertEquals(listOf("18905", "18905"), data.tracks.map { it.albumId })
+        coVerify(exactly = 1) { api.getNeteaseAlbumDetail("32311", any()) }
+        coVerify(exactly = 1) {
+            api.searchNeteaseByType(
+                keyword = "叶惠美 周杰伦",
+                type = 10,
+                offset = 0,
+                limit = 50,
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        }
+        coVerify(exactly = 1) {
+            api.searchNeteaseByType(
+                keyword = "叶惠美 周杰伦",
+                type = 1,
+                offset = 0,
+                limit = 50,
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), eq("albumDetail"), any()) }
+    }
+
+    @Test
+    fun getAlbumDetailFull_forNetease_returnsErrorWhenFallbackHintsAreIncomplete() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": -462,
+              "message": "请绑定手机后再试哦~"
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseAlbumDetail("32311", any()) } returns payload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumDetailFull(
+            platform = Platform.NETEASE,
+            albumId = "32311",
+            albumNameHint = "叶惠美",
+            artistNameHint = ""
+        )
+
+        assertTrue(result is Result.Error)
+        val error = (result as Result.Error).error
+        assertTrue(error is AppError.Api)
+        assertEquals(-462, (error as AppError.Api).code)
+        coVerify(exactly = 1) { api.getNeteaseAlbumDetail("32311", any()) }
+        coVerify(exactly = 0) {
+            api.searchNeteaseByType(
+                keyword = any(),
+                type = any(),
+                offset = any(),
+                limit = any(),
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        }
+    }
+
+    @Test
     fun getAlbumDetail_forQq_usesOfficialApiInsteadOfDispatchTemplate() = runTest {
         val api = mockk<TuneHubApi>()
         val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
@@ -1645,6 +1863,216 @@ class OnlineMusicRepositoryImplTest {
         assertEquals(300, (params["num"] as JsonPrimitive).content.toInt())
         coVerify(exactly = 1) { api.postQqMusicu(any(), any()) }
         coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), eq("albumDetail"), any()) }
+    }
+
+    @Test
+    fun getAlbumInfo_forQq_returnsNetworkErrorInsteadOfEmptySuccess() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        coEvery { api.postQqMusicu(any(), any()) } throws IllegalStateException("boom")
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumInfo(Platform.QQ, "8220")
+
+        assertTrue(result is Result.Error)
+        val error = (result as Result.Error).error
+        assertTrue(error is AppError.Network)
+        coVerify(exactly = 1) { api.postQqMusicu(any(), any()) }
+    }
+
+    @Test
+    fun getAlbumDetailFull_forQq_parsesMetadataFromNumericAlbumId() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val requestBodies = mutableListOf<JsonElement>()
+        val albumInfoPayload = json.parseToJsonElement(
+            """
+            {
+              "album": {
+                "code": 0,
+                "data": {
+                  "basicInfo": {
+                    "albumMid": "000MkMni19ClKG",
+                    "albumName": "叶惠美",
+                    "publishDate": "2003-07-31",
+                    "desc": "专辑简介",
+                    "language": "国语",
+                    "albumType": "录音室专辑",
+                    "albumID": 8220,
+                    "genreNew": "Rap",
+                    "totalNum": 11,
+                    "recLabels": [
+                      "编辑推荐",
+                      "臻品母带音质"
+                    ]
+                  },
+                  "company": {
+                    "name": "杰威尔音乐有限公司"
+                  },
+                  "singer": {
+                    "singerList": [
+                      { "name": "周杰伦" }
+                    ]
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        val songListPayload = json.parseToJsonElement(
+            """
+            {
+              "songs": {
+                "code": 0,
+                "data": {
+                  "totalNum": 1,
+                  "songList": [
+                    {
+                      "songInfo": {
+                        "mid": "0039MnYb0qxYhV",
+                        "title": "晴天",
+                        "interval": 269,
+                        "singer": [
+                          { "name": "周杰伦" }
+                        ],
+                        "album": {
+                          "id": 8220,
+                          "mid": "000MkMni19ClKG",
+                          "name": "叶惠美"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(capture(requestBodies), any()) } returnsMany
+            listOf(albumInfoPayload, songListPayload)
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumDetailFull(Platform.QQ, "8220")
+
+        val data = (result as Result.Success).data
+        assertEquals("叶惠美", data.info.name)
+        assertEquals("周杰伦", data.info.artistName)
+        assertEquals(
+            "https://y.qq.com/music/photo_new/T002R300x300M000000MkMni19ClKG.jpg",
+            data.info.coverUrl
+        )
+        assertEquals("2003", data.info.publishTime)
+        assertEquals("专辑简介", data.info.description)
+        assertEquals("杰威尔音乐有限公司", data.info.company)
+        assertEquals("Rap", data.info.genre)
+        assertEquals("国语", data.info.language)
+        assertEquals("录音室专辑", data.info.subType)
+        assertEquals(listOf("编辑推荐", "臻品母带音质"), data.info.tags)
+        assertEquals(11, data.info.trackCount)
+        assertEquals(1, data.tracks.size)
+        assertEquals("晴天", data.tracks.first().title)
+
+        val infoRequest = requestBodies.first() as JsonObject
+        val album = infoRequest["album"] as JsonObject
+        val params = album["param"] as JsonObject
+        assertEquals("music.musichallAlbum.AlbumInfoServer", (album["module"] as JsonPrimitive).content)
+        assertEquals("GetAlbumDetail", (album["method"] as JsonPrimitive).content)
+        assertEquals(8220L, (params["albumId"] as JsonPrimitive).content.toLong())
+        assertTrue("albumMid" !in params)
+        coVerify(exactly = 2) { api.postQqMusicu(any(), any()) }
+        coVerify(exactly = 0) { dispatchExecutor.executeByMethod(any(), eq("albumDetail"), any()) }
+    }
+
+    @Test
+    fun getAlbumDetailFull_forQq_usesSingleMetadataRequestWhenAlbumMidProvided() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val requestBodies = mutableListOf<JsonElement>()
+        val albumInfoPayload = json.parseToJsonElement(
+            """
+            {
+              "album": {
+                "code": 0,
+                "data": {
+                  "basicInfo": {
+                    "albumMid": "000MkMni19ClKG",
+                    "albumName": "叶惠美",
+                    "publishDate": "2003-07-31",
+                    "albumID": 8220
+                  },
+                  "singer": {
+                    "singerList": [
+                      { "name": "周杰伦" }
+                    ]
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        val songListPayload = json.parseToJsonElement(
+            """
+            {
+              "songs": {
+                "code": 0,
+                "data": {
+                  "totalNum": 1,
+                  "songList": [
+                    {
+                      "songInfo": {
+                        "mid": "0039MnYb0qxYhV",
+                        "title": "晴天",
+                        "interval": 269,
+                        "singer": [
+                          { "name": "周杰伦" }
+                        ],
+                        "album": {
+                          "id": 8220,
+                          "mid": "000MkMni19ClKG",
+                          "name": "叶惠美"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(capture(requestBodies), any()) } returnsMany
+            listOf(albumInfoPayload, songListPayload)
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumDetailFull(Platform.QQ, "000MkMni19ClKG")
+
+        val data = (result as Result.Success).data
+        assertEquals("8220", data.info.id)
+        assertEquals("叶惠美", data.info.name)
+        assertEquals(1, data.tracks.size)
+        assertEquals("晴天", data.tracks.first().title)
+        assertEquals(2, requestBodies.size)
+
+        val infoRequest = requestBodies.first() as JsonObject
+        val infoAlbum = infoRequest["album"] as JsonObject
+        val infoParams = infoAlbum["param"] as JsonObject
+        assertEquals("000MkMni19ClKG", (infoParams["albumMid"] as JsonPrimitive).content)
+        assertTrue("albumId" !in infoParams)
+
+        val songRequest = requestBodies[1] as JsonObject
+        val songs = songRequest["songs"] as JsonObject
+        val songParams = songs["param"] as JsonObject
+        assertEquals(8220L, (songParams["albumId"] as JsonPrimitive).content.toLong())
+
+        coVerify(exactly = 2) { api.postQqMusicu(any(), any()) }
     }
 
     @Test
