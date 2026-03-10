@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
@@ -45,6 +46,7 @@ fun PlayerMoreMenu(
     onDismiss: () -> Unit,
     onSleepTimer: () -> Unit,
     onQueueManager: () -> Unit,
+    onVideoPlayer: () -> Unit,
     onShare: () -> Unit,
     onSpeedPicker: () -> Unit,
     onEqualizer: () -> Unit,
@@ -76,6 +78,14 @@ fun PlayerMoreMenu(
             onClick = {
                 onDismiss()
                 onQueueManager()
+            }
+        ),
+        MenuActionItem(
+            icon = Icons.Default.OndemandVideo,
+            label = "MV / 视频页",
+            onClick = {
+                onDismiss()
+                onVideoPlayer()
             }
         ),
         MenuActionItem(

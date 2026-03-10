@@ -1,19 +1,22 @@
 package com.music.myapplication.media.service
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
-import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.music.myapplication.core.common.Result
@@ -40,13 +43,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MusicPlaybackService : MediaSessionService() {
+class MusicPlaybackService : MediaLibraryService() {
 
     @Inject lateinit var exoPlayer: ExoPlayer
     @Inject lateinit var stateStore: PlaybackStateStore
@@ -59,12 +64,13 @@ class MusicPlaybackService : MediaSessionService() {
     @Inject lateinit var trackPlaybackResolver: TrackPlaybackResolver
     @Inject lateinit var localLibraryRepository: LocalLibraryRepository
 
-    private var mediaSession: MediaSession? = null
+    private var mediaSession: MediaLibraryService.MediaLibrarySession? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var positionUpdateJob: Job? = null
     private var equalizerSettingsJob: Job? = null
     private var playerSettingsJob: Job? = null
     private var transitionJob: Job? = null
+    private val libraryTrackCache = LinkedHashMap<String, Track>()
 
     private var cachedEqEnabled = false
     private var cachedEqPresetIndex = 0
@@ -72,6 +78,15 @@ class MusicPlaybackService : MediaSessionService() {
     private var cachedQuality = "128k"
     private var cachedCrossfadeEnabled = false
     private var cachedCrossfadeDurationMs = PlayerPreferences.DEFAULT_CROSSFADE_DURATION_MS
+
+    private companion object {
+        const val ROOT_ID = "library_root"
+        const val FAVORITES_ID = "favorites"
+        const val RECENTS_ID = "recent_plays"
+        const val PLAYLISTS_ID = "playlists"
+        const val PLAYLIST_PREFIX = "playlist:"
+        const val TRACK_PREFIX = "track:"
+    }
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -87,8 +102,7 @@ class MusicPlaybackService : MediaSessionService() {
 
         exoPlayer.addListener(playerListener)
 
-        mediaSession = MediaSession.Builder(this, exoPlayer)
-            .setCallback(sessionCallback)
+        mediaSession = MediaLibraryService.MediaLibrarySession.Builder(this, exoPlayer, sessionCallback)
             .build()
 
         stateStore.updateSpeed(exoPlayer.playbackParameters.speed)
@@ -97,7 +111,9 @@ class MusicPlaybackService : MediaSessionService() {
         observePlayerSettings()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
+    override fun onGetSession(
+        controllerInfo: MediaSession.ControllerInfo
+    ): MediaLibraryService.MediaLibrarySession? =
         mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -197,7 +213,7 @@ class MusicPlaybackService : MediaSessionService() {
         }
     }
 
-    private val sessionCallback = object : MediaSession.Callback {
+    private val sessionCallback = object : MediaLibraryService.MediaLibrarySession.Callback {
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
@@ -211,6 +227,50 @@ class MusicPlaybackService : MediaSessionService() {
                 sessionCommands,
                 defaultResult.availablePlayerCommands
             )
+        }
+
+        override fun onGetLibraryRoot(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: MediaLibraryService.LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(buildRootItem(), params)
+            )
+        }
+
+        override fun onGetChildren(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: MediaLibraryService.LibraryParams?
+        ): ListenableFuture<LibraryResult<com.google.common.collect.ImmutableList<MediaItem>>> {
+            val children = when {
+                parentId == ROOT_ID -> buildRootChildren()
+                parentId == FAVORITES_ID -> buildFavoriteChildren()
+                parentId == RECENTS_ID -> buildRecentChildren()
+                parentId == PLAYLISTS_ID -> buildPlaylistChildren()
+                parentId.startsWith(PLAYLIST_PREFIX) -> buildPlaylistTrackChildren(
+                    playlistId = parentId.removePrefix(PLAYLIST_PREFIX)
+                )
+                else -> emptyList()
+            }
+            return Futures.immediateFuture(
+                LibraryResult.ofItemList(children, params)
+            )
+        }
+
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>
+        ): ListenableFuture<MutableList<MediaItem>> {
+            val resolvedItems = mediaItems.map { mediaItem ->
+                resolvePlayableMediaItem(mediaItem)
+            }.toMutableList()
+            return Futures.immediateFuture(resolvedItems)
         }
 
         override fun onCustomCommand(
@@ -233,6 +293,139 @@ class MusicPlaybackService : MediaSessionService() {
             }
         }
     }
+
+    private fun buildRootItem(): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(ROOT_ID)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("My Application")
+                    .setSubtitle("Android Auto")
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                    .build()
+            )
+            .build()
+    }
+
+    private fun buildRootChildren(): List<MediaItem> {
+        return listOf(
+            buildFolderItem(
+                mediaId = FAVORITES_ID,
+                title = "收藏",
+                subtitle = "你常听和收下来的歌",
+                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
+            ),
+            buildFolderItem(
+                mediaId = RECENTS_ID,
+                title = "最近播放",
+                subtitle = "接着上次继续听",
+                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+            ),
+            buildFolderItem(
+                mediaId = PLAYLISTS_ID,
+                title = "歌单",
+                subtitle = "本地资料库歌单",
+                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
+            )
+        )
+    }
+
+    private fun buildFavoriteChildren(): List<MediaItem> = runBlocking {
+        localLibraryRepository.getFavorites().first().map(::buildTrackItem)
+    }
+
+    private fun buildRecentChildren(): List<MediaItem> = runBlocking {
+        localLibraryRepository.getRecentPlays(limit = 30).first().map(::buildTrackItem)
+    }
+
+    private fun buildPlaylistChildren(): List<MediaItem> = runBlocking {
+        val playlists = localLibraryRepository.getPlaylists().first()
+        playlists.map { playlist ->
+            buildFolderItem(
+                mediaId = "$PLAYLIST_PREFIX${playlist.id}",
+                title = playlist.name,
+                subtitle = "${playlist.trackCount} 首",
+                mediaType = MediaMetadata.MEDIA_TYPE_PLAYLIST,
+                artworkUrl = playlist.coverUrl
+            )
+        }
+    }
+
+    private fun buildPlaylistTrackChildren(playlistId: String): List<MediaItem> = runBlocking {
+        localLibraryRepository.getPlaylistSongs(playlistId).first().map(::buildTrackItem)
+    }
+
+    private fun buildFolderItem(
+        mediaId: String,
+        title: String,
+        subtitle: String,
+        mediaType: Int,
+        artworkUrl: String = ""
+    ): MediaItem {
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setIsBrowsable(true)
+            .setIsPlayable(false)
+            .setMediaType(mediaType)
+        artworkUrl.takeIf { it.isNotBlank() }?.let { url ->
+            metadataBuilder.setArtworkUri(Uri.parse(url))
+        }
+        return MediaItem.Builder()
+            .setMediaId(mediaId)
+            .setMediaMetadata(metadataBuilder.build())
+            .build()
+    }
+
+    private fun buildTrackItem(track: Track): MediaItem {
+        val mediaId = trackMediaId(track)
+        libraryTrackCache[mediaId] = track
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artist)
+            .setAlbumTitle(track.album)
+            .setIsBrowsable(false)
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+        track.coverUrl.takeIf { it.isNotBlank() }?.let { url ->
+            metadataBuilder.setArtworkUri(Uri.parse(url))
+        }
+        return MediaItem.Builder()
+            .setMediaId(mediaId)
+            .setMediaMetadata(metadataBuilder.build())
+            .build()
+    }
+
+    private fun resolvePlayableMediaItem(mediaItem: MediaItem): MediaItem {
+        val cachedTrack = libraryTrackCache[mediaItem.mediaId]
+        if (cachedTrack == null || cachedTrack.playableUrl.isNotBlank()) {
+            return mediaItem
+        }
+
+        val resolvedTrack = runBlocking(Dispatchers.IO) {
+            when (val result = trackPlaybackResolver.resolve(cachedTrack, cachedQuality)) {
+                is Result.Success -> result.data
+                is Result.Error,
+                Result.Loading -> null
+            }
+        } ?: return mediaItem
+
+        libraryTrackCache[mediaItem.mediaId] = resolvedTrack
+        return mediaItem.buildUpon()
+            .setUri(resolvedTrack.playableUrl)
+            .setMediaMetadata(
+                mediaItem.mediaMetadata.buildUpon()
+                    .setTitle(resolvedTrack.title)
+                    .setArtist(resolvedTrack.artist)
+                    .setAlbumTitle(resolvedTrack.album)
+                    .build()
+            )
+            .build()
+    }
+
+    private fun trackMediaId(track: Track): String = "$TRACK_PREFIX${track.platform.id}:${track.id}"
 
     private fun handleLoadTrackRequest(request: PlaybackLoadRequest) {
         queueManager.setQueue(request.queue, request.index)

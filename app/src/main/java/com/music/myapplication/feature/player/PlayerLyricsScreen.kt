@@ -31,7 +31,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -46,8 +48,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -93,6 +93,7 @@ fun PlayerLyricsScreen(
     playerViewModel: PlayerViewModel,
     onBack: () -> Unit,
     onNavigateToAlbum: ((String, String, String, String, String) -> Unit)? = null,
+    onNavigateToVideoPlayer: ((Track) -> Unit)? = null,
     onNavigateToEqualizer: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -280,6 +281,7 @@ fun PlayerLyricsScreen(
             if (pagerState.currentPage == 0) {
                 CoverActionRow(
                     isFavorite = currentTrack.isFavorite,
+                    onOpenVideo = onNavigateToVideoPlayer?.let { { it(currentTrack) } },
                     onToggleFavorite = playerViewModel::toggleFavorite,
                     onShowComments = playerViewModel::showComments,
                     modifier = Modifier
@@ -324,6 +326,7 @@ fun PlayerLyricsScreen(
                 onDismiss = { showMoreMenu = false },
                 onSleepTimer = { showSleepTimerPicker = true },
                 onQueueManager = { showQueueSheet = true },
+                onVideoPlayer = { onNavigateToVideoPlayer?.invoke(currentTrack) },
                 onShare = { ShareUtils.shareTrack(context, currentTrack) },
                 onSpeedPicker = { showSpeedPicker = true },
                 onEqualizer = { onNavigateToEqualizer?.invoke() },
@@ -470,44 +473,80 @@ private fun CoverPage(
 @Composable
 private fun CoverActionRow(
     isFavorite: Boolean,
+    onOpenVideo: (() -> Unit)?,
     onToggleFavorite: () -> Unit,
     onShowComments: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val buttonSize = 36.dp
+    val iconSize = 16.dp
+    val buttonSpacing = 14.dp
+
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(
+        CoverActionButton(
+            onClick = onOpenVideo ?: {},
+            icon = Icons.Default.OndemandVideo,
+            contentDescription = "Open video",
+            enabled = onOpenVideo != null,
+            buttonSize = buttonSize,
+            iconSize = iconSize
+        )
+
+        Spacer(modifier = Modifier.width(buttonSpacing))
+
+        CoverActionButton(
             onClick = onToggleFavorite,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.14f))
-        ) {
-            Icon(
-                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = "收藏",
-                tint = if (isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.72f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
+            icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            contentDescription = "Favorite",
+            tint = if (isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.72f),
+            buttonSize = buttonSize,
+            iconSize = iconSize
+        )
 
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(buttonSpacing))
 
-        FilledTonalButton(
+        CoverActionButton(
             onClick = onShowComments,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = Color.White.copy(alpha = 0.14f),
-                contentColor = Color.White
-            )
-        ) {
-            Text(
-                text = "评论",
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium)
-            )
-        }
+            icon = Icons.Default.Forum,
+            contentDescription = "Comments",
+            buttonSize = buttonSize,
+            iconSize = iconSize
+        )
+    }
+}
+
+@Composable
+private fun CoverActionButton(
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tint: Color = Color.White.copy(alpha = 0.72f),
+    buttonSize: androidx.compose.ui.unit.Dp = 36.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 16.dp
+) {
+    val backgroundAlpha = if (enabled) 0.12f else 0.08f
+    val iconTint = if (enabled) tint else tint.copy(alpha = 0.42f)
+
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier
+            .size(buttonSize)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = backgroundAlpha))
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = iconTint,
+            modifier = Modifier.size(iconSize)
+        )
     }
 }
 

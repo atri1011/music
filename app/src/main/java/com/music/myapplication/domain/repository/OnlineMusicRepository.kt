@@ -61,6 +61,7 @@ interface OnlineMusicRepository {
     suspend fun getTrackComments(track: Track, page: Int = 1, pageSize: Int = 20): Result<TrackCommentsResult>
     suspend fun resolveShareUrl(url: String): String
     suspend fun resolvePlayableUrl(platform: Platform, songId: String, quality: String = "128k"): Result<String>
+    suspend fun resolveVideoUrl(track: Track): Result<String>
     suspend fun getLyrics(platform: Platform, songId: String): Result<LyricsResult>
 
     suspend fun getHotSearchKeywords(platform: Platform): Result<List<String>>

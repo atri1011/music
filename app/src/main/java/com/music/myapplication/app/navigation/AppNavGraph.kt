@@ -15,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.music.myapplication.feature.album.AlbumDetailScreen
 import com.music.myapplication.feature.artist.ArtistDetailScreen
+import com.music.myapplication.feature.ecosystem.EcosystemExpansionScreen
 import com.music.myapplication.feature.home.HomeScreen
 import com.music.myapplication.feature.library.DownloadedScreen
 import com.music.myapplication.feature.library.LibraryScreen
@@ -24,6 +25,7 @@ import com.music.myapplication.feature.playlist.PlaylistDetailScreen
 import com.music.myapplication.feature.player.EqualizerScreen
 import com.music.myapplication.feature.player.PlayerLyricsScreen
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.feature.player.VideoPlayerScreen
 import com.music.myapplication.feature.search.SearchScreen
 
 @Composable
@@ -83,7 +85,11 @@ fun AppNavGraph(
             )
         }
         composable<Routes.More> {
-            MoreScreen()
+            MoreScreen(
+                onNavigateToEcosystem = {
+                    navController.navigate(Routes.EcosystemExpansion)
+                }
+            )
         }
 
         // Downloaded: slide in from right
@@ -251,6 +257,68 @@ fun AppNavGraph(
             )
         }
 
+        composable<Routes.EcosystemExpansion>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            EcosystemExpansionScreen(
+                playerViewModel = playerViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenVideoPlayer = { track ->
+                    navController.navigate(
+                        Routes.VideoPlayer(
+                            trackId = track.id,
+                            platform = track.platform.id,
+                            title = track.title,
+                            artist = track.artist,
+                            coverUrl = track.coverUrl
+                        )
+                    )
+                }
+            )
+        }
+
+        composable<Routes.VideoPlayer>(
+            enterTransition = {
+                slideInVertically(
+                    initialOffsetY = { it / 6 },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutVertically(
+                    targetOffsetY = { it / 8 },
+                    animationSpec = tween(280)
+                ) + fadeOut(animationSpec = tween(220))
+            }
+        ) {
+            VideoPlayerScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         // Player: slide up from bottom
         composable<Routes.PlayerLyrics>(
             enterTransition = {
@@ -278,6 +346,17 @@ fun AppNavGraph(
                 onNavigateToAlbum = { albumId, platformId, albumName, artistName, coverUrl ->
                     navController.navigate(
                         Routes.AlbumDetail(albumId, platformId, albumName, artistName, coverUrl)
+                    )
+                },
+                onNavigateToVideoPlayer = { track ->
+                    navController.navigate(
+                        Routes.VideoPlayer(
+                            trackId = track.id,
+                            platform = track.platform.id,
+                            title = track.title,
+                            artist = track.artist,
+                            coverUrl = track.coverUrl
+                        )
                     )
                 },
                 onNavigateToEqualizer = {

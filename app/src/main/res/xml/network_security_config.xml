@@ -8,6 +8,7 @@
         <domain includeSubdomains="true">interface.music.163.com</domain>
         <domain includeSubdomains="true">interface3.music.163.com</domain>
         <domain includeSubdomains="true">music.126.net</domain>
+        <domain includeSubdomains="true">vod.126.net</domain>
         <domain includeSubdomains="true">y.qq.com</domain>
         <domain includeSubdomains="true">u.y.qq.com</domain>
         <domain includeSubdomains="true">c.y.qq.com</domain>

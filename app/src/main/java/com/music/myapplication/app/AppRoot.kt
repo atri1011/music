@@ -66,8 +66,9 @@ fun AppRoot(
     val hasCurrentTrack = miniPlayerState.currentTrack != null
     val isSearchRoute = navBackStackEntry?.destination?.hasRoute(Routes.Search::class) == true
     val isPlayerLyricsRoute = navBackStackEntry?.destination?.hasRoute(Routes.PlayerLyrics::class) == true
+    val isVideoPlayerRoute = navBackStackEntry?.destination?.hasRoute(Routes.VideoPlayer::class) == true
     val snackbarBottomPadding = when {
-        isPlayerLyricsRoute -> 24.dp
+        isPlayerLyricsRoute || isVideoPlayerRoute -> 24.dp
         hasCurrentTrack && !isSearchRoute -> 136.dp
         hasCurrentTrack || !isSearchRoute -> 88.dp
         else -> 24.dp
@@ -104,7 +105,7 @@ fun AppRoot(
                     )
                 }
 
-                if (hasCurrentTrack && !isPlayerLyricsRoute) {
+                if (hasCurrentTrack && !isPlayerLyricsRoute && !isVideoPlayerRoute) {
                     MiniPlayerContainer(
                         playerViewModel = playerViewModel,
                         miniPlayerState = miniPlayerState,
@@ -115,14 +116,14 @@ fun AppRoot(
                     )
                 }
 
-                if (trackActionState.isResolving && !isPlayerLyricsRoute) {
+                if (trackActionState.isResolving && !isPlayerLyricsRoute && !isVideoPlayerRoute) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .padding(horizontal = 12.dp)
                     )
                 }
 
-                if (!isPlayerLyricsRoute && !isSearchRoute) {
+                if (!isPlayerLyricsRoute && !isVideoPlayerRoute && !isSearchRoute) {
                     NavigationBar(
                         containerColor = Color.Transparent,
                         tonalElevation = 0.dp,

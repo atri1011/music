@@ -254,6 +254,25 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun resolveVideoUrl(track: Track): Result<String> {
+        if (track.platform == Platform.LOCAL) {
+            return Result.Error(AppError.Api(message = "本地歌曲暂不支持 MV 播放"))
+        }
+
+        return try {
+            resolveVideoUrlFromParse(track)?.let { return Result.Success(it) }
+
+            when (track.platform) {
+                Platform.NETEASE -> resolveNeteaseVideoUrl(track)
+                Platform.QQ -> resolveQqVideoUrl(track)
+                Platform.KUWO -> Result.Error(AppError.Api(message = "酷我音乐暂未接入 MV 解析"))
+                Platform.LOCAL -> Result.Error(AppError.Api(message = "本地歌曲暂不支持 MV 播放"))
+            }
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
     override suspend fun getLyrics(platform: Platform, songId: String): Result<LyricsResult> {
         return try {
             val response = api.parse(
@@ -325,10 +344,96 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         )
     }
 
+    private suspend fun resolveVideoUrlFromParse(track: Track): String? {
+        val requests = listOf(
+            ParseRequestDto(
+                platform = track.platform.id,
+                ids = track.id,
+                quality = "mv"
+            ),
+            ParseRequestDto(platform = track.platform.id, ids = track.id)
+        )
+
+        requests.forEach { request ->
+            val response = runCatching {
+                api.parse(apiKey = "", request = request)
+            }.getOrNull() ?: return@forEach
+
+            if (response.code != 0) return@forEach
+            extractVideoUrl(response.data)?.let { return it }
+        }
+
+        return null
+    }
+
+    private suspend fun resolveNeteaseVideoUrl(track: Track): Result<String> {
+        if (!track.id.isDigitsOnly()) {
+            return Result.Error(AppError.Parse(message = "网易云歌曲 ID 无效，无法解析 MV"))
+        }
+
+        val songResponse = api.getNeteaseSongDetail(ids = "[${track.id}]")
+        val mvId = extractNeteaseMvId(songResponse)
+            ?: return Result.Error(AppError.Api(message = "当前歌曲没有可播放的 MV"))
+        val mvResponse = api.getNeteaseMvDetail(mvId = mvId)
+        val playUrl = extractNeteaseMvUrl(mvResponse) ?: extractVideoUrl(mvResponse)
+        return if (playUrl.isNullOrBlank()) {
+            Result.Error(AppError.Parse(message = "解析网易云 MV 地址失败"))
+        } else {
+            Result.Success(playUrl)
+        }
+    }
+
+    private suspend fun resolveQqVideoUrl(track: Track): Result<String> {
+        val targetTrack = if (track.id.isDigitsOnly()) {
+            findCommentTrackCandidate(track, Platform.QQ)
+                ?.takeIf { !it.id.isDigitsOnly() }
+                ?: track
+        } else {
+            track
+        }
+
+        if (targetTrack.id.isDigitsOnly()) {
+            return Result.Error(AppError.Parse(message = "QQ 音乐缺少 songmid，无法解析 MV"))
+        }
+
+        val songResponse = api.getQqSongDetail(songMid = targetTrack.id)
+        val vid = extractQqMvVid(songResponse)
+            ?: return Result.Error(AppError.Api(message = "当前歌曲没有可播放的 MV"))
+        val mvResponse = api.postQqMusicu(body = buildQqMvRequestBody(vid))
+        val playUrl = extractQqMvUrl(mvResponse, vid) ?: extractVideoUrl(mvResponse)
+        return if (playUrl.isNullOrBlank()) {
+            Result.Error(AppError.Parse(message = "解析 QQ 音乐 MV 地址失败"))
+        } else {
+            Result.Success(playUrl)
+        }
+    }
+
     private fun extractPlayableUrl(data: JsonElement?): String? {
         return findFirstMatch(data, listOf("url", "playUrl", "play_url", "musicUrl"))
             ?.takeIf { it.startsWith("http", ignoreCase = true) }
             ?.let(::normalizePlayableUrl)
+    }
+
+    private fun extractVideoUrl(data: JsonElement?): String? {
+        return findFirstMatch(
+            data,
+            listOf(
+                "mvUrl",
+                "mv_url",
+                "mvPlayUrl",
+                "mv_play_url",
+                "videoUrl",
+                "video_url",
+                "videoPlayUrl",
+                "video_play_url",
+                "mp4Url",
+                "mp4_url",
+                "hlsUrl",
+                "hls_url"
+            )
+        )?.takeIf { it.startsWith("http", ignoreCase = true) }
+            ?.let(::normalizePlayableUrl)
+            ?: findFirstVideoLikeUrl(data)?.let(::normalizePlayableUrl)
     }
 
     private fun extractLyric(data: JsonElement?): String? {
@@ -353,6 +458,50 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             is JsonPrimitive -> element.contentOrNull
             else -> null
         }
+    }
+
+    private fun findFirstVideoLikeUrl(element: JsonElement?): String? {
+        return when (element) {
+            is JsonObject -> {
+                element.entries.firstNotNullOfOrNull { (key, value) ->
+                    when (value) {
+                        is JsonPrimitive -> {
+                            value.contentOrNull
+                                ?.takeIf { it.startsWith("http", ignoreCase = true) }
+                                ?.takeIf { isVideoKey(key) || isLikelyVideoUrl(it) }
+                        }
+
+                        else -> findFirstVideoLikeUrl(value)
+                    }
+                }
+            }
+
+            is JsonArray -> element.firstNotNullOfOrNull(::findFirstVideoLikeUrl)
+            is JsonPrimitive -> {
+                element.contentOrNull
+                    ?.takeIf { it.startsWith("http", ignoreCase = true) && isLikelyVideoUrl(it) }
+            }
+
+            else -> null
+        }
+    }
+
+    private fun isVideoKey(key: String): Boolean {
+        val normalized = key.lowercase()
+        return normalized.contains("mv") ||
+            normalized.contains("video") ||
+            normalized.contains("mp4") ||
+            normalized.contains("m3u8")
+    }
+
+    private fun isLikelyVideoUrl(url: String): Boolean {
+        val normalized = url.lowercase()
+        return normalized.contains(".mp4") ||
+            normalized.contains(".m3u8") ||
+            normalized.contains(".webm") ||
+            normalized.contains("mime=video") ||
+            normalized.contains("type=mp4") ||
+            normalized.contains("format=mp4")
     }
 
     private fun normalizePlayableUrl(rawUrl: String): String {
@@ -1610,6 +1759,89 @@ internal fun extractFirstQqSongId(data: JsonElement?): String? {
     return null
 }
 
+internal fun extractNeteaseMvId(data: JsonElement?): String? {
+    val song = ((data as? JsonObject)?.getIgnoreCase("songs") as? JsonArray)
+        ?.firstOrNull() as? JsonObject ?: return null
+    val mvValue = song.getIgnoreCase("mv")
+    val mvObject = mvValue as? JsonObject
+    return mvObject?.firstStringOf("id", "mvId", "mvid")
+        ?.takeIf { it.isNotBlank() && it != "0" }
+        ?: song.firstStringOf("mv", "mvid")
+            ?.takeIf { it.isNotBlank() && it != "0" }
+}
+
+internal fun extractNeteaseMvUrl(data: JsonElement?): String? {
+    val root = data as? JsonObject ?: return null
+    val dataNode = (root.getIgnoreCase("data") as? JsonObject) ?: root
+    val brs = dataNode.getIgnoreCase("brs") as? JsonObject
+    listOf("1080", "720", "480", "240").forEach { resolution ->
+        val url = (brs?.getIgnoreCase(resolution) as? JsonPrimitive)?.contentOrNull
+        if (!url.isNullOrBlank()) return normalizeVideoLikeUrl(url)
+    }
+
+    return dataNode.firstStringOf("url", "playUrl", "mp4Url", "hlsUrl")
+        ?.takeIf { it.startsWith("http", ignoreCase = true) }
+        ?.let(::normalizeVideoLikeUrl)
+        ?: extractFirstVideoLikeUrl(dataNode)?.let(::normalizeVideoLikeUrl)
+}
+
+internal fun extractQqMvVid(data: JsonElement?): String? {
+    val song = ((data as? JsonObject)?.getIgnoreCase("data") as? JsonArray)
+        ?.firstOrNull() as? JsonObject ?: return null
+    val mv = song.getIgnoreCase("mv") as? JsonObject
+    return mv?.firstStringOf("vid", "mv_id", "mvId")
+        ?.takeIf { it.isNotBlank() && it != "0" }
+        ?: song.firstStringOf("mvvid", "mvVid")
+            ?.takeIf { it.isNotBlank() && it != "0" }
+}
+
+internal fun extractQqMvUrl(data: JsonElement?, vid: String): String? {
+    val root = data as? JsonObject ?: return null
+    val candidates = buildList<JsonElement?> {
+        add(
+            (((root.getIgnoreCase("mvUrl") as? JsonObject)
+                ?.getIgnoreCase("data") as? JsonObject)
+                ?.getIgnoreCase(vid))
+        )
+        add(
+            (((root.getIgnoreCase("mvInfo") as? JsonObject)
+                ?.getIgnoreCase("data") as? JsonObject)
+                ?.getIgnoreCase(vid))
+        )
+        add(root.getIgnoreCase("mvUrl"))
+    }
+
+    candidates.forEach { candidate ->
+        when (candidate) {
+            is JsonArray -> candidate.forEach { nested ->
+                val url = (nested as? JsonPrimitive)?.contentOrNull
+                    ?.takeIf { it.startsWith("http", ignoreCase = true) }
+                if (!url.isNullOrBlank()) return normalizeVideoLikeUrl(url)
+            }
+
+            is JsonObject -> {
+                val directList = candidate.getIgnoreCase("freeflow_url") as? JsonArray
+                directList?.forEach { item ->
+                    val url = (item as? JsonPrimitive)?.contentOrNull
+                        ?.takeIf { it.startsWith("http", ignoreCase = true) }
+                    if (!url.isNullOrBlank()) return normalizeVideoLikeUrl(url)
+                }
+
+                extractFirstVideoLikeUrl(candidate)?.let { return normalizeVideoLikeUrl(it) }
+            }
+
+            is JsonPrimitive -> {
+                val url = candidate.contentOrNull?.takeIf { it.startsWith("http", ignoreCase = true) }
+                if (!url.isNullOrBlank()) return normalizeVideoLikeUrl(url)
+            }
+
+            else -> Unit
+        }
+    }
+
+    return null
+}
+
 private fun parseNeteaseTrackComment(comment: JsonObject?): TrackComment? {
     val item = comment ?: return null
     val content = item.firstStringOf("content").orEmpty().trim()
@@ -1797,6 +2029,66 @@ private fun normalizeKuwoAlbumCoverUrl(rawCover: String): String {
     val cleaned = rawCover.trim().trimStart('/')
     if (cleaned.isBlank()) return ""
     return "https://img4.kuwo.cn/star/albumcover/$cleaned"
+}
+
+private fun normalizeVideoLikeUrl(rawUrl: String): String {
+    if (!rawUrl.startsWith("http://", ignoreCase = true)) return rawUrl
+
+    val parsed = rawUrl.toHttpUrlOrNull() ?: return rawUrl
+    val host = parsed.host.lowercase()
+    val shouldUpgradeToHttps = host == "wx.music.tc.qq.com" ||
+        host.endsWith(".music.tc.qq.com") ||
+        host.endsWith(".qqmusic.qq.com")
+
+    return if (shouldUpgradeToHttps) {
+        parsed.newBuilder().scheme("https").build().toString()
+    } else {
+        rawUrl
+    }
+}
+
+private fun isVideoLikeKey(key: String): Boolean {
+    val normalized = key.lowercase()
+    return normalized.contains("mv") ||
+        normalized.contains("video") ||
+        normalized.contains("mp4") ||
+        normalized.contains("m3u8")
+}
+
+private fun isLikelyVideoLikeUrl(url: String): Boolean {
+    val normalized = url.lowercase()
+    return normalized.contains(".mp4") ||
+        normalized.contains(".m3u8") ||
+        normalized.contains(".webm") ||
+        normalized.contains("mime=video") ||
+        normalized.contains("type=mp4") ||
+        normalized.contains("format=mp4")
+}
+
+private fun extractFirstVideoLikeUrl(element: JsonElement?): String? {
+    return when (element) {
+        is JsonObject -> {
+            element.entries.firstNotNullOfOrNull { (key, value) ->
+                when (value) {
+                    is JsonPrimitive -> {
+                        value.contentOrNull
+                            ?.takeIf { it.startsWith("http", ignoreCase = true) }
+                            ?.takeIf { isVideoLikeKey(key) || isLikelyVideoLikeUrl(it) }
+                    }
+
+                    else -> extractFirstVideoLikeUrl(value)
+                }
+            }
+        }
+
+        is JsonArray -> element.firstNotNullOfOrNull(::extractFirstVideoLikeUrl)
+        is JsonPrimitive -> {
+            element.contentOrNull
+                ?.takeIf { it.startsWith("http", ignoreCase = true) && isLikelyVideoLikeUrl(it) }
+        }
+
+        else -> null
+    }
 }
 
 private fun extractNeteaseArtistText(track: JsonObject): String {
@@ -2000,6 +2292,34 @@ private fun buildQqGeneralSearchBody(
             put("num_per_page", pageSize.coerceIn(1, 50))
             put("highlight", true)
             put("grp", 1)
+        })
+    })
+}
+
+private fun buildQqMvRequestBody(vid: String): JsonElement = buildJsonObject {
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("mvInfo", buildJsonObject {
+        put("module", "video.VideoDataServer")
+        put("method", "getMVInfo")
+        put("param", buildJsonObject {
+            put("vidlist", JsonArray(listOf(JsonPrimitive(vid))))
+        })
+    })
+    put("mvUrl", buildJsonObject {
+        put("module", "music.stream.MvUrlProxy")
+        put("method", "GetMvUrls")
+        put("param", buildJsonObject {
+            put("vids", JsonArray(listOf(JsonPrimitive(vid))))
+            put("request_typet", 10001)
+            put("addrtype", 3)
+            put("format", 264)
         })
     })
 }

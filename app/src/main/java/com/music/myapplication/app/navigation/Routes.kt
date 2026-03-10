@@ -7,10 +7,19 @@ sealed interface Routes {
     @Serializable data object Search : Routes
     @Serializable data object Library : Routes
     @Serializable data object More : Routes
+    @Serializable data object EcosystemExpansion : Routes
     @Serializable data object PlayerLyrics : Routes
     @Serializable data object Downloaded : Routes
     @Serializable data object LocalMusic : Routes
     @Serializable data object Equalizer : Routes
+    @Serializable data class VideoPlayer(
+        val trackId: String = "",
+        val platform: String = "",
+        val title: String = "",
+        val artist: String = "",
+        val coverUrl: String = "",
+        val playUrl: String = ""
+    ) : Routes
     @Serializable data class PlaylistDetail(
         val id: String,
         val platform: String,

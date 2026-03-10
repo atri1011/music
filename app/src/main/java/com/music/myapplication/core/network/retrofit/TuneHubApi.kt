@@ -82,6 +82,13 @@ interface TuneHubApi {
         @Header("Referer") referer: String = "https://y.qq.com/"
     ): JsonElement
 
+    @GET("https://music.163.com/api/mv/detail")
+    suspend fun getNeteaseMvDetail(
+        @Query("id") mvId: String,
+        @Query("type") type: String = "mp4",
+        @Header("Referer") referer: String = "https://music.163.com/"
+    ): JsonElement
+
     @GET("http://search.kuwo.cn/r.s")
     suspend fun getKuwoSongMetaRaw(
         @Query("rid") rid: String,

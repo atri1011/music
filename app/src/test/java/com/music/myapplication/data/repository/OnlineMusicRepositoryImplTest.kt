@@ -267,6 +267,151 @@ class OnlineMusicRepositoryImplTest {
     }
 
     @Test
+    fun resolveVideoUrl_prefersTuneHubVideoPayload() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        coEvery {
+            api.parse(any(), any())
+        } returns ParseResponseDto(
+            code = 0,
+            data = json.parseToJsonElement("""{"videoUrl":"https://example.com/video.m3u8"}""")
+        )
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.resolveVideoUrl(
+            Track(
+                id = "0039MnYb0qxYhV",
+                platform = Platform.QQ,
+                title = "晴天",
+                artist = "周杰伦"
+            )
+        )
+
+        assertEquals("https://example.com/video.m3u8", (result as Result.Success).data)
+        coVerify(exactly = 1) { api.parse(any(), any()) }
+        coVerify(exactly = 0) { api.getQqSongDetail(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun resolveVideoUrl_forNetease_readsMvDetailUrl() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        coEvery { api.parse(any(), any()) } returns ParseResponseDto(
+            code = 0,
+            data = json.parseToJsonElement("""{}""")
+        )
+        coEvery { api.getNeteaseSongDetail("[123]", any()) } returns json.parseToJsonElement(
+            """
+            {
+              "songs": [
+                {
+                  "id": 123,
+                  "mv": 556677
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseMvDetail("556677", any(), any()) } returns json.parseToJsonElement(
+            """
+            {
+              "data": {
+                "brs": {
+                  "720": "https://example.com/video-720.mp4"
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.resolveVideoUrl(
+            Track(
+                id = "123",
+                platform = Platform.NETEASE,
+                title = "稻香",
+                artist = "周杰伦"
+            )
+        )
+
+        assertEquals("https://example.com/video-720.mp4", (result as Result.Success).data)
+        coVerify(exactly = 2) { api.parse(any(), any()) }
+        coVerify(exactly = 1) { api.getNeteaseSongDetail("[123]", any()) }
+        coVerify(exactly = 1) { api.getNeteaseMvDetail("556677", any(), any()) }
+    }
+
+    @Test
+    fun resolveVideoUrl_forQq_readsMvVidAndUrl() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val bodySlot = slot<JsonElement>()
+        coEvery { api.parse(any(), any()) } returns ParseResponseDto(
+            code = 0,
+            data = json.parseToJsonElement("""{}""")
+        )
+        coEvery {
+            api.getQqSongDetail("0039MnYb0qxYhV", any(), any(), any(), any(), any())
+        } returns json.parseToJsonElement(
+            """
+            {
+              "data": [
+                {
+                  "mid": "0039MnYb0qxYhV",
+                  "mv": {
+                    "vid": "m0034testvid"
+                  }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        coEvery { api.postQqMusicu(any(), any()) } answers {
+            bodySlot.captured = firstArg()
+            json.parseToJsonElement(
+                """
+                {
+                  "mvUrl": {
+                    "data": {
+                      "m0034testvid": {
+                        "freeflow_url": [
+                          "http://mv.example.com/test.mp4"
+                        ]
+                      }
+                    }
+                  }
+                }
+                """.trimIndent()
+            )
+        }
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.resolveVideoUrl(
+            Track(
+                id = "0039MnYb0qxYhV",
+                platform = Platform.QQ,
+                title = "晴天",
+                artist = "周杰伦"
+            )
+        )
+
+        assertEquals("http://mv.example.com/test.mp4", (result as Result.Success).data)
+        val root = bodySlot.captured as JsonObject
+        val mvInfo = root["mvInfo"] as JsonObject
+        val mvUrl = root["mvUrl"] as JsonObject
+        assertEquals("video.VideoDataServer", (mvInfo["module"] as JsonPrimitive).content)
+        assertEquals("music.stream.MvUrlProxy", (mvUrl["module"] as JsonPrimitive).content)
+    }
+
+    @Test
     fun extractNeteaseSongCoverMap_readsAlbumPicUrl() {
         val payload = json.parseToJsonElement(
             """
