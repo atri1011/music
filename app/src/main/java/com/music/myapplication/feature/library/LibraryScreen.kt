@@ -910,13 +910,17 @@ private fun ImportSourceItem(name: String, selected: Boolean, onClick: () -> Uni
 }
 
 @Composable
-private fun CreatePlaylistDialog(
+fun CreatePlaylistDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String) -> Unit,
+    confirmText: String = "创建",
+    enabled: Boolean = true
 ) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (enabled) onDismiss()
+        },
         title = { Text("新建歌单") },
         text = {
             OutlinedTextField(
@@ -924,17 +928,18 @@ private fun CreatePlaylistDialog(
                 onValueChange = { name = it },
                 label = { Text("歌单名称") },
                 singleLine = true,
+                enabled = enabled,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         confirmButton = {
             TextButton(
-                onClick = { if (name.isNotBlank()) onConfirm(name) },
-                enabled = name.isNotBlank()
-            ) { Text("创建") }
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
+                enabled = name.isNotBlank() && enabled
+            ) { Text(confirmText) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss, enabled = enabled) { Text("取消") }
         }
     )
 }

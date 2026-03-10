@@ -60,6 +60,7 @@ import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.components.ShimmerMediaListItem
+import com.music.myapplication.feature.player.AddTrackToPlaylistSheet
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.feature.player.TrackMoreMenu
 
@@ -76,6 +77,7 @@ fun PlaylistDetailScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
+    var trackPendingPlaylistAddition by remember { mutableStateOf<Track?>(null) }
     val displayTracks = if (state.isEditMode) state.editingTracks else state.tracks
     val itemHeights = remember { mutableMapOf<Int, Int>() }
     var draggingIndex by remember { mutableIntStateOf(-1) }
@@ -231,10 +233,22 @@ fun PlaylistDetailScreen(
         selectedTrackForMenu?.let { track ->
             TrackMoreMenu(
                 onDismiss = { selectedTrackForMenu = null },
+                onAddToPlaylist = {
+                    selectedTrackForMenu = null
+                    trackPendingPlaylistAddition = track
+                },
                 onDownload = { playerViewModel.downloadTrack(track) },
                 onShare = { ShareUtils.shareTrack(context, track) }
             )
         }
+    }
+
+    trackPendingPlaylistAddition?.let { track ->
+        AddTrackToPlaylistSheet(
+            track = track,
+            playerViewModel = playerViewModel,
+            onDismiss = { trackPendingPlaylistAddition = null }
+        )
     }
 }
 

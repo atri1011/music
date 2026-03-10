@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.PlaybackState
+import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.TrackComment
 import com.music.myapplication.domain.repository.TrackCommentSort
 import com.music.myapplication.feature.player.state.CommentsStateHolder
@@ -16,7 +18,10 @@ import com.music.myapplication.feature.player.state.SleepTimerStateHolder
 import com.music.myapplication.feature.player.state.TrackInfoStateHolder
 import com.music.myapplication.media.player.QueueManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 data class MiniPlayerUiState(
@@ -79,6 +84,20 @@ data class TrackCommentsUiState(
         get() = TrackCommentSort.entries.filter { commentsOf(it).isNotEmpty() }
 }
 
+data class PlaylistMutationResult(
+    val playlistId: String,
+    val playlistName: String,
+    val added: Boolean,
+    val created: Boolean = false
+) {
+    val message: String
+        get() = when {
+            created && added -> "已添加到新歌单「$playlistName」"
+            added -> "已添加到「$playlistName」"
+            else -> "歌曲已在「$playlistName」里了"
+        }
+}
+
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val playback: PlaybackControlStateHolder,
@@ -86,7 +105,8 @@ class PlayerViewModel @Inject constructor(
     private val comments: CommentsStateHolder,
     private val trackInfo: TrackInfoStateHolder,
     private val sleepTimer: SleepTimerStateHolder,
-    private val queueManager: QueueManager
+    private val queueManager: QueueManager,
+    private val localRepo: LocalLibraryRepository
 ) : ViewModel() {
 
     val playbackState: StateFlow<PlaybackState> get() = playback.playbackState
@@ -101,6 +121,8 @@ class PlayerViewModel @Inject constructor(
     val trackInfoState: StateFlow<TrackInfoUiState> get() = trackInfo.uiState
 
     val sleepTimerState: StateFlow<SleepTimerState> get() = sleepTimer.state
+    val playlists: StateFlow<List<Playlist>> = localRepo.getPlaylists()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         playback.bind(viewModelScope)
@@ -130,6 +152,42 @@ class PlayerViewModel @Inject constructor(
     fun hideComments() = comments.hideComments()
     fun retryLoadComments() = comments.retryLoadComments()
     fun selectCommentSort(sort: TrackCommentSort) = comments.selectCommentSort(sort)
+
+    suspend fun addTrackToPlaylist(playlist: Playlist, track: Track): PlaylistMutationResult {
+        val alreadyExists = localRepo.getPlaylistSongs(playlist.id)
+            .first()
+            .any { candidate ->
+                candidate.id == track.id && candidate.platform == track.platform
+            }
+        if (alreadyExists) {
+            return PlaylistMutationResult(
+                playlistId = playlist.id,
+                playlistName = playlist.name,
+                added = false
+            )
+        }
+
+        localRepo.addToPlaylist(playlist.id, track)
+        return PlaylistMutationResult(
+            playlistId = playlist.id,
+            playlistName = playlist.name,
+            added = true
+        )
+    }
+
+    suspend fun createPlaylistAndAddTrack(name: String, track: Track): PlaylistMutationResult {
+        val playlistName = name.trim()
+        require(playlistName.isNotEmpty()) { "歌单名称不能为空" }
+
+        val playlist = localRepo.createPlaylist(playlistName)
+        localRepo.addToPlaylist(playlist.id, track)
+        return PlaylistMutationResult(
+            playlistId = playlist.id,
+            playlistName = playlist.name,
+            added = true,
+            created = true
+        )
+    }
 
     // Sleep timer
     fun startSleepTimer(minutes: Int) = sleepTimer.startCountdown(minutes)

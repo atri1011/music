@@ -109,6 +109,7 @@ fun PlayerLyricsScreen(
     var showSleepTimerPicker by remember { mutableStateOf(false) }
     var showSpeedPicker by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
+    var trackPendingPlaylistAddition by remember { mutableStateOf<Track?>(null) }
     var posterLyricLine by remember { mutableStateOf<LyricLine?>(null) }
 
     LaunchedEffect(Unit) {
@@ -327,6 +328,10 @@ fun PlayerLyricsScreen(
                 onSleepTimer = { showSleepTimerPicker = true },
                 onQueueManager = { showQueueSheet = true },
                 onVideoPlayer = { onNavigateToVideoPlayer?.invoke(currentTrack) },
+                onAddToPlaylist = {
+                    showMoreMenu = false
+                    trackPendingPlaylistAddition = currentTrack
+                },
                 onShare = { ShareUtils.shareTrack(context, currentTrack) },
                 onSpeedPicker = { showSpeedPicker = true },
                 onEqualizer = { onNavigateToEqualizer?.invoke() },
@@ -353,6 +358,14 @@ fun PlayerLyricsScreen(
             QueueSheet(
                 playerViewModel = playerViewModel,
                 onDismiss = { showQueueSheet = false }
+            )
+        }
+
+        trackPendingPlaylistAddition?.let { track ->
+            AddTrackToPlaylistSheet(
+                track = track,
+                playerViewModel = playerViewModel,
+                onDismiss = { trackPendingPlaylistAddition = null }
             )
         }
 
