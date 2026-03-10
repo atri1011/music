@@ -134,6 +134,56 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun importPlaylistResolvesShortShareLinkInsideMobileShareText() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val playlistsFlow = MutableStateFlow(emptyList<Playlist>())
+            val importedTracks = listOf(
+                Track(
+                    id = "0039MnYb0qxYhV",
+                    platform = Platform.QQ,
+                    title = "晴天",
+                    artist = "周杰伦"
+                )
+            )
+            val shareText = "我发现一张不错的歌单，分享给你 @QQ音乐 https://c6.y.qq.com/base/fcgi-bin/u?__=Hvvmr33vDHrY，复制这条消息查看详情"
+            val resolvedUrl = "https://i.y.qq.com/n2/m/share/details/taoge.html?id=9601259329"
+
+            every { localRepo.getFavorites() } returns flowOf(emptyList())
+            every { localRepo.getTopPlayedTracks(any()) } returns flowOf(emptyList())
+            every { localRepo.getPlaylists() } returns playlistsFlow
+            every { localRepo.getTotalPlayCount() } returns flowOf(0)
+            every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
+            every { localRepo.getLocalTrackCount() } returns flowOf(0)
+            coEvery { onlineRepo.resolveShareUrl(shareText) } returns resolvedUrl
+            coEvery { onlineRepo.getPlaylistDetail(Platform.QQ, "9601259329") } returns Result.Success(importedTracks)
+            coEvery { localRepo.createPlaylist("手机QQ收藏") } returns Playlist(id = "local-qq-mobile-1", name = "手机QQ收藏")
+            coEvery { localRepo.addAllToPlaylist("local-qq-mobile-1", importedTracks) } returns Unit
+
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
+            viewModel.showImportDialog(true)
+            viewModel.importPlaylist(
+                platform = Platform.QQ,
+                rawInput = shareText,
+                customName = "手机QQ收藏"
+            )
+
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { onlineRepo.resolveShareUrl(shareText) }
+            coVerify(exactly = 1) { onlineRepo.getPlaylistDetail(Platform.QQ, "9601259329") }
+            coVerify(exactly = 1) { localRepo.createPlaylist("手机QQ收藏") }
+            coVerify(exactly = 1) { localRepo.addAllToPlaylist("local-qq-mobile-1", importedTracks) }
+            assertEquals("local-qq-mobile-1", viewModel.state.value.importedPlaylist?.playlistId)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun invalidImportInputShowsErrorWithoutCallingRemoteApi() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -189,6 +239,30 @@ class LibraryViewModelTest {
                 "https://www.kuwo.cn/playlist_detail/2891238463"
             )
         )
+    }
+
+    @Test
+    fun resolveImportedPlaylistInputSupportsEmbeddedMobileShareText() {
+        val qqResolved = resolveImportedPlaylistInput(
+            selectedPlatform = Platform.NETEASE,
+            rawInput = "分享歌单给你 @QQ音乐 https://i.y.qq.com/n2/m/share/details/taoge.html?id=9601259329，复制查看"
+        )
+        assertEquals(Platform.QQ, qqResolved?.platform)
+        assertEquals("9601259329", qqResolved?.playlistId)
+
+        val neteaseResolved = resolveImportedPlaylistInput(
+            selectedPlatform = Platform.QQ,
+            rawInput = "网易云音乐分享 https://y.music.163.com/m/playlist?id=19723756&uct2=foo。"
+        )
+        assertEquals(Platform.NETEASE, neteaseResolved?.platform)
+        assertEquals("19723756", neteaseResolved?.playlistId)
+
+        val kuwoResolved = resolveImportedPlaylistInput(
+            selectedPlatform = Platform.QQ,
+            rawInput = "【酷我音乐】歌单推荐 https://h5app.kuwo.cn/www/playlist?pid=2891238463&from=vip。"
+        )
+        assertEquals(Platform.KUWO, kuwoResolved?.platform)
+        assertEquals("2891238463", kuwoResolved?.playlistId)
     }
 
     @Test

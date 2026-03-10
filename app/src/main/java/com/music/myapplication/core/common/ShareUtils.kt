@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import com.music.myapplication.domain.model.Track
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 data class TrackShareOptions(
     val shareUrl: String? = null,
@@ -11,6 +13,15 @@ data class TrackShareOptions(
 )
 
 object ShareUtils {
+
+    private val shareUrlRegex =
+        Regex("""https?://[^\s"'<>\\，。；：！？、】【《》、（）]+""", RegexOption.IGNORE_CASE)
+    private val shareUrlLeadingTrimChars = setOf('(', '[', '{', '<', '《', '【', '"', '\'', '“')
+    private val shareUrlTrailingTrimChars = setOf(
+        ')', ']', '}', '>', '》', '】', '"', '\'', '”',
+        '，', '。', '；', '：', '！', '？', '、',
+        ',', '.', ';', ':', '!'
+    )
 
     fun buildTrackShareSubject(track: Track): String {
         return listOf(track.title, track.artist)
@@ -34,6 +45,47 @@ object ShareUtils {
         return lines.joinToString("\n")
     }
 
+    fun extractShareUrlCandidates(rawText: String): List<String> {
+        val normalizedInput = rawText.trim()
+        if (normalizedInput.isBlank()) return emptyList()
+
+        val textVariants = buildList {
+            add(normalizedInput)
+
+            val unescaped = normalizedInput
+                .replace("\\/", "/")
+                .replace("&amp;", "&")
+            if (unescaped != normalizedInput) add(unescaped)
+
+            decodeShareText(unescaped)
+                ?.takeIf { it != unescaped }
+                ?.let(::add)
+        }
+
+        val candidates = LinkedHashSet<String>()
+        textVariants.forEach { variant ->
+            shareUrlRegex.findAll(variant)
+                .map { normalizeShareUrlCandidate(it.value) }
+                .filter { it.isNotBlank() }
+                .forEach(candidates::add)
+        }
+        return candidates.toList()
+    }
+
+    fun normalizeShareUrlCandidate(rawUrl: String): String {
+        var candidate = rawUrl.trim()
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+
+        while (candidate.isNotEmpty() && candidate.first() in shareUrlLeadingTrimChars) {
+            candidate = candidate.drop(1)
+        }
+        while (candidate.isNotEmpty() && candidate.last() in shareUrlTrailingTrimChars) {
+            candidate = candidate.dropLast(1)
+        }
+        return candidate
+    }
+
     fun shareTrack(
         context: Context,
         track: Track,
@@ -51,5 +103,11 @@ object ShareUtils {
             }
         }
         context.startActivity(chooserIntent)
+    }
+
+    private fun decodeShareText(rawText: String): String? {
+        return runCatching {
+            URLDecoder.decode(rawText, StandardCharsets.UTF_8.toString())
+        }.getOrNull()
     }
 }

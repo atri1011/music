@@ -3,6 +3,7 @@ package com.music.myapplication.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Platform
@@ -188,7 +189,7 @@ class LibraryViewModel @Inject constructor(
         rawInput: String
     ): ImportedPlaylistInput? {
         resolveImportedPlaylistInput(selectedPlatform, rawInput)?.let { return it }
-        if (!looksLikeWebUrl(rawInput)) return null
+        if (ShareUtils.extractShareUrlCandidates(rawInput).isEmpty()) return null
 
         val resolvedUrl = onlineRepo.resolveShareUrl(rawInput)
         if (resolvedUrl.isBlank()) return null
@@ -230,12 +231,16 @@ internal fun resolveImportedPlaylistInput(
     selectedPlatform: Platform,
     rawInput: String
 ): ImportedPlaylistInput? {
-    val resolvedPlatform = detectImportedPlatform(rawInput) ?: selectedPlatform
-    val playlistId = extractImportedPlaylistId(resolvedPlatform, rawInput) ?: return null
-    return ImportedPlaylistInput(
-        platform = resolvedPlatform,
-        playlistId = playlistId
-    )
+    return importedPlaylistInputCandidates(rawInput)
+        .firstNotNullOfOrNull { candidate ->
+            val resolvedPlatform = detectImportedPlatform(candidate) ?: selectedPlatform
+            val playlistId = extractImportedPlaylistId(resolvedPlatform, candidate)
+                ?: return@firstNotNullOfOrNull null
+            ImportedPlaylistInput(
+                platform = resolvedPlatform,
+                playlistId = playlistId
+            )
+        }
 }
 
 internal fun extractImportedPlaylistId(platform: Platform, rawInput: String): String? {
@@ -274,7 +279,7 @@ private fun defaultImportedPlaylistName(platform: Platform, playlistId: String):
 }
 
 private fun importedPlaylistInputError(rawInput: String): String {
-    return if (looksLikeSongLink(rawInput)) {
+    return if (containsImportedSongLink(rawInput)) {
         "这里只支持导入歌单，不支持单曲链接。你填歌单分享链接或者歌单 ID 就行。"
     } else {
         "没识别出来歌单链接或歌单 ID。确认别填成单曲 ID，老老实实贴歌单分享链接或者歌单 ID。"
@@ -284,7 +289,7 @@ private fun importedPlaylistInputError(rawInput: String): String {
 private fun appendImportedPlaylistHint(message: String, rawInput: String): String {
     val normalizedMessage = message.trim().ifBlank { "导入歌单失败，稍后再试。" }
     val hint = when {
-        looksLikeSongLink(rawInput) -> "这里只支持歌单，不支持单曲链接。"
+        containsImportedSongLink(rawInput) -> "这里只支持歌单，不支持单曲链接。"
         rawInput.trim().all(Char::isDigit) -> "确认填的是歌单 ID，不是单曲 ID。"
         else -> ""
     }
@@ -296,17 +301,32 @@ private fun appendImportedPlaylistHint(message: String, rawInput: String): Strin
 private fun detectImportedPlatform(rawInput: String): Platform? {
     val normalizedInput = rawInput.trim().lowercase()
     return when {
-        "music.163.com" in normalizedInput || "163cn.tv" in normalizedInput -> Platform.NETEASE
-        "y.qq.com" in normalizedInput || "qq.com" in normalizedInput -> Platform.QQ
-        "kuwo.cn" in normalizedInput -> Platform.KUWO
+        "music.163.com" in normalizedInput ||
+            "163cn.tv" in normalizedInput ||
+            "网易云" in normalizedInput -> Platform.NETEASE
+        "y.qq.com" in normalizedInput ||
+            "qq.com" in normalizedInput ||
+            "qq音乐" in normalizedInput -> Platform.QQ
+        "kuwo.cn" in normalizedInput || "酷我" in normalizedInput -> Platform.KUWO
         else -> null
     }
 }
 
-private fun looksLikeWebUrl(rawInput: String): Boolean {
+private fun importedPlaylistInputCandidates(rawInput: String): List<String> {
     val normalizedInput = rawInput.trim()
-    return normalizedInput.startsWith("http://", ignoreCase = true) ||
-        normalizedInput.startsWith("https://", ignoreCase = true)
+    if (normalizedInput.isBlank()) return emptyList()
+
+    return buildList {
+        add(normalizedInput)
+        addAll(ShareUtils.extractShareUrlCandidates(normalizedInput))
+    }.map(String::trim)
+        .filter { it.isNotBlank() }
+        .distinct()
+}
+
+private fun containsImportedSongLink(rawInput: String): Boolean {
+    return importedPlaylistInputCandidates(rawInput)
+        .any(::looksLikeSongLink)
 }
 
 private fun looksLikeSongLink(rawInput: String): Boolean {

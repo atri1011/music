@@ -2,6 +2,7 @@ package com.music.myapplication.data.repository
 
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
 import com.music.myapplication.core.network.retrofit.TuneHubApi
@@ -247,23 +248,30 @@ class OnlineMusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun resolveShareUrl(url: String): String = withContext(Dispatchers.IO) {
-        val normalizedUrl = url.trim()
-        if (normalizedUrl.isBlank()) return@withContext normalizedUrl
+        val normalizedInput = url.trim()
+        if (normalizedInput.isBlank()) return@withContext normalizedInput
+
+        val requestUrl = ShareUtils.extractShareUrlCandidates(normalizedInput)
+            .firstOrNull { candidate ->
+                candidate.startsWith("http://", ignoreCase = true) ||
+                    candidate.startsWith("https://", ignoreCase = true)
+            }
+            ?: return@withContext normalizedInput
 
         runCatching {
-            val requestBuilder = Request.Builder().url(normalizedUrl).get()
-            shareRefererFor(normalizedUrl)?.let { referer ->
+            val requestBuilder = Request.Builder().url(requestUrl).get()
+            shareRefererFor(requestUrl)?.let { referer ->
                 requestBuilder.header("Referer", referer)
             }
             okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
-                val finalUrl = response.request.url.toString()
+                val finalUrl = ShareUtils.normalizeShareUrlCandidate(response.request.url.toString())
                 val responseBody = response.body?.string().orEmpty()
                 when {
-                    finalUrl.isNotBlank() && !finalUrl.equals(normalizedUrl, ignoreCase = true) -> finalUrl
-                    else -> extractShareTarget(responseBody) ?: finalUrl.ifBlank { normalizedUrl }
+                    finalUrl.isNotBlank() && !finalUrl.equals(requestUrl, ignoreCase = true) -> finalUrl
+                    else -> extractShareTarget(responseBody) ?: finalUrl.ifBlank { requestUrl }
                 }
             }
-        }.getOrDefault(normalizedUrl)
+        }.getOrDefault(extractShareTarget(normalizedInput) ?: requestUrl)
     }
 
     override suspend fun resolvePlayableUrl(
@@ -2557,26 +2565,53 @@ private fun shareRefererFor(url: String): String? {
 private fun extractShareTarget(rawContent: String): String? {
     if (rawContent.isBlank()) return null
 
-    val decoded = rawContent
-        .replace("\\/", "/")
-        .replace("&amp;", "&")
+    val variants = buildList {
+        add(rawContent)
 
-    val urlPatterns = listOf(
-        Regex("""https?://(?:[A-Za-z0-9-]+\.)?y\.qq\.com[^\s"'<>\\]+""", RegexOption.IGNORE_CASE),
-        Regex("""https?://music\.163\.com[^\s"'<>\\]+""", RegexOption.IGNORE_CASE),
-        Regex("""https?://(?:www\.)?kuwo\.cn[^\s"'<>\\]+""", RegexOption.IGNORE_CASE)
-    )
+        val unescaped = rawContent
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+        if (unescaped != rawContent) add(unescaped)
 
-    urlPatterns.forEach { pattern ->
-        pattern.find(decoded)?.value?.trim()?.let { candidate ->
-            if (candidate.isNotBlank()) return candidate
-        }
+        val decoded = runCatching {
+            java.net.URLDecoder.decode(unescaped, java.nio.charset.StandardCharsets.UTF_8.toString())
+        }.getOrNull()
+        decoded?.takeIf { it != unescaped }?.let(::add)
     }
 
-    return Regex("""(?:id|disstid|pid)\s*[:=]\s*["']?(\d{5,})""", RegexOption.IGNORE_CASE)
-        .find(decoded)
-        ?.groupValues
-        ?.getOrNull(1)
+    val prioritizedUrls = variants.asSequence()
+        .flatMap { ShareUtils.extractShareUrlCandidates(it).asSequence() }
+        .filter(::isSupportedShareUrl)
+        .distinct()
+        .sortedByDescending(::shareTargetPriority)
+        .toList()
+    prioritizedUrls.firstOrNull()?.let { return it }
+
+    return variants.asSequence()
+        .mapNotNull { candidate ->
+            Regex(
+                """(?:playlist(?:_id)?|listid|id|disstid|pid)\s*[:=]\s*["']?(\d{5,})""",
+                RegexOption.IGNORE_CASE
+            ).find(candidate)?.groupValues?.getOrNull(1)
+        }
+        .firstOrNull()
+}
+
+private fun isSupportedShareUrl(url: String): Boolean {
+    val normalized = url.lowercase()
+    return "y.qq.com" in normalized ||
+        "music.163.com" in normalized ||
+        "163cn.tv" in normalized ||
+        "kuwo.cn" in normalized
+}
+
+private fun shareTargetPriority(url: String): Int {
+    val normalized = url.lowercase()
+    return when {
+        Regex("""(?:playlist(?:_detail)?/\d+|[?&](?:id|disstid|pid)=\d+)""").containsMatchIn(normalized) -> 3
+        "163cn.tv" in normalized -> 2
+        else -> 1
+    }
 }
 
 private fun JsonObject.getIgnoreCase(key: String): JsonElement? {

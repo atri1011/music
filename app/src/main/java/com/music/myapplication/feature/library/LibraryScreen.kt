@@ -78,10 +78,11 @@ import com.music.myapplication.ui.theme.LocalGlassColors
 import com.music.myapplication.ui.theme.QQMusicGreen
 import kotlin.math.abs
 
-// Medal colors for top-3 rankings
+// Medal colors for top-3 rankings.
+// Keep the gold/silver/bronze semantics, but tune silver and bronze for a cleaner UI.
 private val RankGold = Color(0xFFFFD700)
-private val RankSilver = Color(0xFFB0B8C4)
-private val RankBronze = Color(0xFFCD7F32)
+private val RankSilver = Color(0xFF8EA7C7)
+private val RankBronze = Color(0xFFC8843F)
 
 // Accent colors for quick-access tiles
 private val FavoriteAccent = Color(0xFFFF6B8A)
@@ -695,14 +696,14 @@ private fun RankedTrackItem(
     val isTopThree = rank <= 3
     val rankColor = when (rank) {
         1 -> RankGold
-        2 -> RankSilver
-        3 -> RankBronze
+        2 -> RankBronze
+        3 -> RankSilver
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val rankBrush = when (rank) {
         1 -> Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFD4AF37)))
-        2 -> Brush.linearGradient(listOf(Color(0xFFC0C0C0), Color(0xFF8A8A8A)))
-        3 -> Brush.linearGradient(listOf(Color(0xFFCD7F32), Color(0xFFA0522D)))
+        2 -> Brush.linearGradient(listOf(Color(0xFFF2C389), Color(0xFFC8843F)))
+        3 -> Brush.linearGradient(listOf(Color(0xFFE8F0FB), Color(0xFF8EA7C7)))
         else -> null
     }
 
@@ -846,7 +847,7 @@ private fun ImportPlaylistDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = "支持直接粘贴歌单分享链接、QQ 短分享链，也支持只填歌单 ID；单曲链接和歌曲 ID 不行。",
+                        text = "支持直接粘贴电脑链接、手机分享文案、短分享链，也支持只填歌单 ID；单曲链接和歌曲 ID 不行。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp)

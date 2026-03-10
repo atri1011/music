@@ -268,6 +268,66 @@ class OnlineMusicRepositoryImplTest {
     }
 
     @Test
+    fun resolveShareUrl_extractsShortUrlFromMobileShareText() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val requestedUrls = mutableListOf<String>()
+        val redirectTarget = "https://y.qq.com/n/ryqq/playlist/9601259329"
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                requestedUrls += chain.request().url.toString()
+                Response.Builder()
+                    .request(Request.Builder().url(redirectTarget).build())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("".toResponseBody())
+                    .build()
+            }
+            .build()
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+        val resolved = repository.resolveShareUrl(
+            "我发现一张不错的歌单，分享给你 https://c6.y.qq.com/base/fcgi-bin/u?__=Hvvmr33vDHrY，复制这条消息查看详情"
+        )
+
+        assertEquals(listOf("https://c6.y.qq.com/base/fcgi-bin/u?__=Hvvmr33vDHrY"), requestedUrls)
+        assertEquals(redirectTarget, resolved)
+    }
+
+    @Test
+    fun resolveShareUrl_extractsDecodedPlaylistTargetFromHtmlBody() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val requestUrl = "https://c6.y.qq.com/base/fcgi-bin/u?__=mobile"
+        val responseBody = """
+            <html>
+            <script>
+            window.location.href = "https%3A%2F%2Fy.music.163.com%2Fm%2Fplaylist%3Fid%3D19723756%26uct2%3Dfoo";
+            </script>
+            </html>
+        """.trimIndent()
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(responseBody.toResponseBody())
+                    .build()
+            }
+            .build()
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+        val resolved = repository.resolveShareUrl(requestUrl)
+
+        assertEquals("https://y.music.163.com/m/playlist?id=19723756&uct2=foo", resolved)
+    }
+
+    @Test
     fun resolveVideoUrl_prefersTuneHubVideoPayload() = runTest {
         val api = mockk<TuneHubApi>()
         val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
