@@ -25,7 +25,8 @@ data class PlaylistDetailUiState(
     val isEditMode: Boolean = false,
     val error: String? = null,
     val editMessage: String? = null,
-    val title: String = ""
+    val title: String = "",
+    val coverUrl: String = ""
 )
 
 @HiltViewModel
@@ -57,13 +58,21 @@ class PlaylistDetailViewModel @Inject constructor(
         }
         loadJob = viewModelScope.launch {
             if (platform == "local") {
+                val playlist = localRepo.getPlaylistById(id)
+                _state.update {
+                    it.copy(
+                        title = playlist?.name ?: title,
+                        coverUrl = playlist?.coverUrl.orEmpty()
+                    )
+                }
                 localRepo.getPlaylistSongs(id).collect { tracks ->
                     _state.update { current ->
                         current.copy(
                             tracks = tracks,
                             editingTracks = if (current.isEditMode) current.editingTracks else tracks,
                             isLoading = false,
-                            isLocalPlaylist = true
+                            isLocalPlaylist = true,
+                            coverUrl = current.coverUrl.ifBlank { playlist?.coverUrl.orEmpty() }
                         )
                     }
                 }

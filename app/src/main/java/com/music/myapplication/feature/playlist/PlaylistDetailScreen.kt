@@ -144,7 +144,9 @@ fun PlaylistDetailScreen(
                 }
             }
             else -> {
-                val headerCoverUrl = displayTracks.firstOrNull()?.coverUrl ?: ""
+                val headerCoverUrl = state.coverUrl.ifBlank {
+                    displayTracks.firstOrNull()?.coverUrl.orEmpty()
+                }
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     // Header with large cover + gradient
                     item(key = "header", contentType = "header") {

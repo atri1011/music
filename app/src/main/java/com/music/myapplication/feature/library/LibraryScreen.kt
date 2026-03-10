@@ -1,6 +1,8 @@
 package com.music.myapplication.feature.library
 
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
@@ -93,6 +96,16 @@ fun LibraryScreen(
     playerViewModel: PlayerViewModel
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var pendingPlaylistCoverId by remember { mutableStateOf<String?>(null) }
+    val playlistCoverPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        val playlistId = pendingPlaylistCoverId
+        pendingPlaylistCoverId = null
+        if (playlistId != null && uri != null) {
+            viewModel.updatePlaylistCover(playlistId, uri.toString())
+        }
+    }
 
     LaunchedEffect(state.importedPlaylist) {
         state.importedPlaylist?.let { destination ->
@@ -168,6 +181,10 @@ fun LibraryScreen(
                         coverUrl = playlist.coverUrl,
                         trackCount = playlist.trackCount,
                         onClick = { onNavigateToPlaylist(playlist.id, playlist.name) },
+                        onEditCover = {
+                            pendingPlaylistCoverId = playlist.id
+                            playlistCoverPicker.launch("image/*")
+                        },
                         onDelete = { viewModel.deletePlaylist(playlist.id) }
                     )
                 }
@@ -598,6 +615,7 @@ private fun PlaylistRow(
     coverUrl: String,
     trackCount: Int,
     onClick: () -> Unit,
+    onEditCover: () -> Unit,
     onDelete: () -> Unit
 ) {
     Row(
@@ -644,6 +662,14 @@ private fun PlaylistRow(
                 text = "$trackCount 首歌曲",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onEditCover, modifier = Modifier.size(36.dp)) {
+            Icon(
+                Icons.Outlined.Image,
+                contentDescription = "更换封面",
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                modifier = Modifier.size(18.dp)
             )
         }
         IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {

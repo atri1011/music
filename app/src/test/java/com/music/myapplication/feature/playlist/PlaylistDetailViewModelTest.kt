@@ -2,6 +2,7 @@ package com.music.myapplication.feature.playlist
 
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -109,6 +110,7 @@ class PlaylistDetailViewModelTest {
                 )
             }
             assertEquals(listOf(trackB, trackA), viewModel.state.value.tracks)
+            assertEquals("/data/user/0/com.music.myapplication/files/playlist_covers/custom.jpg", viewModel.state.value.coverUrl)
             assertEquals(false, viewModel.state.value.isEditMode)
         } finally {
             Dispatchers.resetMain()
@@ -154,6 +156,13 @@ class PlaylistDetailViewModelTest {
 
     private fun everyLocalPlaylist(localRepo: LocalLibraryRepository, tracks: List<Track>) {
         coEvery { localRepo.replacePlaylistSongs(any(), any()) } returns Unit
+        coEvery { localRepo.getPlaylistById(any()) } answers {
+            Playlist(
+                id = firstArg(),
+                name = "本地歌单",
+                coverUrl = "/data/user/0/com.music.myapplication/files/playlist_covers/custom.jpg"
+            )
+        }
         io.mockk.every { localRepo.getPlaylistSongs(any()) } returns flowOf(tracks)
     }
 }

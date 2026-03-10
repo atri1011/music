@@ -30,11 +30,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.music.myapplication.domain.model.LyricLine
+import androidx.compose.foundation.gestures.detectTapGestures
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
@@ -47,6 +49,7 @@ fun LyricsView(
     inactiveLineColor: Color = Color.White,
     translationColor: Color = Color.White.copy(alpha = 0.7f),
     scrimColor: Color = Color.Transparent,
+    onLineLongPress: (LyricLine) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (lyrics.isEmpty()) {
@@ -139,6 +142,15 @@ fun LyricsView(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .pointerInput(line.text, line.translation) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    if (line.text.isNotBlank()) {
+                                        onLineLongPress(line)
+                                    }
+                                }
+                            )
+                        }
                         .graphicsLayer {
                             alpha = animatedAlpha
                             if (isCurrent) {

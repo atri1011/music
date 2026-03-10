@@ -23,6 +23,7 @@ import org.junit.Test
 
 class LocalLibraryRepositoryImplTest {
 
+    private val context = mockk<android.content.Context>(relaxed = true)
     private val favoritesDao = mockk<FavoritesDao>(relaxed = true)
     private val recentPlaysDao = mockk<RecentPlaysDao>(relaxed = true)
     private val playlistsDao = mockk<PlaylistsDao>(relaxed = true)
@@ -32,6 +33,7 @@ class LocalLibraryRepositoryImplTest {
     private val localMusicScanner = mockk<LocalMusicScanner>(relaxed = true)
 
     private val repository = LocalLibraryRepositoryImpl(
+        context = context,
         favoritesDao = favoritesDao,
         recentPlaysDao = recentPlaysDao,
         playlistsDao = playlistsDao,

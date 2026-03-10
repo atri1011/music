@@ -1,5 +1,9 @@
 package com.music.myapplication.data.repository
 
+import android.content.Context
+import android.net.Uri
+import android.webkit.MimeTypeMap
+import androidx.core.net.toUri
 import com.music.myapplication.core.database.dao.*
 import com.music.myapplication.core.database.entity.LyricsCacheEntity
 import com.music.myapplication.core.database.entity.PlaylistEntity
@@ -9,14 +13,17 @@ import com.music.myapplication.core.local.LocalMusicScanner
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class LocalLibraryRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val favoritesDao: FavoritesDao,
     private val recentPlaysDao: RecentPlaysDao,
     private val playlistsDao: PlaylistsDao,
@@ -89,6 +96,9 @@ class LocalLibraryRepositoryImpl @Inject constructor(
             }
         }
 
+    override suspend fun getPlaylistById(playlistId: String): Playlist? =
+        playlistsDao.getById(playlistId)?.toPlaylist()
+
     override suspend fun createPlaylist(name: String): Playlist {
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
@@ -97,12 +107,33 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deletePlaylist(playlistId: String) {
+        val existing = playlistsDao.getById(playlistId)
         playlistsDao.delete(playlistId)
+        deleteManagedPlaylistCover(existing?.coverUrl.orEmpty())
     }
 
     override suspend fun renamePlaylist(playlistId: String, newName: String) {
         val entity = playlistsDao.getById(playlistId) ?: return
         playlistsDao.update(entity.copy(name = newName, updatedAt = System.currentTimeMillis()))
+    }
+
+    override suspend fun updatePlaylistCover(playlistId: String, sourceUri: String?) {
+        val entity = playlistsDao.getById(playlistId) ?: return
+        val newCoverUrl = sourceUri
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { copyPlaylistCoverToPrivateDir(playlistId, it.toUri()) }
+            .orEmpty()
+        val previousCoverUrl = entity.coverUrl
+        playlistsDao.update(
+            entity.copy(
+                coverUrl = newCoverUrl,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+        if (previousCoverUrl != newCoverUrl) {
+            deleteManagedPlaylistCover(previousCoverUrl)
+        }
     }
 
     override fun getPlaylistSongs(playlistId: String): Flow<List<Track>> =
@@ -228,5 +259,59 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     private suspend fun touchPlaylist(playlistId: String) {
         val entity = playlistsDao.getById(playlistId) ?: return
         playlistsDao.update(entity.copy(updatedAt = System.currentTimeMillis()))
+    }
+
+    private fun PlaylistEntity.toPlaylist(): Playlist = Playlist(
+        id = playlistId,
+        name = name,
+        coverUrl = coverUrl,
+        createdAt = createdAt,
+        updatedAt = updatedAt
+    )
+
+    private fun copyPlaylistCoverToPrivateDir(playlistId: String, sourceUri: Uri): String {
+        val destinationDir = File(context.filesDir, PLAYLIST_COVER_DIRECTORY).apply { mkdirs() }
+        val extension = resolvePlaylistCoverExtension(sourceUri)
+        val destinationFile = File(
+            destinationDir,
+            "playlist_${playlistId}_${System.currentTimeMillis()}.$extension"
+        )
+
+        context.contentResolver.openInputStream(sourceUri)?.use { input ->
+            destinationFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        } ?: throw IllegalStateException("无法读取选中的封面图片")
+
+        return destinationFile.absolutePath
+    }
+
+    private fun resolvePlaylistCoverExtension(sourceUri: Uri): String {
+        val mimeType = context.contentResolver.getType(sourceUri).orEmpty()
+        val fromMime = MimeTypeMap.getSingleton()
+            .getExtensionFromMimeType(mimeType)
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+        if (fromMime != null) return fromMime
+
+        val path = sourceUri.lastPathSegment.orEmpty()
+        val extension = path.substringAfterLast('.', "").lowercase()
+        return extension.takeIf { it.length in 2..5 } ?: DEFAULT_PLAYLIST_COVER_EXTENSION
+    }
+
+    private fun deleteManagedPlaylistCover(rawPath: String) {
+        val trimmed = rawPath.trim()
+        if (trimmed.isBlank()) return
+
+        val managedDirectoryPath = File(context.filesDir, PLAYLIST_COVER_DIRECTORY).absolutePath
+        val targetFile = File(trimmed)
+        if (!targetFile.exists()) return
+        if (!targetFile.absolutePath.startsWith(managedDirectoryPath)) return
+        targetFile.delete()
+    }
+
+    private companion object {
+        const val PLAYLIST_COVER_DIRECTORY = "playlist_covers"
+        const val DEFAULT_PLAYLIST_COVER_EXTENSION = "jpg"
     }
 }

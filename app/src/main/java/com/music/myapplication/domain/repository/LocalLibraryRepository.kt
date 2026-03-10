@@ -12,9 +12,11 @@ interface LocalLibraryRepository {
     fun getRecentPlays(limit: Int = 50): Flow<List<Track>>
     suspend fun recordRecentPlay(track: Track, positionMs: Long = 0L)
     fun getPlaylists(): Flow<List<Playlist>>
+    suspend fun getPlaylistById(playlistId: String): Playlist?
     suspend fun createPlaylist(name: String): Playlist
     suspend fun deletePlaylist(playlistId: String)
     suspend fun renamePlaylist(playlistId: String, newName: String)
+    suspend fun updatePlaylistCover(playlistId: String, sourceUri: String?)
     fun getPlaylistSongs(playlistId: String): Flow<List<Track>>
     suspend fun addToPlaylist(playlistId: String, track: Track)
     suspend fun addAllToPlaylist(playlistId: String, tracks: List<Track>)

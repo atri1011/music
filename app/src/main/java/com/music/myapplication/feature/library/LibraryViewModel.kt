@@ -199,6 +199,12 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
     }
 
+    fun updatePlaylistCover(playlistId: String, sourceUri: String) {
+        viewModelScope.launch {
+            localRepo.updatePlaylistCover(playlistId, sourceUri)
+        }
+    }
+
     private data class LibraryExtras(
         val showCreateDialog: Boolean = false,
         val showImportDialog: Boolean = false,

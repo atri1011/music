@@ -108,12 +108,14 @@ fun PlayerLyricsScreen(
     var showSleepTimerPicker by remember { mutableStateOf(false) }
     var showSpeedPicker by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
+    var posterLyricLine by remember { mutableStateOf<LyricLine?>(null) }
 
     LaunchedEffect(Unit) {
         playerViewModel.showLyricsPanel()
     }
 
     LaunchedEffect(currentTrack?.id, currentTrack?.platform?.id) {
+        posterLyricLine = null
         if (currentTrack != null) {
             hasLoadedTrack = true
         } else if (hasLoadedTrack) {
@@ -252,6 +254,7 @@ fun PlayerLyricsScreen(
                     1 -> LyricsPanelContent(
                         lyricsState = lyricsState,
                         currentIndex = currentLyricIndex,
+                        onLyricLongPress = { posterLyricLine = it },
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 24.dp)
@@ -347,6 +350,14 @@ fun PlayerLyricsScreen(
             QueueSheet(
                 playerViewModel = playerViewModel,
                 onDismiss = { showQueueSheet = false }
+            )
+        }
+
+        posterLyricLine?.let { lyricLine ->
+            LyricsPosterDialog(
+                track = currentTrack,
+                lyricLine = lyricLine,
+                onDismiss = { posterLyricLine = null }
             )
         }
     }
@@ -813,6 +824,7 @@ private fun formatCommentTime(timeMs: Long): String {
 private fun LyricsPanelContent(
     lyricsState: LyricsUiState,
     currentIndex: Int,
+    onLyricLongPress: (LyricLine) -> Unit,
     modifier: Modifier = Modifier
 ) {
     when {
@@ -827,6 +839,7 @@ private fun LyricsPanelContent(
         else -> LyricsView(
             lyrics = lyricsState.lyrics,
             currentIndex = currentIndex,
+            onLineLongPress = onLyricLongPress,
             modifier = modifier
         )
     }
