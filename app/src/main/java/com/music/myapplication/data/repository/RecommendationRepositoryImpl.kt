@@ -301,14 +301,6 @@ internal fun extractNeteaseRecommendedPlaylists(data: JsonElement?): List<Toplis
     }
 }
 
-private fun JsonObject.firstStringOf(vararg keys: String): String? {
-    keys.forEach { key ->
-        val value = (this[key] as? JsonPrimitive)?.contentOrNull
-        if (!value.isNullOrBlank()) return value
-    }
-    return null
-}
-
 private fun Track.uniqueKey(): String = "${platform.id}:$id"
 
 private fun String.asRecommendationKeyword(): String {

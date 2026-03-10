@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
+import com.music.myapplication.core.cache.CacheManager
 import com.music.myapplication.core.database.dao.*
 import com.music.myapplication.core.database.entity.LyricsCacheEntity
 import com.music.myapplication.core.database.entity.PlaylistEntity
@@ -29,6 +30,7 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     private val playlistsDao: PlaylistsDao,
     private val playlistSongsDao: PlaylistSongsDao,
     private val lyricsCacheDao: LyricsCacheDao,
+    private val cacheManager: CacheManager,
     private val localTracksDao: LocalTracksDao,
     private val localMusicScanner: LocalMusicScanner
 ) : LocalLibraryRepository {
@@ -179,6 +181,7 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     override suspend fun cacheLyrics(platform: String, songId: String, lyrics: String) {
         val key = "$platform:$songId"
         lyricsCacheDao.insert(LyricsCacheEntity(cacheKey = key, lyricText = lyrics))
+        cacheManager.enforceLimit()
     }
 
     override suspend fun getCachedTranslation(platform: String, songId: String): String? {
@@ -189,6 +192,7 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     override suspend fun cacheTranslation(platform: String, songId: String, translation: String) {
         val key = "$platform:$songId:trans"
         lyricsCacheDao.insert(LyricsCacheEntity(cacheKey = key, lyricText = translation))
+        cacheManager.enforceLimit()
     }
 
     override suspend fun getTrackPlayCount(songId: String, platform: String): Int =

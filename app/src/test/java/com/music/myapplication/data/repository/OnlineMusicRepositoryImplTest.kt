@@ -1814,6 +1814,160 @@ class OnlineMusicRepositoryImplTest {
     }
 
     @Test
+    fun getAlbumDetailFull_forNetease_fallsBackToSearchWhenOfficialAlbumApiReturnsEmptySongs() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val officialPayload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "album": {
+                "name": "叶惠美",
+                "id": 18905,
+                "size": 11,
+                "picUrl": "https://example.com/yhm.jpg",
+                "publishTime": 1059580800000,
+                "company": "杰威尔",
+                "artist": {
+                  "name": "周杰伦"
+                },
+                "artists": [
+                  { "name": "周杰伦" }
+                ]
+              },
+              "songs": []
+            }
+            """.trimIndent()
+        )
+        val albumSearchPayload = json.parseToJsonElement(
+            """
+            {
+              "result": {
+                "albums": [
+                  {
+                    "name": "叶惠美",
+                    "id": 18905,
+                    "size": 11,
+                    "picUrl": "https://example.com/yhm.jpg",
+                    "publishTime": 1059580800000,
+                    "company": "杰威尔",
+                    "artist": {
+                      "name": "周杰伦"
+                    },
+                    "artists": [
+                      { "name": "周杰伦" }
+                    ]
+                  }
+                ]
+              },
+              "code": 200
+            }
+            """.trimIndent()
+        )
+        val songSearchPayload = json.parseToJsonElement(
+            """
+            {
+              "result": {
+                "songCount": 2,
+                "songs": [
+                  {
+                    "id": 186014,
+                    "name": "以父之名",
+                    "duration": 342000,
+                    "artists": [
+                      { "name": "周杰伦" }
+                    ],
+                    "album": {
+                      "id": 18905,
+                      "name": "叶惠美",
+                      "picUrl": "https://example.com/yhm.jpg"
+                    }
+                  },
+                  {
+                    "id": 186016,
+                    "name": "晴天",
+                    "duration": 269000,
+                    "artists": [
+                      { "name": "周杰伦" }
+                    ],
+                    "album": {
+                      "id": 18905,
+                      "name": "叶惠美",
+                      "picUrl": "https://example.com/yhm.jpg"
+                    }
+                  }
+                ]
+              },
+              "code": 200
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseAlbumDetail("32311", any()) } returns officialPayload
+        coEvery {
+            api.searchNeteaseByType(
+                keyword = "叶惠美 周杰伦",
+                type = 10,
+                offset = 0,
+                limit = 50,
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        } returns albumSearchPayload
+        coEvery {
+            api.searchNeteaseByType(
+                keyword = "叶惠美 周杰伦",
+                type = 1,
+                offset = 0,
+                limit = 50,
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        } returns songSearchPayload
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getAlbumDetailFull(
+            platform = Platform.NETEASE,
+            albumId = "32311",
+            albumNameHint = "叶惠美",
+            artistNameHint = "周杰伦"
+        )
+
+        val data = (result as Result.Success).data
+        assertEquals("18905", data.info.id)
+        assertEquals("叶惠美", data.info.name)
+        assertEquals("周杰伦", data.info.artistName)
+        assertEquals(listOf("186014", "186016"), data.tracks.map { it.id })
+        coVerify(exactly = 1) { api.getNeteaseAlbumDetail("32311", any()) }
+        coVerify(exactly = 1) {
+            api.searchNeteaseByType(
+                keyword = "叶惠美 周杰伦",
+                type = 10,
+                offset = 0,
+                limit = 50,
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        }
+        coVerify(exactly = 1) {
+            api.searchNeteaseByType(
+                keyword = "叶惠美 周杰伦",
+                type = 1,
+                offset = 0,
+                limit = 50,
+                total = any(),
+                csrfToken = any(),
+                referer = any()
+            )
+        }
+    }
+
+    @Test
     fun getAlbumDetailFull_forNetease_returnsErrorWhenFallbackHintsAreIncomplete() = runTest {
         val api = mockk<TuneHubApi>()
         val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)

@@ -289,17 +289,27 @@ class PlaybackControlStateHolder @Inject constructor(
             return
         }
 
-        resolveTrackAction(track) { playable ->
-            if (!playable.playableUrl.isRemoteHttpUrl()) {
-                publishTrackActionError("该歌曲已下载，可直接播放")
-                return@resolveTrackAction
+        scope.launch {
+            val shouldWaitForWifi = withContext(dispatchers.io) {
+                downloadManager.shouldWaitForUnmeteredNetwork()
+            }
+            if (shouldWaitForWifi) {
+                publishTrackActionError("仅 Wi‑Fi 模式已开启，请连接 Wi‑Fi 后再下载")
+                return@launch
             }
 
-            val enqueued = withContext(dispatchers.io) {
-                downloadManager.enqueueDownload(playable, playable.playableUrl, playable.quality)
-            }
-            if (!enqueued) {
-                publishTrackActionError("该歌曲已在下载列表中")
+            resolveTrackAction(track) { playable ->
+                if (!playable.playableUrl.isRemoteHttpUrl()) {
+                    publishTrackActionError("该歌曲已下载，可直接播放")
+                    return@resolveTrackAction
+                }
+
+                val enqueued = withContext(dispatchers.io) {
+                    downloadManager.enqueueDownload(playable, playable.playableUrl, playable.quality)
+                }
+                if (!enqueued) {
+                    publishTrackActionError("该歌曲已在下载列表中")
+                }
             }
         }
     }

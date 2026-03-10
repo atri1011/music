@@ -8,12 +8,15 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.database.dao.DownloadedTracksDao
 import com.music.myapplication.core.database.entity.DownloadedTrackEntity
 import com.music.myapplication.core.database.mapper.toDownloadedTrackEntity
+import com.music.myapplication.core.network.NetworkMonitor
 import com.music.myapplication.domain.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,9 +24,14 @@ import javax.inject.Singleton
 @Singleton
 class DownloadManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val downloadedTracksDao: DownloadedTracksDao
+    private val downloadedTracksDao: DownloadedTracksDao,
+    private val preferences: PlayerPreferences,
+    private val networkMonitor: NetworkMonitor
 ) {
     private val workManager = WorkManager.getInstance(context)
+
+    suspend fun shouldWaitForUnmeteredNetwork(): Boolean =
+        preferences.wifiOnly.first() && !networkMonitor.isUnmeteredConnection()
 
     suspend fun enqueueDownload(track: Track, playableUrl: String, quality: String): Boolean {
         val existing = downloadedTracksDao.get(track.id, track.platform.id)
@@ -52,8 +60,13 @@ class DownloadManager @Inject constructor(
             .putString(DownloadWorker.KEY_PLAYABLE_URL, playableUrl)
             .build()
 
+        val requiredNetworkType = if (preferences.wifiOnly.first()) {
+            NetworkType.UNMETERED
+        } else {
+            NetworkType.CONNECTED
+        }
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiredNetworkType(requiredNetworkType)
             .build()
 
         val workRequest = OneTimeWorkRequestBuilder<DownloadWorker>()

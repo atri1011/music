@@ -3,6 +3,7 @@ package com.music.myapplication.core.network.dispatch
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.DispatchersProvider
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.cache.CacheManager
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
@@ -28,6 +29,7 @@ class DispatchExecutor @Inject constructor(
     private val api: TuneHubApi,
     private val httpClient: OkHttpClient,
     private val templateCache: DispatchTemplateCache,
+    private val cacheManager: CacheManager,
     private val renderer: TemplateRenderer,
     private val validator: RequestValidator,
     private val transformEngine: TransformEngine,
@@ -90,6 +92,7 @@ class DispatchExecutor @Inject constructor(
                 data = response.data
             )
             templateCache.put(platform.id, function, template)
+            cacheManager.enforceLimit()
             Result.Success(template)
         } catch (e: Exception) {
             Result.Error(

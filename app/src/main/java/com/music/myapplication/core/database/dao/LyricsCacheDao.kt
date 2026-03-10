@@ -18,8 +18,14 @@ interface LyricsCacheDao {
     @Query("DELETE FROM lyrics_cache WHERE expires_at < :now")
     suspend fun cleanExpired(now: Long = System.currentTimeMillis())
 
-    @Query("SELECT COALESCE(SUM(LENGTH(lyric_text)), 0) FROM lyrics_cache WHERE expires_at > :now")
+    @Query("SELECT COALESCE(SUM(LENGTH(CAST(lyric_text AS BLOB))), 0) FROM lyrics_cache WHERE expires_at > :now")
     suspend fun getActiveSizeBytes(now: Long = System.currentTimeMillis()): Long
+
+    @Query("SELECT * FROM lyrics_cache WHERE expires_at > :now ORDER BY updated_at ASC")
+    suspend fun getActiveEntriesOrderedByUpdatedAt(now: Long = System.currentTimeMillis()): List<LyricsCacheEntity>
+
+    @Query("DELETE FROM lyrics_cache WHERE cache_key IN (:keys)")
+    suspend fun deleteByKeys(keys: List<String>)
 
     @Query("DELETE FROM lyrics_cache")
     suspend fun deleteAll()

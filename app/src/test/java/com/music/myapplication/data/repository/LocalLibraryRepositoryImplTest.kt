@@ -1,5 +1,6 @@
 package com.music.myapplication.data.repository
 
+import com.music.myapplication.core.cache.CacheManager
 import com.music.myapplication.core.database.dao.FavoritesDao
 import com.music.myapplication.core.database.dao.LocalTracksDao
 import com.music.myapplication.core.database.dao.LyricsCacheDao
@@ -12,6 +13,7 @@ import com.music.myapplication.core.database.entity.RecentPlayEntity
 import com.music.myapplication.core.local.LocalMusicScanner
 import com.music.myapplication.domain.model.Platform
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.first
@@ -29,6 +31,7 @@ class LocalLibraryRepositoryImplTest {
     private val playlistsDao = mockk<PlaylistsDao>(relaxed = true)
     private val playlistSongsDao = mockk<PlaylistSongsDao>(relaxed = true)
     private val lyricsCacheDao = mockk<LyricsCacheDao>(relaxed = true)
+    private val cacheManager = mockk<CacheManager>(relaxed = true)
     private val localTracksDao = mockk<LocalTracksDao>(relaxed = true)
     private val localMusicScanner = mockk<LocalMusicScanner>(relaxed = true)
 
@@ -39,6 +42,7 @@ class LocalLibraryRepositoryImplTest {
         playlistsDao = playlistsDao,
         playlistSongsDao = playlistSongsDao,
         lyricsCacheDao = lyricsCacheDao,
+        cacheManager = cacheManager,
         localTracksDao = localTracksDao,
         localMusicScanner = localMusicScanner
     )
@@ -89,6 +93,14 @@ class LocalLibraryRepositoryImplTest {
         assertEquals(Platform.LOCAL, track.platform)
         assertEquals("content://media/external/audio/media/7", track.playableUrl)
         assertEquals("专辑", track.album)
+    }
+
+    @Test
+    fun `cache lyrics triggers cache limit enforcement`() = runTest {
+        repository.cacheLyrics(Platform.NETEASE.id, "song-1", "这是一段歌词")
+
+        coVerify(exactly = 1) { lyricsCacheDao.insert(any()) }
+        coVerify(exactly = 1) { cacheManager.enforceLimit() }
     }
 
     private fun localTrackEntity(

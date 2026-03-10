@@ -10,11 +10,14 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.music.myapplication.R
+import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.database.dao.DownloadedTracksDao
 import com.music.myapplication.core.database.entity.DownloadedTrackEntity
+import com.music.myapplication.core.network.NetworkMonitor
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -25,7 +28,9 @@ class DownloadWorker @AssistedInject constructor(
     @Assisted private val context: Context,
     @Assisted params: WorkerParameters,
     private val downloadedTracksDao: DownloadedTracksDao,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val playerPreferences: PlayerPreferences,
+    private val networkMonitor: NetworkMonitor
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -38,6 +43,10 @@ class DownloadWorker @AssistedInject constructor(
         val durationMs = inputData.getLong(KEY_DURATION_MS, 0L)
         val quality = inputData.getString(KEY_QUALITY) ?: "128k"
         val playableUrl = inputData.getString(KEY_PLAYABLE_URL) ?: return@withContext Result.failure()
+
+        if (playerPreferences.wifiOnly.first() && !networkMonitor.isUnmeteredConnection()) {
+            return@withContext Result.retry()
+        }
 
         // Insert initial record as downloading
         downloadedTracksDao.insert(

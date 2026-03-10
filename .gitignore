@@ -21,3 +21,5 @@ docs/
 .idea/deploymentTargetSelector.xml
 .idea/deploymentTargetSelector.xml
 /.idea/inspectionProfiles/
+.gradle-user-home/
+.gradle-local/

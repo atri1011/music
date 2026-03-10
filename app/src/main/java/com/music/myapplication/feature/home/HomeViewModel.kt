@@ -3,6 +3,8 @@ package com.music.myapplication.feature.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.core.network.NetworkMonitor
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.PlaylistCategory
 import com.music.myapplication.domain.model.PlaylistPreview
@@ -12,6 +14,7 @@ import com.music.myapplication.domain.repository.RecommendationRepository
 import com.music.myapplication.domain.repository.ToplistInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,7 +50,9 @@ data class HomeUiState(
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val onlineRepo: OnlineMusicRepository,
-    private val recommendationRepo: RecommendationRepository
+    private val recommendationRepo: RecommendationRepository,
+    private val preferences: PlayerPreferences,
+    private val networkMonitor: NetworkMonitor
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
@@ -82,6 +87,7 @@ class HomeViewModel @Inject constructor(
     private fun loadToplistPreviews(toplists: List<ToplistInfo>, platform: Platform) {
         toplists.forEach { toplist ->
             viewModelScope.launch {
+                if (!shouldRunToplistPreviewPreload()) return@launch
                 when (val result = onlineRepo.getToplistDetailFast(platform, toplist.id)) {
                     is Result.Success -> {
                         _state.update {
@@ -92,6 +98,11 @@ class HomeViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun shouldRunToplistPreviewPreload(): Boolean {
+        val wifiOnly = preferences.wifiOnly.first()
+        return !wifiOnly || networkMonitor.isUnmeteredConnection()
     }
 
     fun loadRecommendations() {

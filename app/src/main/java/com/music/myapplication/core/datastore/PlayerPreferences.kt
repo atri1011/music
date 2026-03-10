@@ -46,6 +46,9 @@ class PlayerPreferences @Inject constructor(
         const val CROSSFADE_MIN_DURATION_MS = 500
         const val CROSSFADE_MAX_DURATION_MS = 4_000
         const val DEFAULT_CROSSFADE_DURATION_MS = 1_500
+        const val MIN_CACHE_LIMIT_MB = 200
+        const val MAX_CACHE_LIMIT_MB = 2_000
+        const val DEFAULT_CACHE_LIMIT_MB = 500
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -129,7 +132,9 @@ class PlayerPreferences @Inject constructor(
     }
 
     val cacheLimitMb: Flow<Int> = context.dataStore.data.map { prefs ->
-        prefs[Keys.CACHE_LIMIT_MB] ?: 500
+        clampCacheLimitMb(
+            prefs[Keys.CACHE_LIMIT_MB] ?: DEFAULT_CACHE_LIMIT_MB
+        )
     }
 
     val playbackSnapshot: Flow<PlaybackSnapshot?> = context.dataStore.data.map { prefs ->
@@ -214,7 +219,7 @@ class PlayerPreferences @Inject constructor(
     }
 
     suspend fun setCacheLimitMb(limitMb: Int) {
-        context.dataStore.edit { it[Keys.CACHE_LIMIT_MB] = limitMb }
+        context.dataStore.edit { it[Keys.CACHE_LIMIT_MB] = clampCacheLimitMb(limitMb) }
     }
 
     suspend fun savePlaybackSnapshot(state: PlaybackState) {
@@ -236,6 +241,9 @@ class PlayerPreferences @Inject constructor(
 
     private fun clampCrossfadeDuration(durationMs: Int): Int =
         durationMs.coerceIn(CROSSFADE_MIN_DURATION_MS, CROSSFADE_MAX_DURATION_MS)
+
+    private fun clampCacheLimitMb(limitMb: Int): Int =
+        limitMb.coerceIn(MIN_CACHE_LIMIT_MB, MAX_CACHE_LIMIT_MB)
 }
 
 private fun PlaybackState.toPlaybackSnapshot(): PlaybackSnapshot? {

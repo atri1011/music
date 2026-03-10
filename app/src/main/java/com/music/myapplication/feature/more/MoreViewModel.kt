@@ -26,7 +26,7 @@ data class MoreUiState(
     val crossfadeEnabled: Boolean = false,
     val crossfadeDurationMs: Int = PlayerPreferences.DEFAULT_CROSSFADE_DURATION_MS,
     val wifiOnly: Boolean = false,
-    val cacheLimitMb: Int = 500,
+    val cacheLimitMb: Int = PlayerPreferences.DEFAULT_CACHE_LIMIT_MB,
     val quality: String = "128k",
     val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
     val audioSource: AudioSource = AudioSource.TUNEHUB,
@@ -148,7 +148,23 @@ class MoreViewModel @Inject constructor(
     }
 
     fun setCacheLimitMb(limitMb: Int) {
-        viewModelScope.launch { preferences.setCacheLimitMb(limitMb) }
+        if (cacheUiState.value.isClearing) return
+        viewModelScope.launch {
+            cacheUiState.update { it.copy(isLoading = true) }
+            runCatching {
+                preferences.setCacheLimitMb(limitMb)
+                cacheManager.enforceLimit(limitMb)
+            }.onSuccess { usage ->
+                cacheUiState.update {
+                    it.copy(
+                        usage = usage,
+                        isLoading = false
+                    )
+                }
+            }.onFailure {
+                cacheUiState.update { current -> current.copy(isLoading = false) }
+            }
+        }
     }
 
     fun setQuality(quality: String) {
@@ -163,7 +179,7 @@ class MoreViewModel @Inject constructor(
         if (cacheUiState.value.isClearing) return
         viewModelScope.launch {
             cacheUiState.update { it.copy(isLoading = true) }
-            runCatching { cacheManager.getUsage() }
+            runCatching { cacheManager.enforceLimit() }
                 .onSuccess { usage ->
                     cacheUiState.update {
                         it.copy(

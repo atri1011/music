@@ -462,6 +462,18 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                 platform = Platform.NETEASE
             )
 
+            if (enrichedTracks.isEmpty()) {
+                val fallbackResult = fetchNeteaseAlbumDetailFallback(
+                    albumId = id,
+                    albumNameHint = info.name.ifBlank { albumNameHint },
+                    artistNameHint = info.artistName.ifBlank { artistNameHint },
+                    coverUrlHint = info.coverUrl.ifBlank { coverUrlHint }
+                )
+                if (fallbackResult is Result.Success && fallbackResult.data.tracks.isNotEmpty()) {
+                    return fallbackResult
+                }
+            }
+
             Result.Success(AlbumDetailResult(info = info, tracks = enrichedTracks))
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))

@@ -33,6 +33,23 @@ class DispatchTemplateCache @Inject constructor() {
         return cache.values.sumOf { it.estimatedSizeBytes() }
     }
 
+    fun trimToSize(maxBytes: Long, now: Long = System.currentTimeMillis()): Long {
+        evictExpired(now)
+        var currentSize = cache.values.sumOf { it.estimatedSizeBytes() }
+        val boundedMaxBytes = maxBytes.coerceAtLeast(0L)
+        if (currentSize <= boundedMaxBytes) return currentSize
+
+        cache.entries
+            .sortedBy { it.value.cachedAt }
+            .forEach { entry ->
+                if (currentSize <= boundedMaxBytes) return@forEach
+                if (cache.remove(entry.key, entry.value)) {
+                    currentSize -= entry.value.estimatedSizeBytes()
+                }
+            }
+        return currentSize.coerceAtLeast(0L)
+    }
+
     fun clear() = cache.clear()
 
     private fun evictExpired(now: Long) {
