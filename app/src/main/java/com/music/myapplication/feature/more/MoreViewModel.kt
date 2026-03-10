@@ -32,6 +32,8 @@ data class MoreUiState(
     val audioSource: AudioSource = AudioSource.TUNEHUB,
     val jkapiKey: String = "",
     val showJkapiKeyDialog: Boolean = false,
+    val neteaseCloudApiBaseUrl: String = "",
+    val showNeteaseCloudApiBaseUrlDialog: Boolean = false,
     val imageCacheBytes: Long = 0L,
     val lyricsCacheBytes: Long = 0L,
     val templateCacheBytes: Long = 0L,
@@ -56,6 +58,7 @@ class MoreViewModel @Inject constructor(
 
     private val dialogVisible = MutableStateFlow(false)
     private val jkapiDialogVisible = MutableStateFlow(false)
+    private val neteaseCloudApiBaseUrlDialogVisible = MutableStateFlow(false)
     private val cacheUiState = MutableStateFlow(CacheUiState())
 
     val state: StateFlow<MoreUiState> = combine(
@@ -72,9 +75,11 @@ class MoreViewModel @Inject constructor(
         preferences.audioSource,
         preferences.jkapiKey,
         jkapiDialogVisible,
+        preferences.neteaseCloudApiBaseUrl,
+        neteaseCloudApiBaseUrlDialogVisible,
         cacheUiState
     ) { values ->
-        val cacheState = values[13] as CacheUiState
+        val cacheState = values[15] as CacheUiState
         MoreUiState(
             apiKey = values[0] as String,
             showApiKeyDialog = values[1] as Boolean,
@@ -89,6 +94,8 @@ class MoreViewModel @Inject constructor(
             audioSource = values[10] as AudioSource,
             jkapiKey = values[11] as String,
             showJkapiKeyDialog = values[12] as Boolean,
+            neteaseCloudApiBaseUrl = values[13] as String,
+            showNeteaseCloudApiBaseUrlDialog = values[14] as Boolean,
             imageCacheBytes = cacheState.usage.imageBytes,
             lyricsCacheBytes = cacheState.usage.lyricsBytes,
             templateCacheBytes = cacheState.usage.templateBytes,
@@ -109,6 +116,10 @@ class MoreViewModel @Inject constructor(
         jkapiDialogVisible.update { show }
     }
 
+    fun showNeteaseCloudApiBaseUrlDialog(show: Boolean) {
+        neteaseCloudApiBaseUrlDialogVisible.update { show }
+    }
+
     fun saveApiKey(apiKey: String) {
         viewModelScope.launch {
             preferences.setApiKey(apiKey)
@@ -120,6 +131,13 @@ class MoreViewModel @Inject constructor(
         viewModelScope.launch {
             preferences.setJkapiKey(key)
             showJkapiKeyDialog(false)
+        }
+    }
+
+    fun saveNeteaseCloudApiBaseUrl(url: String) {
+        viewModelScope.launch {
+            preferences.setNeteaseCloudApiBaseUrl(url)
+            showNeteaseCloudApiBaseUrlDialog(false)
         }
     }
 

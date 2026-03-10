@@ -65,6 +65,7 @@ class PlayerPreferences @Inject constructor(
         val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
         val AUDIO_SOURCE = stringPreferencesKey("audio_source")
         val JKAPI_KEY = stringPreferencesKey("jkapi_key")
+        val NETEASE_CLOUD_API_BASE_URL = stringPreferencesKey("netease_cloud_api_base_url")
         val DARK_MODE = stringPreferencesKey("dark_mode")
         val AUTO_PLAY = booleanPreferencesKey("auto_play")
         val CROSSFADE_ENABLED = booleanPreferencesKey("crossfade_enabled")
@@ -106,6 +107,10 @@ class PlayerPreferences @Inject constructor(
 
     val jkapiKey: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.JKAPI_KEY] ?: ""
+    }
+
+    val neteaseCloudApiBaseUrl: Flow<String> = context.dataStore.data.map { prefs ->
+        normalizeBaseUrl(prefs[Keys.NETEASE_CLOUD_API_BASE_URL] ?: "")
     }
 
     val darkMode: Flow<DarkModeOption> = context.dataStore.data.map { prefs ->
@@ -196,6 +201,10 @@ class PlayerPreferences @Inject constructor(
         context.dataStore.edit { it[Keys.JKAPI_KEY] = normalized }
     }
 
+    suspend fun setNeteaseCloudApiBaseUrl(url: String) {
+        context.dataStore.edit { it[Keys.NETEASE_CLOUD_API_BASE_URL] = normalizeBaseUrl(url) }
+    }
+
     suspend fun setDarkMode(option: DarkModeOption) {
         context.dataStore.edit { it[Keys.DARK_MODE] = option.name }
     }
@@ -238,6 +247,23 @@ class PlayerPreferences @Inject constructor(
         .removeSurrounding("\"")
         .removeSurrounding("'")
         .replace(Regex("[\\u200B\\u200C\\u200D\\uFEFF\\s]+"), "")
+
+    private fun normalizeBaseUrl(raw: String): String {
+        val normalized = raw
+            .trim()
+            .removeSurrounding("\"")
+            .removeSurrounding("'")
+            .trim()
+            .trimEnd('/')
+        if (normalized.isBlank()) return ""
+        return if (normalized.startsWith("http://", ignoreCase = true) ||
+            normalized.startsWith("https://", ignoreCase = true)
+        ) {
+            "$normalized/"
+        } else {
+            "https://$normalized/"
+        }
+    }
 
     private fun clampCrossfadeDuration(durationMs: Int): Int =
         durationMs.coerceIn(CROSSFADE_MIN_DURATION_MS, CROSSFADE_MAX_DURATION_MS)

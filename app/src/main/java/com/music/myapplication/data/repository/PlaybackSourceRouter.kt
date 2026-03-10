@@ -13,7 +13,8 @@ import javax.inject.Singleton
 class PlaybackSourceRouter @Inject constructor(
     private val preferences: PlayerPreferences,
     private val tuneHubResolver: TuneHubPlayableResolver,
-    private val jkApiResolver: JkApiPlayableResolver
+    private val jkApiResolver: JkApiPlayableResolver,
+    private val neteaseCloudApiResolver: NeteaseCloudApiPlayableResolver
 ) {
     suspend fun resolve(track: Track, quality: String): Result<String> {
         val source = preferences.audioSource.first()
@@ -25,6 +26,16 @@ class PlaybackSourceRouter @Inject constructor(
                 }
                 when (val jkResult = jkApiResolver.resolve(track)) {
                     is Result.Success -> jkResult
+                    is Result.Error -> tuneHubResolver.resolve(track, quality)
+                    Result.Loading -> tuneHubResolver.resolve(track, quality)
+                }
+            }
+            AudioSource.NETEASE_CLOUD_API_ENHANCED -> {
+                if (track.platform != Platform.NETEASE) {
+                    return tuneHubResolver.resolve(track, quality)
+                }
+                when (val result = neteaseCloudApiResolver.resolve(track, quality)) {
+                    is Result.Success -> result
                     is Result.Error -> tuneHubResolver.resolve(track, quality)
                     Result.Loading -> tuneHubResolver.resolve(track, quality)
                 }

@@ -21,7 +21,13 @@ class PlaybackSourceRouterTest {
     private val preferences = mockk<PlayerPreferences>()
     private val tuneHubResolver = mockk<TuneHubPlayableResolver>()
     private val jkApiResolver = mockk<JkApiPlayableResolver>()
-    private val router = PlaybackSourceRouter(preferences, tuneHubResolver, jkApiResolver)
+    private val neteaseCloudApiResolver = mockk<NeteaseCloudApiPlayableResolver>()
+    private val router = PlaybackSourceRouter(
+        preferences,
+        tuneHubResolver,
+        jkApiResolver,
+        neteaseCloudApiResolver
+    )
 
     @Test
     fun `TUNEHUB selected - uses TuneHub resolver`() = runTest {
@@ -33,6 +39,7 @@ class PlaybackSourceRouterTest {
 
         assertEquals("https://example.com/play.mp3", (result as Result.Success).data)
         coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
     }
 
     @Test
@@ -45,6 +52,7 @@ class PlaybackSourceRouterTest {
 
         assertEquals("https://example.com/kuwo.mp3", (result as Result.Success).data)
         coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
     }
 
     @Test
@@ -57,6 +65,7 @@ class PlaybackSourceRouterTest {
 
         assertEquals("https://jkapi.com/music.mp3", (result as Result.Success).data)
         coVerify(exactly = 0) { tuneHubResolver.resolve(any(), any()) }
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
     }
 
     @Test
@@ -71,6 +80,7 @@ class PlaybackSourceRouterTest {
         assertEquals("https://example.com/fallback.mp3", (result as Result.Success).data)
         coVerify(exactly = 1) { jkApiResolver.resolve(track) }
         coVerify(exactly = 1) { tuneHubResolver.resolve(track, "128k") }
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
     }
 
     @Test
@@ -84,6 +94,35 @@ class PlaybackSourceRouterTest {
 
         assertTrue(result is Result.Error)
         assertEquals("TuneHub error", (result as Result.Error).error.message)
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
+    }
+
+    @Test
+    fun `NETEASE enhanced selected for NETEASE - uses dedicated resolver`() = runTest {
+        val track = testTrack(Platform.NETEASE)
+        every { preferences.audioSource } returns flowOf(AudioSource.NETEASE_CLOUD_API_ENHANCED)
+        coEvery {
+            neteaseCloudApiResolver.resolve(track, "320k")
+        } returns Result.Success("https://example.com/netease.mp3")
+
+        val result = router.resolve(track, "320k")
+
+        assertEquals("https://example.com/netease.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { tuneHubResolver.resolve(any(), any()) }
+        coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
+    }
+
+    @Test
+    fun `NETEASE enhanced selected for QQ - falls back to TuneHub`() = runTest {
+        val track = testTrack(Platform.QQ)
+        every { preferences.audioSource } returns flowOf(AudioSource.NETEASE_CLOUD_API_ENHANCED)
+        coEvery { tuneHubResolver.resolve(track, "128k") } returns Result.Success("https://example.com/fallback.mp3")
+
+        val result = router.resolve(track, "128k")
+
+        assertEquals("https://example.com/fallback.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
+        coVerify(exactly = 1) { tuneHubResolver.resolve(track, "128k") }
     }
 
     private fun testTrack(platform: Platform) = Track(

@@ -3,7 +3,9 @@ package com.music.myapplication.data.repository
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.HomeContentCacheStore
+import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
+import com.music.myapplication.core.network.retrofit.NeteaseCloudApiEnhancedApi
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.data.remote.dto.ParseResponseDto
 import com.music.myapplication.domain.model.Platform
@@ -12,8 +14,10 @@ import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.ToplistInfo
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -940,6 +944,246 @@ class OnlineMusicRepositoryImplTest {
         assertEquals("最新评论这条是真的。", data.latestComments.first().content)
         assertEquals("推荐区这条也是真的。", data.recommendedComments.first().content)
         coVerify(exactly = 0) { dispatchExecutor.executeByMethod(Platform.QQ, "search", any()) }
+    }
+
+    @Test
+    fun getAlbumInfo_forNetease_prefersEnhancedDescriptionAndTagsWhenConfigured() = runTest {
+        val api = mockk<TuneHubApi>()
+        val enhancedApi = mockk<NeteaseCloudApiEnhancedApi>()
+        val preferences = mockk<PlayerPreferences>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val legacyPayload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "album": {
+                "id": 32311,
+                "name": "叶惠美",
+                "description": "老简介",
+                "tags": [],
+                "artist": { "name": "周杰伦" }
+              }
+            }
+            """.trimIndent()
+        )
+        val enhancedPayload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "album": {
+                "id": 32311,
+                "name": "叶惠美",
+                "description": "增强版简介",
+                "tags": "华语,流行",
+                "artist": { "name": "周杰伦" }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseAlbumDetail("32311", any()) } returns legacyPayload
+        every { preferences.neteaseCloudApiBaseUrl } returns flowOf("https://demo.vercel.app/")
+        coEvery { enhancedApi.album("https://demo.vercel.app/album", "32311") } returns enhancedPayload
+
+        val repository = OnlineMusicRepositoryImpl(
+            api,
+            okHttpClient,
+            dispatchExecutor,
+            json,
+            cacheStore,
+            preferences,
+            enhancedApi
+        )
+
+        val result = repository.getAlbumInfo(Platform.NETEASE, "32311")
+
+        val info = (result as Result.Success).data
+        assertEquals("增强版简介", info.description)
+        assertEquals(listOf("华语", "流行"), info.tags)
+    }
+
+    @Test
+    fun getAlbumDetailFull_forNetease_fallsBackWhenEnhancedUnavailable() = runTest {
+        val api = mockk<TuneHubApi>()
+        val enhancedApi = mockk<NeteaseCloudApiEnhancedApi>()
+        val preferences = mockk<PlayerPreferences>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "album": {
+                "id": 32311,
+                "name": "叶惠美",
+                "briefDesc": "旧接口简介",
+                "tags": "经典",
+                "artist": { "name": "周杰伦" }
+              },
+              "songs": [
+                {
+                  "id": 186016,
+                  "name": "晴天",
+                  "dt": 269000,
+                  "ar": [{ "name": "周杰伦" }],
+                  "al": {
+                    "id": 32311,
+                    "name": "叶惠美",
+                    "picUrl": "https://example.com/qingtian.jpg"
+                  }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseAlbumDetail("32311", any()) } returns payload
+        every { preferences.neteaseCloudApiBaseUrl } returns flowOf("https://demo.vercel.app/")
+        coEvery { enhancedApi.album("https://demo.vercel.app/album", "32311") } throws IllegalStateException("boom")
+
+        val repository = OnlineMusicRepositoryImpl(
+            api,
+            okHttpClient,
+            dispatchExecutor,
+            json,
+            cacheStore,
+            preferences,
+            enhancedApi
+        )
+
+        val result = repository.getAlbumDetailFull(Platform.NETEASE, "32311", "叶惠美", "周杰伦", "")
+
+        val data = (result as Result.Success).data
+        assertEquals("旧接口简介", data.info.description)
+        assertEquals(listOf("经典"), data.info.tags)
+        assertEquals(1, data.tracks.size)
+    }
+
+    @Test
+    fun getArtistDetail_forNetease_prefersEnhancedDescriptionAndTagsWhenConfigured() = runTest {
+        val api = mockk<TuneHubApi>()
+        val enhancedApi = mockk<NeteaseCloudApiEnhancedApi>()
+        val preferences = mockk<PlayerPreferences>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val legacyDetailPayload = json.parseToJsonElement(
+            """
+            {
+              "artist": {
+                "name": "周杰伦",
+                "picUrl": "https://example.com/jay.jpg"
+              },
+              "hotSongs": [
+                {
+                  "id": 186016,
+                  "name": "晴天",
+                  "dt": 269000,
+                  "ar": [{ "name": "周杰伦" }],
+                  "al": { "id": 32311, "name": "叶惠美", "picUrl": "https://example.com/qingtian.jpg" }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+        val albumsPayload = json.parseToJsonElement("""{ "hotAlbums": [] }""")
+        val enhancedDetailPayload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "artist": {
+                  "identities": ["作曲"],
+                  "musicIdentityTags": ["流行"]
+                },
+                "identify": {
+                  "imageDesc": "歌手、制作人"
+                },
+                "secondaryExpertIdentiy": [
+                  { "expertIdentiyName": "编曲" }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val enhancedDescPayload = json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "briefDesc": "周杰伦是华语流行歌手。",
+              "introduction": [
+                { "ti": "人物经历", "txt": "出道后创作了大量经典作品。" }
+              ]
+            }
+            """.trimIndent()
+        )
+        coEvery { api.getNeteaseArtistDetail("6452", any()) } returns legacyDetailPayload
+        coEvery { api.getNeteaseArtistAlbums("6452", any(), any(), any()) } returns albumsPayload
+        every { preferences.neteaseCloudApiBaseUrl } returns flowOf("https://demo.vercel.app/")
+        coEvery { enhancedApi.artistDetail("https://demo.vercel.app/artist/detail", "6452") } returns enhancedDetailPayload
+        coEvery { enhancedApi.artistDesc("https://demo.vercel.app/artist/desc", "6452") } returns enhancedDescPayload
+
+        val repository = OnlineMusicRepositoryImpl(
+            api,
+            okHttpClient,
+            dispatchExecutor,
+            json,
+            cacheStore,
+            preferences,
+            enhancedApi
+        )
+
+        val result = repository.getArtistDetail("6452", Platform.NETEASE)
+
+        val data = (result as Result.Success).data
+        assertEquals("周杰伦", data.name)
+        assertEquals("https://example.com/jay.jpg", data.avatarUrl)
+        assertEquals("周杰伦是华语流行歌手。\n\n人物经历\n出道后创作了大量经典作品。", data.description)
+        assertEquals(listOf("作曲", "流行", "歌手", "制作人", "编曲"), data.tags)
+    }
+
+    @Test
+    fun getArtistDetail_forNetease_fallsBackWhenEnhancedUnavailable() = runTest {
+        val api = mockk<TuneHubApi>()
+        val enhancedApi = mockk<NeteaseCloudApiEnhancedApi>()
+        val preferences = mockk<PlayerPreferences>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val legacyDetailPayload = json.parseToJsonElement(
+            """
+            {
+              "artist": {
+                "name": "周杰伦",
+                "picUrl": "https://example.com/jay.jpg"
+              },
+              "hotSongs": []
+            }
+            """.trimIndent()
+        )
+        val albumsPayload = json.parseToJsonElement("""{ "hotAlbums": [] }""")
+        coEvery { api.getNeteaseArtistDetail("6452", any()) } returns legacyDetailPayload
+        coEvery { api.getNeteaseArtistAlbums("6452", any(), any(), any()) } returns albumsPayload
+        every { preferences.neteaseCloudApiBaseUrl } returns flowOf("https://demo.vercel.app/")
+        coEvery { enhancedApi.artistDetail(any(), any()) } throws IllegalStateException("boom")
+        coEvery { enhancedApi.artistDesc(any(), any()) } throws IllegalStateException("boom")
+
+        val repository = OnlineMusicRepositoryImpl(
+            api,
+            okHttpClient,
+            dispatchExecutor,
+            json,
+            cacheStore,
+            preferences,
+            enhancedApi
+        )
+
+        val result = repository.getArtistDetail("6452", Platform.NETEASE)
+
+        val data = (result as Result.Success).data
+        assertEquals("", data.description)
+        assertTrue(data.tags.isEmpty())
     }
 
     @Test

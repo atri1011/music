@@ -232,6 +232,14 @@ fun MoreScreen(
                     onClick = { viewModel.showJkapiKeyDialog(true) }
                 )
             }
+            if (state.audioSource == AudioSource.NETEASE_CLOUD_API_ENHANCED) {
+                SettingsItem(
+                    icon = Icons.Default.MusicNote,
+                    title = "增强版接口地址",
+                    subtitle = baseUrlSubtitle(state.neteaseCloudApiBaseUrl),
+                    onClick = { viewModel.showNeteaseCloudApiBaseUrlDialog(true) }
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -286,6 +294,17 @@ fun MoreScreen(
             initialValue = state.jkapiKey,
             onDismiss = { viewModel.showJkapiKeyDialog(false) },
             onConfirm = viewModel::saveJkapiKey
+        )
+    }
+
+    if (state.showNeteaseCloudApiBaseUrlDialog) {
+        KeyInputDialog(
+            title = "设置网易云增强版接口地址",
+            label = "Base URL",
+            placeholder = "https://your-project.vercel.app",
+            initialValue = state.neteaseCloudApiBaseUrl,
+            onDismiss = { viewModel.showNeteaseCloudApiBaseUrlDialog(false) },
+            onConfirm = viewModel::saveNeteaseCloudApiBaseUrl
         )
     }
 }
@@ -499,7 +518,8 @@ private fun CrossfadeDurationPicker(current: Int, onSelect: (Int) -> Unit) {
 private fun AudioSourcePicker(current: AudioSource, onSelect: (AudioSource) -> Unit) {
     val options = listOf(
         AudioSource.TUNEHUB to "TuneHub",
-        AudioSource.JKAPI to "JKAPI (无铭API)"
+        AudioSource.JKAPI to "JKAPI (无铭API)",
+        AudioSource.NETEASE_CLOUD_API_ENHANCED to "网易云增强版 API"
     )
     Row(
         modifier = Modifier
@@ -625,7 +645,10 @@ private fun crossfadeDurationLabel(durationMs: Int): String {
 private fun audioSourceSubtitle(source: AudioSource): String = when (source) {
     AudioSource.TUNEHUB -> "默认音源，支持全平台"
     AudioSource.JKAPI -> "支持网易云/QQ音乐（不支持酷我）"
+    AudioSource.NETEASE_CLOUD_API_ENHANCED -> "仅代理网易云歌曲，需填写自部署接口地址"
 }
+
+private fun baseUrlSubtitle(baseUrl: String): String = baseUrl.ifBlank { "未设置" }
 
 private fun cacheItemSubtitle(sizeBytes: Long, isLoading: Boolean): String {
     return if (isLoading) "统计中..." else formatStorageSize(sizeBytes)

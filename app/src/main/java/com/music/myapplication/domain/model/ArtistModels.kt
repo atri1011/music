@@ -11,6 +11,8 @@ data class ArtistDetail(
     val name: String,
     val platform: Platform,
     val avatarUrl: String = "",
+    val description: String = "",
+    val tags: List<String> = emptyList(),
     val hotSongs: List<Track> = emptyList(),
     val albums: List<ArtistAlbum> = emptyList()
 )

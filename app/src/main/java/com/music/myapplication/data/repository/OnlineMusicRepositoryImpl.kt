@@ -4,7 +4,9 @@ import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.core.datastore.HomeContentCacheStore
+import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
+import com.music.myapplication.core.network.retrofit.NeteaseCloudApiEnhancedApi
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.data.repository.online.OnlineMusicMediaResolver
 import com.music.myapplication.data.repository.online.OnlineMusicSearchDelegate
@@ -26,6 +28,7 @@ import com.music.myapplication.domain.repository.OnlineMusicRepository
 import com.music.myapplication.domain.repository.TrackComment
 import com.music.myapplication.domain.repository.TrackCommentsResult
 import com.music.myapplication.domain.repository.ToplistInfo
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -51,7 +54,9 @@ class OnlineMusicRepositoryImpl @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val dispatchExecutor: DispatchExecutor,
     private val json: Json,
-    private val homeContentCacheStore: HomeContentCacheStore
+    private val homeContentCacheStore: HomeContentCacheStore,
+    private val preferences: PlayerPreferences? = null,
+    private val neteaseCloudApiEnhancedApi: NeteaseCloudApiEnhancedApi? = null
 ) : OnlineMusicRepository {
     private val coverEnricher = OnlineTrackCoverEnricher(
         api = api,
@@ -409,7 +414,12 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             val album = root?.getIgnoreCase("album") as? JsonObject
                 ?: return Result.Error(AppError.Parse(message = "解析网易专辑信息失败"))
 
-            Result.Success(parseNeteaseAlbumInfo(id, album))
+            val legacyInfo = parseNeteaseAlbumInfo(id, album)
+            val mergedInfo = mergeNeteaseAlbumMetadata(
+                base = legacyInfo,
+                enhanced = fetchNeteaseEnhancedAlbumInfo(id)
+            )
+            Result.Success(mergedInfo)
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
         }
@@ -457,9 +467,13 @@ class OnlineMusicRepositoryImpl @Inject constructor(
 
             val root = response as? JsonObject
             val album = root?.getIgnoreCase("album") as? JsonObject
-            val info = if (album != null) parseNeteaseAlbumInfo(id, album) else AlbumInfo(
+            val baseInfo = if (album != null) parseNeteaseAlbumInfo(id, album) else AlbumInfo(
                 id = id,
                 platform = Platform.NETEASE
+            )
+            val info = mergeNeteaseAlbumMetadata(
+                base = baseInfo,
+                enhanced = fetchNeteaseEnhancedAlbumInfo(id)
             )
 
             if (enrichedTracks.isEmpty()) {
@@ -606,14 +620,57 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             )
         }
 
-        return Result.Success(
-            AlbumDetailResult(
-                info = info.copy(
-                    id = info.id.ifBlank { albumId },
-                    coverUrl = info.coverUrl.ifBlank { coverUrlHint }
-                ),
-                tracks = enrichedTracks
+          return Result.Success(
+              AlbumDetailResult(
+                  info = mergeNeteaseAlbumMetadata(
+                      base = info.copy(
+                      id = info.id.ifBlank { albumId },
+                      coverUrl = info.coverUrl.ifBlank { coverUrlHint }
+                      ),
+                      enhanced = fetchNeteaseEnhancedAlbumInfo(albumId)
+                  ),
+                  tracks = enrichedTracks
+              )
+          )
+      }
+
+    private suspend fun fetchNeteaseEnhancedAlbumInfo(albumId: String): AlbumInfo? {
+        val configuredPreferences = preferences ?: return null
+        val enhancedApi = neteaseCloudApiEnhancedApi ?: return null
+        val baseUrl = configuredPreferences.neteaseCloudApiBaseUrl.first()
+        if (baseUrl.isBlank()) return null
+
+        return runCatching {
+            enhancedApi.album(
+                url = buildNeteaseEnhancedAlbumEndpoint(baseUrl),
+                id = albumId
             )
+        }.getOrNull()?.let { response ->
+            val code = extractApiCode(response)
+            if (code != null && code != 200) {
+                null
+            } else {
+                val root = response as? JsonObject ?: return@let null
+                val album = root.getIgnoreCase("album") as? JsonObject ?: return@let null
+                parseNeteaseAlbumInfo(albumId, album)
+            }
+        }
+    }
+
+    private fun buildNeteaseEnhancedAlbumEndpoint(baseUrl: String): String {
+        val trimmed = baseUrl.trim().trimEnd('/')
+        return if (trimmed.endsWith("/album", ignoreCase = true)) {
+            trimmed
+        } else {
+            "$trimmed/album"
+        }
+    }
+
+    private fun mergeNeteaseAlbumMetadata(base: AlbumInfo, enhanced: AlbumInfo?): AlbumInfo {
+        if (enhanced == null) return base
+        return base.copy(
+            description = enhanced.description.ifBlank { base.description },
+            tags = enhanced.tags.ifEmpty { base.tags }
         )
     }
 
@@ -1047,8 +1104,22 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                         return@withContext Result.Error(AppError.Api(message = "artist not found"))
                     }
 
+                    val enhancedMetadata = fetchNeteaseEnhancedArtistMetadata(
+                        artistId = artistId,
+                        preferences = preferences,
+                        enhancedApi = neteaseCloudApiEnhancedApi
+                    )
                     Result.Success(
-                        ArtistDetail(artistId, name, platform, avatarUrl, hotSongs, albums)
+                        ArtistDetail(
+                            id = artistId,
+                            name = name,
+                            platform = platform,
+                            avatarUrl = avatarUrl,
+                            description = enhancedMetadata?.description.orEmpty(),
+                            tags = enhancedMetadata?.tags.orEmpty(),
+                            hotSongs = hotSongs,
+                            albums = albums
+                        )
                     )
                 }
                 Platform.QQ -> {
@@ -2548,7 +2619,7 @@ private fun extractTextList(node: JsonElement?, vararg objectKeys: String): List
         }?.let(::listOf).orEmpty()
 
         is JsonPrimitive -> node.contentOrNull
-            ?.split(',', '，')
+            ?.split(',', '，', '、')
             ?.map(String::trim)
             ?.filter(String::isNotBlank)
             .orEmpty()
@@ -2725,6 +2796,93 @@ private fun extractNeteaseArtistAlbums(data: JsonElement?): List<ArtistAlbum> {
             songCount = (album.firstLongOf("size") ?: 0L).toInt()
         )
     }
+}
+
+private data class NeteaseArtistEnhancedMetadata(
+    val description: String = "",
+    val tags: List<String> = emptyList()
+)
+
+private suspend fun fetchNeteaseEnhancedArtistMetadata(
+    artistId: String,
+    preferences: PlayerPreferences?,
+    enhancedApi: NeteaseCloudApiEnhancedApi?
+): NeteaseArtistEnhancedMetadata? {
+    val configuredPreferences = preferences ?: return null
+    val configuredApi = enhancedApi ?: return null
+    val baseUrl = configuredPreferences.neteaseCloudApiBaseUrl.first()
+    if (baseUrl.isBlank()) return null
+
+    val artistDetailResponse = runCatching {
+        configuredApi.artistDetail(
+            url = buildNeteaseEnhancedEndpoint(baseUrl, "artist/detail"),
+            id = artistId
+        )
+    }.getOrNull()
+
+    val artistDescResponse = runCatching {
+        configuredApi.artistDesc(
+            url = buildNeteaseEnhancedEndpoint(baseUrl, "artist/desc"),
+            id = artistId
+        )
+    }.getOrNull()
+
+    if (artistDetailResponse == null && artistDescResponse == null) return null
+
+    return NeteaseArtistEnhancedMetadata(
+        description = extractNeteaseEnhancedArtistDescription(artistDescResponse),
+        tags = extractNeteaseEnhancedArtistTags(artistDetailResponse)
+    )
+}
+
+private fun buildNeteaseEnhancedEndpoint(baseUrl: String, path: String): String {
+    val trimmed = baseUrl.trim().trimEnd('/')
+    return "$trimmed/$path"
+}
+
+private fun extractNeteaseEnhancedArtistDescription(response: JsonElement?): String {
+    val root = response as? JsonObject ?: return ""
+    val code = extractApiCode(root)
+    if (code != null && code != 200) return ""
+
+    val briefDesc = root.firstStringOf("briefDesc").orEmpty().trim()
+    val introduction = (root.getIgnoreCase("introduction") as? JsonArray)
+        ?.mapNotNull { section ->
+            val obj = section as? JsonObject ?: return@mapNotNull null
+            listOf(
+                obj.firstStringOf("ti", "title").orEmpty().trim(),
+                obj.firstStringOf("txt", "text").orEmpty().trim()
+            ).filter(String::isNotBlank).joinToString("\n")
+                .takeIf(String::isNotBlank)
+        }
+        .orEmpty()
+        .distinct()
+
+    return listOfNotNull(
+        briefDesc.takeIf(String::isNotBlank),
+        introduction.joinToString("\n\n").takeIf(String::isNotBlank)
+    ).distinct().joinToString("\n\n")
+}
+
+private fun extractNeteaseEnhancedArtistTags(response: JsonElement?): List<String> {
+    val root = response as? JsonObject ?: return emptyList()
+    val code = extractApiCode(root)
+    if (code != null && code != 200) return emptyList()
+
+    val data = root.getIgnoreCase("data") as? JsonObject ?: return emptyList()
+    val artist = data.getIgnoreCase("artist") as? JsonObject
+    val identify = data.getIgnoreCase("identify") as? JsonObject
+    val secondaryIdentity = data.getIgnoreCase("secondaryExpertIdentiy")
+        ?: data.getIgnoreCase("secondaryExpertIdentity")
+
+    return buildList {
+        addAll(extractTextList(artist?.getIgnoreCase("identities")))
+        addAll(extractTextList(artist?.getIgnoreCase("musicIdentityTags")))
+        addAll(extractTextList(identify?.getIgnoreCase("imageDesc")))
+        addAll(extractTextList(secondaryIdentity, "expertIdentiyName", "expertIdentityName", "name", "title"))
+    }.map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
 }
 
 private fun extractQqArtistSong(song: JsonObject?): Track? {
