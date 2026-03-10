@@ -51,6 +51,12 @@
 - 支持通过菜单快速切换常用档位
 - 重启后恢复上次速度配置
 
+**当前实现约定**
+
+- 倍速状态已进入 `PlaybackState` / `PlaybackStateStore`，播放器更多菜单通过 `SpeedPickerSheet` 提供 `0.5x ~ 2.0x` 常用档位
+- `PlayerPreferences` 使用 DataStore 持久化倍速，`PlaybackControlStateHolder` 绑定时会将上次速度同步回 `MediaControllerConnector`
+- 播放服务监听 `PlaybackParameters` 变化并回写全局状态，保证 UI 显示、状态存储和实际播放速度一致
+
 ### 3.2 均衡器 / 音效
 
 **涉及文件**
@@ -66,6 +72,12 @@
 - 绑定 `audioSessionId` 后才能初始化 EQ
 - 若设备不支持 `Equalizer`，需要提供禁用提示
 
+**当前实现约定**
+
+- 已支持预设 EQ 切换和自定义频段拖动；进入自定义调节时，将 `presetIndex` 置为 `-1` 并持久化各频段增益
+- `MusicPlaybackService` 在 `audioSessionId` 可用时绑定 `EqualizerManager`，播放器就绪和 `audioSessionId` 变化时都会重新应用 EQ 配置
+- `EqualizerScreen` 对不支持 `Equalizer` 的设备直接展示禁用提示卡片，避免用户开关点了个寂寞
+
 ### 3.3 Crossfade 无缝切歌
 
 **涉及文件**
@@ -78,6 +90,13 @@
 - 本功能必须先做 POC，再决定正式方案
 - 支持显式开关，关闭时退回普通切歌
 - 若采用双 Player 方案，必须确认资源释放和状态同步策略
+
+**当前实现约定**
+
+- 当前为单 `ExoPlayer` 的 fade-through POC，并未上双 Player 方案，先把行为边界摸实再说
+- 设置页已提供 `Crossfade（POC）` 开关和 `500ms ~ 4000ms` 时长调节，配置由 `PlayerPreferences` 持久化
+- 关闭 Crossfade 时，播放服务会取消过渡任务并恢复音量到 `1f`，避免残留淡入淡出副作用
+- 显式切歌采用 `FADE_THROUGH / DIRECT` 两种路径；自然播完切到下一首时采用 `FADE_IN_ONLY`，保证 POC 行为稳定可控
 
 ### 3.4 歌单封面自定义
 
@@ -94,6 +113,12 @@
 - 选中的图片复制到应用私有目录
 - 列表页和详情页显示保持一致
 
+**当前实现约定**
+
+- 资料库页本地歌单已提供封面更换入口，使用系统图片选择器选图
+- `LocalLibraryRepositoryImpl` 会把选中的图片复制到应用私有目录 `files/playlist_covers`，并在替换封面时清理旧的托管文件
+- 歌单详情页直接复用本地歌单持久化后的 `coverUrl`，列表页和详情页展示链路保持一致
+
 ### 3.5 歌词海报 / 歌词分享
 
 **涉及文件**
@@ -106,6 +131,12 @@
 - 长按歌词行触发海报生成
 - 至少提供 2 种模板
 - 支持保存和分享
+
+**当前实现约定**
+
+- 歌词页已支持长按歌词行打开 `LyricsPosterDialog`，海报预览生成失败时给出页内提示
+- 当前内置 `流光`、`留白` 两种模板，满足本周期最小模板数要求
+- 保存走系统相册 / `Pictures/MyApplication`（Android Q 及以上），分享走 `FileProvider`，兼顾保存和外部分享链路
 
 ---
 
@@ -132,12 +163,32 @@
 
 ---
 
+### 5.1 第 2 周后半收口记录（2026-03-10）
+
+- 已完成周期 4 现有实现核对，确认倍速、EQ、Crossfade POC、歌单封面自定义、歌词海报链路均已落到代码
+- 已执行针对性单元测试回归：
+  - `./gradlew.bat :app:testDebugUnitTest --tests "com.music.myapplication.data.repository.LocalLibraryRepositoryImplTest" --tests "com.music.myapplication.feature.library.LibraryViewModelTest" --tests "com.music.myapplication.feature.playlist.PlaylistDetailViewModelTest"`
+  - 结果：`BUILD SUCCESSFUL`
+- 本轮重点确认：
+  - 本地歌单封面持久化后，详情页继续复用同一 `coverUrl`
+  - 本地歌单编辑提交失败时保留编辑态并展示页内错误
+  - QQ 榜单封面 hydration 为异步补全，不阻塞首屏曲目列表展示
+- 仍需上线前真机补验的项：
+  - `Equalizer` 设备兼容性和 `audioSessionId` 绑定稳定性
+  - Crossfade 的实际听感、切歌边界和后台切回场景
+  - 歌词海报的内存占用、清晰度与分享兼容性
+
 ## 6. 联调清单
 
 - 倍速切换后 UI、状态、实际播放速度一致
 - EQ 切换后听感变化可验证，重启后状态保留
 - Crossfade 开关行为明确，关闭后不残留副作用
 - 海报生成不出现空白图、错位图、低清图
+
+**当前联调结论**
+
+- 代码链路和单测回归已完成，基础逻辑没掉链子
+- 真机联调仍以 EQ、Crossfade、海报三类体验型能力为主，别拿模拟器听感当结论
 
 ---
 
@@ -147,6 +198,11 @@
 - Crossfade 至少完成 POC 级稳定验证，达到上线标准才进入正式发布
 - 歌词海报支持保存和分享
 - 歌单封面修改后能长期保留
+
+**当前验收状态**
+
+- 倍速、歌单封面、歌词海报保存/分享链路已具备提交验收条件
+- EQ 和 Crossfade 已完成代码侧收口，但是否进入正式发布，仍以真机验证结果为准
 
 ---
 
