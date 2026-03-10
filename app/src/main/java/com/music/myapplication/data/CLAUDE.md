@@ -14,13 +14,12 @@
 
 ### OnlineMusicRepositoryImpl
 
-核心在线音乐仓库，负责:
-- **搜索**: 通过 Dispatch 引擎调用各平台搜索 API
+核心在线音乐仓库，现已收敛为**编排层**，负责聚合多个在线数据协作者:
+- **搜索/热词/联想**: 由 `online/OnlineMusicSearchDelegate` 处理
 - **榜单**: 获取榜单列表 + 详情，支持日缓存 (`HomeContentCacheStore`)
 - **歌单**: 网易云直连 API (`getNeteasePlaylistDetailV6`)，其他平台走 Dispatch
-- **解析播放**: 调用 TuneHub `/v1/parse` 获取播放 URL
-- **歌词**: 调用 TuneHub `/v1/parse` 获取歌词 + 翻译
-- **封面补全**: 三大平台各有独立的封面补全逻辑（内存缓存 + 批量请求）
+- **解析播放/歌词/MV/分享链接**: 由 `online/OnlineMusicMediaResolver` 处理
+- **封面补全**: 由 `online/OnlineTrackCoverEnricher` 统一处理三平台补全与缓存
 
 关键设计:
 - QQ 音乐榜单列表有直连 fallback (`postQqMusicu`)
@@ -86,6 +85,8 @@ app/src/main/java/com/music/myapplication/data/
     ParseDto.kt, MethodsTemplateDto.kt
   repository/
     OnlineMusicRepositoryImpl.kt, LocalLibraryRepositoryImpl.kt, RecommendationRepositoryImpl.kt
+    online/
+      OnlineMusicSearchDelegate.kt, OnlineMusicMediaResolver.kt, OnlineTrackCoverEnricher.kt
 ```
 
 ## 变更记录 (Changelog)
