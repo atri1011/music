@@ -50,6 +50,13 @@ class QueueManager @Inject constructor() {
         _queue.add(track)
     }
 
+    fun updateTrack(index: Int, track: Track): Boolean {
+        if (index !in _queue.indices) return false
+        if (_queue[index] == track) return false
+        _queue[index] = track
+        return true
+    }
+
     fun removeFromQueue(index: Int) {
         if (index !in _queue.indices) return
         _queue.removeAt(index)

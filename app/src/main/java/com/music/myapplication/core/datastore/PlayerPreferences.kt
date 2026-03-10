@@ -42,6 +42,12 @@ private val Context.dataStore by preferencesDataStore("player_preferences")
 class PlayerPreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    companion object {
+        const val CROSSFADE_MIN_DURATION_MS = 500
+        const val CROSSFADE_MAX_DURATION_MS = 4_000
+        const val DEFAULT_CROSSFADE_DURATION_MS = 1_500
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json {
         ignoreUnknownKeys = true
@@ -58,6 +64,8 @@ class PlayerPreferences @Inject constructor(
         val JKAPI_KEY = stringPreferencesKey("jkapi_key")
         val DARK_MODE = stringPreferencesKey("dark_mode")
         val AUTO_PLAY = booleanPreferencesKey("auto_play")
+        val CROSSFADE_ENABLED = booleanPreferencesKey("crossfade_enabled")
+        val CROSSFADE_DURATION_MS = intPreferencesKey("crossfade_duration_ms")
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
         val CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
         val PLAYBACK_SNAPSHOT = stringPreferencesKey("playback_snapshot")
@@ -104,6 +112,16 @@ class PlayerPreferences @Inject constructor(
 
     val autoPlay: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[Keys.AUTO_PLAY] ?: true
+    }
+
+    val crossfadeEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[Keys.CROSSFADE_ENABLED] ?: false
+    }
+
+    val crossfadeDurationMs: Flow<Int> = context.dataStore.data.map { prefs ->
+        clampCrossfadeDuration(
+            prefs[Keys.CROSSFADE_DURATION_MS] ?: DEFAULT_CROSSFADE_DURATION_MS
+        )
     }
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -181,6 +199,16 @@ class PlayerPreferences @Inject constructor(
         context.dataStore.edit { it[Keys.AUTO_PLAY] = enabled }
     }
 
+    suspend fun setCrossfadeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.CROSSFADE_ENABLED] = enabled }
+    }
+
+    suspend fun setCrossfadeDurationMs(durationMs: Int) {
+        context.dataStore.edit {
+            it[Keys.CROSSFADE_DURATION_MS] = clampCrossfadeDuration(durationMs)
+        }
+    }
+
     suspend fun setWifiOnly(enabled: Boolean) {
         context.dataStore.edit { it[Keys.WIFI_ONLY] = enabled }
     }
@@ -205,6 +233,9 @@ class PlayerPreferences @Inject constructor(
         .removeSurrounding("\"")
         .removeSurrounding("'")
         .replace(Regex("[\\u200B\\u200C\\u200D\\uFEFF\\s]+"), "")
+
+    private fun clampCrossfadeDuration(durationMs: Int): Int =
+        durationMs.coerceIn(CROSSFADE_MIN_DURATION_MS, CROSSFADE_MAX_DURATION_MS)
 }
 
 private fun PlaybackState.toPlaybackSnapshot(): PlaybackSnapshot? {

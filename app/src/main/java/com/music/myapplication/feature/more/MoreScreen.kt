@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.core.datastore.DarkModeOption
+import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
 
@@ -107,6 +108,25 @@ fun MoreScreen(
                 checked = state.autoPlay,
                 onCheckedChange = viewModel::setAutoPlay
             )
+            SwitchSettingsItem(
+                icon = Icons.Default.SwapHoriz,
+                title = "Crossfade（POC）",
+                subtitle = crossfadeStatusLabel(state),
+                checked = state.crossfadeEnabled,
+                onCheckedChange = viewModel::setCrossfadeEnabled
+            )
+            SettingsItem(
+                icon = Icons.Default.Cached,
+                title = "Crossfade 时长",
+                subtitle = crossfadeDurationLabel(state.crossfadeDurationMs),
+                onClick = {},
+                enabled = state.crossfadeEnabled
+            ) {
+                CrossfadeDurationPicker(
+                    current = state.crossfadeDurationMs,
+                    onSelect = viewModel::setCrossfadeDurationMs
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -450,6 +470,18 @@ private fun CacheLimitPicker(current: Int, onSelect: (Int) -> Unit) {
 }
 
 @Composable
+private fun CrossfadeDurationPicker(current: Int, onSelect: (Int) -> Unit) {
+    val options = listOf(500, 1_000, 1_500, 2_000).map { duration ->
+        duration.toString() to crossfadeDurationLabel(duration)
+    }
+    PickerRow(
+        options = options,
+        current = current.toString(),
+        onSelect = { onSelect(it.toInt()) }
+    )
+}
+
+@Composable
 private fun AudioSourcePicker(current: AudioSource, onSelect: (AudioSource) -> Unit) {
     val options = listOf(
         AudioSource.TUNEHUB to "TuneHub",
@@ -557,6 +589,23 @@ private fun darkModeLabel(option: DarkModeOption): String = when (option) {
     DarkModeOption.FOLLOW_SYSTEM -> "跟随系统"
     DarkModeOption.DARK -> "深色"
     DarkModeOption.LIGHT -> "浅色"
+}
+
+private fun crossfadeStatusLabel(state: MoreUiState): String = when {
+    state.crossfadeEnabled -> "POC 模式，淡出/淡入各 ${crossfadeDurationLabel(state.crossfadeDurationMs)}"
+    else -> "关闭后回退普通切歌"
+}
+
+private fun crossfadeDurationLabel(durationMs: Int): String {
+    val clamped = durationMs.coerceIn(
+        PlayerPreferences.CROSSFADE_MIN_DURATION_MS,
+        PlayerPreferences.CROSSFADE_MAX_DURATION_MS
+    )
+    return if (clamped % 1_000 == 0) {
+        "${clamped / 1_000} 秒"
+    } else {
+        String.format("%.1f 秒", clamped / 1_000f)
+    }
 }
 
 private fun audioSourceSubtitle(source: AudioSource): String = when (source) {

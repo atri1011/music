@@ -23,6 +23,8 @@ data class MoreUiState(
     val showApiKeyDialog: Boolean = false,
     val darkMode: DarkModeOption = DarkModeOption.FOLLOW_SYSTEM,
     val autoPlay: Boolean = true,
+    val crossfadeEnabled: Boolean = false,
+    val crossfadeDurationMs: Int = PlayerPreferences.DEFAULT_CROSSFADE_DURATION_MS,
     val wifiOnly: Boolean = false,
     val cacheLimitMb: Int = 500,
     val quality: String = "128k",
@@ -61,6 +63,8 @@ class MoreViewModel @Inject constructor(
         dialogVisible,
         preferences.darkMode,
         preferences.autoPlay,
+        preferences.crossfadeEnabled,
+        preferences.crossfadeDurationMs,
         preferences.wifiOnly,
         preferences.cacheLimitMb,
         preferences.quality,
@@ -70,19 +74,21 @@ class MoreViewModel @Inject constructor(
         jkapiDialogVisible,
         cacheUiState
     ) { values ->
-        val cacheState = values[11] as CacheUiState
+        val cacheState = values[13] as CacheUiState
         MoreUiState(
             apiKey = values[0] as String,
             showApiKeyDialog = values[1] as Boolean,
             darkMode = values[2] as DarkModeOption,
             autoPlay = values[3] as Boolean,
-            wifiOnly = values[4] as Boolean,
-            cacheLimitMb = values[5] as Int,
-            quality = values[6] as String,
-            playbackMode = values[7] as PlaybackMode,
-            audioSource = values[8] as AudioSource,
-            jkapiKey = values[9] as String,
-            showJkapiKeyDialog = values[10] as Boolean,
+            crossfadeEnabled = values[4] as Boolean,
+            crossfadeDurationMs = values[5] as Int,
+            wifiOnly = values[6] as Boolean,
+            cacheLimitMb = values[7] as Int,
+            quality = values[8] as String,
+            playbackMode = values[9] as PlaybackMode,
+            audioSource = values[10] as AudioSource,
+            jkapiKey = values[11] as String,
+            showJkapiKeyDialog = values[12] as Boolean,
             imageCacheBytes = cacheState.usage.imageBytes,
             lyricsCacheBytes = cacheState.usage.lyricsBytes,
             templateCacheBytes = cacheState.usage.templateBytes,
@@ -127,6 +133,14 @@ class MoreViewModel @Inject constructor(
 
     fun setAutoPlay(enabled: Boolean) {
         viewModelScope.launch { preferences.setAutoPlay(enabled) }
+    }
+
+    fun setCrossfadeEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setCrossfadeEnabled(enabled) }
+    }
+
+    fun setCrossfadeDurationMs(durationMs: Int) {
+        viewModelScope.launch { preferences.setCrossfadeDurationMs(durationMs) }
     }
 
     fun setWifiOnly(enabled: Boolean) {

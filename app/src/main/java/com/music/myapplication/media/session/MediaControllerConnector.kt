@@ -2,7 +2,6 @@ package com.music.myapplication.media.session
 
 import android.content.ComponentName
 import android.content.Context
-import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -51,17 +50,25 @@ class MediaControllerConnector @Inject constructor(
         startPositionMs: Long = 0L
     ) {
         queueManager.setQueue(queue, index)
+        if (queueManager.currentIndex >= 0) {
+            queueManager.updateTrack(queueManager.currentIndex, track)
+        }
         stateStore.updateTrack(track)
         stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
         stateStore.updatePosition(startPositionMs.coerceAtLeast(0L))
+        stateStore.updateDuration(track.durationMs.coerceAtLeast(0L))
         if (track.playableUrl.isNotBlank()) {
             withController {
-                setMediaItem(MediaItem.fromUri(track.playableUrl))
-                prepare()
-                if (startPositionMs > 0L) {
-                    seekTo(startPositionMs)
-                }
-                if (autoPlay) play() else pause()
+                sendCustomCommand(
+                    loadTrackSessionCommand,
+                    PlaybackLoadRequest(
+                        track = track,
+                        queue = queueManager.queue,
+                        index = queueManager.currentIndex,
+                        autoPlay = autoPlay,
+                        startPositionMs = startPositionMs
+                    ).toCommandExtras()
+                )
             }
         }
         if (!autoPlay) {
