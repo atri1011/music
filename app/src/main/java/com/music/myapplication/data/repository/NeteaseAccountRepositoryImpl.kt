@@ -67,8 +67,19 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
             )
             val code = response.codeOrDefault()
             if (code != 200) {
-                accountStore.clearSession()
-                Result.Success(null)
+                if (response.shouldClearSavedSession()) {
+                    accountStore.clearSession()
+                    Result.Success(null)
+                } else {
+                    recoverSessionFromPlaylistProbe(
+                        baseUrl = baseUrl,
+                        savedSession = savedSession,
+                        originalError = AppError.Api(
+                            message = response.messageOrDefault("登录状态校验失败"),
+                            code = code
+                        )
+                    )
+                }
             } else {
                 val refreshed = response.toAccountSession(cookieOverride = savedSession.cookie)
                     ?.copy(lastSyncAt = savedSession.lastSyncAt)
@@ -77,7 +88,11 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
                 Result.Success(refreshed)
             }
         } catch (e: Exception) {
-            Result.Error(AppError.Network(cause = e))
+            recoverSessionFromPlaylistProbe(
+                baseUrl = baseUrl,
+                savedSession = savedSession,
+                originalError = AppError.Network(cause = e)
+            )
         }
     }
 
@@ -435,6 +450,16 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
             ?: jsonObjectOrNull()?.string("msg")
             ?: default
 
+    private fun JsonElement.shouldClearSavedSession(): Boolean {
+        val code = codeOrDefault()
+        if (code == 301) return true
+        val message = messageOrDefault("").lowercase()
+        if (message.isBlank()) return false
+        return listOf("未登录", "需要登录", "重新登录", "登录失效", "登录过期").any { keyword ->
+            keyword in message
+        }
+    }
+
     private fun JsonElement.jsonObjectOrNull(): JsonObject? = this as? JsonObject
 
     private fun JsonObject.jsonObjectAt(key: String): JsonObject? = this[key] as? JsonObject
@@ -448,6 +473,37 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
     private fun JsonObject.long(key: String): Long? = string(key)?.toLongOrNull()
 
     private fun JsonObject.int(key: String): Int? = string(key)?.toIntOrNull()
+
+    private suspend fun recoverSessionFromPlaylistProbe(
+        baseUrl: String,
+        savedSession: NeteaseAccountSession,
+        originalError: AppError
+    ): Result<NeteaseAccountSession?> {
+        return try {
+            val response = enhancedApi.userPlaylist(
+                url = buildEndpoint(baseUrl, "user/playlist"),
+                uid = savedSession.userId,
+                limit = 1,
+                offset = 0,
+                cookie = savedSession.cookie,
+                realIp = DEFAULT_REAL_IP,
+                timestamp = now()
+            )
+            when {
+                response.codeOrDefault() == 200 -> {
+                    accountStore.saveSession(savedSession)
+                    Result.Success(savedSession)
+                }
+                response.shouldClearSavedSession() -> {
+                    accountStore.clearSession()
+                    Result.Success(null)
+                }
+                else -> Result.Error(originalError)
+            }
+        } catch (_: Exception) {
+            Result.Error(originalError)
+        }
+    }
 
     private fun now(): Long = System.currentTimeMillis()
 
