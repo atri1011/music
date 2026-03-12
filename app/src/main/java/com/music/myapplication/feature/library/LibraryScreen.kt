@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -78,12 +77,6 @@ import com.music.myapplication.ui.theme.LocalGlassColors
 import com.music.myapplication.ui.theme.QQMusicGreen
 import kotlin.math.abs
 
-// Medal colors for top-3 rankings.
-// Keep the gold/silver/bronze semantics, but tune silver and bronze for a cleaner UI.
-private val RankGold = Color(0xFFFFD700)
-private val RankSilver = Color(0xFF8EA7C7)
-private val RankBronze = Color(0xFFC8843F)
-
 // Accent colors for quick-access tiles
 private val FavoriteAccent = Color(0xFFFF6B8A)
 private val LocalAccent = Color(0xFF5B8DEF)
@@ -91,6 +84,7 @@ private val LocalAccent = Color(0xFF5B8DEF)
 @Composable
 fun LibraryScreen(
     onNavigateToPlaylist: (id: String, name: String) -> Unit,
+    onNavigateToPlayRanking: () -> Unit = {},
     onNavigateToDownloaded: () -> Unit = {},
     onNavigateToLocalMusic: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
@@ -145,7 +139,8 @@ fun LibraryScreen(
             item {
                 StatsCapsules(
                     totalPlayCount = state.totalPlayCount,
-                    totalListenDurationMs = state.totalListenDurationMs
+                    totalListenDurationMs = state.totalListenDurationMs,
+                    onPlayCountClick = onNavigateToPlayRanking
                 )
             }
 
@@ -194,29 +189,6 @@ fun LibraryScreen(
                 }
             }
 
-            // Play ranking section
-            if (state.topPlayedTracks.isNotEmpty()) {
-                item {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    RankingSectionHeader(count = state.topPlayedTracks.size)
-                }
-
-                val rankedTracks = state.topPlayedTracks
-                itemsIndexed(
-                    rankedTracks,
-                    key = { _, pair -> "rank:${pair.first.platform.id}:${pair.first.id}" }
-                ) { index, (track, playCount) ->
-                    RankedTrackItem(
-                        rank = index + 1,
-                        track = track,
-                        playCount = playCount,
-                        onClick = {
-                            val tracks = rankedTracks.map { it.first }
-                            playerViewModel.playTrack(track, tracks, index)
-                        }
-                    )
-                }
-            }
         }
 
         // Dialogs
@@ -398,7 +370,8 @@ private fun TopCoversHeader(topTracks: List<Pair<Track, Int>>) {
 @Composable
 private fun StatsCapsules(
     totalPlayCount: Int,
-    totalListenDurationMs: Long
+    totalListenDurationMs: Long,
+    onPlayCountClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -416,6 +389,7 @@ private fun StatsCapsules(
             icon = Icons.Filled.PlayArrow,
             value = "$totalPlayCount",
             label = "播放次数",
+            onClick = onPlayCountClick,
             modifier = Modifier.weight(1f)
         )
     }
@@ -426,6 +400,7 @@ private fun StatCapsule(
     icon: ImageVector,
     value: String,
     label: String,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val glassColors = LocalGlassColors.current
@@ -435,6 +410,10 @@ private fun StatCapsule(
             .clip(RoundedCornerShape(16.dp))
             .background(glassColors.surface)
             .border(0.5.dp, glassColors.border, RoundedCornerShape(16.dp))
+            .then(
+                if (onClick != null) Modifier.clickable(onClick = onClick)
+                else Modifier
+            )
             .padding(vertical = 16.dp, horizontal = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -595,35 +574,6 @@ private fun PlaylistSectionHeader(
     }
 }
 
-@Composable
-private fun RankingSectionHeader(count: Int) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .height(16.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(QQMusicGreen)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(
-            text = "播放排行",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = "Top $count",
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-            color = QQMusicGreen
-        )
-    }
-}
-
 // ── Playlist Row ────────────────────────────────────────────────────────────────
 
 @Composable
@@ -695,119 +645,6 @@ private fun PlaylistRow(
                 contentDescription = "删除",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-// ── Ranked Track Item ───────────────────────────────────────────────────────────
-
-@Composable
-private fun RankedTrackItem(
-    rank: Int,
-    track: Track,
-    playCount: Int,
-    onClick: () -> Unit
-) {
-    val isTopThree = rank <= 3
-    val rankColor = when (rank) {
-        1 -> RankGold
-        2 -> RankBronze
-        3 -> RankSilver
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val rankBrush = when (rank) {
-        1 -> Brush.linearGradient(listOf(Color(0xFFFFD700), Color(0xFFD4AF37)))
-        2 -> Brush.linearGradient(listOf(Color(0xFFF2C389), Color(0xFFC8843F)))
-        3 -> Brush.linearGradient(listOf(Color(0xFFE8F0FB), Color(0xFF8EA7C7)))
-        else -> null
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .then(
-                if (isTopThree) Modifier.background(rankColor.copy(alpha = 0.06f))
-                else Modifier
-            )
-            .clickable(onClick = onClick)
-            .padding(
-                horizontal = if (isTopThree) 8.dp else 0.dp,
-                vertical = 8.dp
-            ),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Rank indicator
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .then(
-                    if (isTopThree) Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(rankColor.copy(alpha = 0.15f))
-                    else Modifier
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "$rank",
-                style = if (rankBrush != null) {
-                    MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        brush = rankBrush
-                    )
-                } else {
-                    MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = rankColor
-                    )
-                }
-            )
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        // Cover
-        CoverImage(
-            url = track.coverUrl,
-            contentDescription = track.title,
-            modifier = Modifier
-                .size(if (isTopThree) 52.dp else 48.dp)
-                .clip(RoundedCornerShape(if (isTopThree) 10.dp else 8.dp))
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        // Title + Artist
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        // Play count + platform
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = "$playCount 次",
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = if (isTopThree) rankColor else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = track.platform.displayName,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
         }
     }

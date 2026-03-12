@@ -20,6 +20,7 @@ import com.music.myapplication.feature.home.HomeScreen
 import com.music.myapplication.feature.library.DownloadedScreen
 import com.music.myapplication.feature.library.LibraryScreen
 import com.music.myapplication.feature.library.LocalMusicScreen
+import com.music.myapplication.feature.library.PlayRankingScreen
 import com.music.myapplication.feature.more.MoreScreen
 import com.music.myapplication.feature.playlist.PlaylistDetailScreen
 import com.music.myapplication.feature.player.EqualizerScreen
@@ -74,6 +75,9 @@ fun AppNavGraph(
             LibraryScreen(
                 onNavigateToPlaylist = { id, name ->
                     navController.navigate(Routes.PlaylistDetail(id, "local", name, "local"))
+                },
+                onNavigateToPlayRanking = {
+                    navController.navigate(Routes.PlayRanking)
                 },
                 onNavigateToDownloaded = {
                     navController.navigate(Routes.Downloaded)
@@ -140,6 +144,32 @@ fun AppNavGraph(
             }
         ) {
             LocalMusicScreen(
+                onBack = { navController.popBackStack() },
+                playerViewModel = playerViewModel
+            )
+        }
+
+        composable<Routes.PlayRanking>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            PlayRankingScreen(
                 onBack = { navController.popBackStack() },
                 playerViewModel = playerViewModel
             )
