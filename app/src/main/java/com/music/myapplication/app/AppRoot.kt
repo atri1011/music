@@ -67,11 +67,18 @@ fun AppRoot(
     val isSearchRoute = navBackStackEntry?.destination?.hasRoute(Routes.Search::class) == true
     val isPlayerLyricsRoute = navBackStackEntry?.destination?.hasRoute(Routes.PlayerLyrics::class) == true
     val isVideoPlayerRoute = navBackStackEntry?.destination?.hasRoute(Routes.VideoPlayer::class) == true
-    val snackbarBottomPadding = when {
-        isPlayerLyricsRoute || isVideoPlayerRoute -> 24.dp
-        hasCurrentTrack && !isSearchRoute -> 136.dp
-        hasCurrentTrack || !isSearchRoute -> 88.dp
-        else -> 24.dp
+    val chromeState = remember(
+        hasCurrentTrack,
+        isSearchRoute,
+        isPlayerLyricsRoute,
+        isVideoPlayerRoute
+    ) {
+        resolveAppChromeState(
+            hasCurrentTrack = hasCurrentTrack,
+            isSearchRoute = isSearchRoute,
+            isPlayerLyricsRoute = isPlayerLyricsRoute,
+            isVideoPlayerRoute = isVideoPlayerRoute
+        )
     }
 
     LaunchedEffect(trackActionState.errorId) {
@@ -105,7 +112,7 @@ fun AppRoot(
                     )
                 }
 
-                if (hasCurrentTrack && !isPlayerLyricsRoute && !isVideoPlayerRoute) {
+                if (chromeState.showMiniPlayer) {
                     MiniPlayerContainer(
                         playerViewModel = playerViewModel,
                         miniPlayerState = miniPlayerState,
@@ -116,14 +123,14 @@ fun AppRoot(
                     )
                 }
 
-                if (trackActionState.isResolving && !isPlayerLyricsRoute && !isVideoPlayerRoute) {
+                if (trackActionState.isResolving && chromeState.showResolvingIndicator) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .padding(horizontal = 12.dp)
                     )
                 }
 
-                if (!isPlayerLyricsRoute && !isVideoPlayerRoute && !isSearchRoute) {
+                if (chromeState.showBottomBar) {
                     NavigationBar(
                         containerColor = Color.Transparent,
                         tonalElevation = 0.dp,
@@ -174,7 +181,7 @@ fun AppRoot(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 16.dp)
-                    .padding(bottom = snackbarBottomPadding)
+                    .padding(bottom = chromeState.snackbarBottomPadding)
             )
         }
     }

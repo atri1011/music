@@ -1,6 +1,8 @@
 package com.music.myapplication.feature.search
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,11 +50,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,6 +82,9 @@ import com.music.myapplication.feature.player.AddTrackToPlaylistSheet
 import com.music.myapplication.feature.player.TrackMoreMenu
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.glassSurface
+import kotlinx.coroutines.flow.distinctUntilChanged
+
+private const val LoadMoreBufferSize = 5
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -96,20 +101,45 @@ fun SearchScreen(
     val focusManager = LocalFocusManager.current
     var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var trackPendingPlaylistAddition by remember { mutableStateOf<Track?>(null) }
+    var lastLoadMoreTriggerIndex by remember(state.query, state.platform, state.searchType) {
+        mutableStateOf(-1)
+    }
 
     val resultCount = if (state.searchType == SearchType.SONG) state.tracks.size else state.genericResults.size
 
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisibleItem >= resultCount - 5
+    val dismissSuggestions = remember(focusManager, searchViewModel) {
+        {
+            focusManager.clearFocus(force = true)
+            searchViewModel.dismissSuggestions()
         }
     }
 
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && resultCount > 0) {
-            searchViewModel.loadMore()
-        }
+    BackHandler(enabled = state.showSuggestions) {
+        dismissSuggestions()
+    }
+
+    LaunchedEffect(
+        listState,
+        state.query,
+        state.platform,
+        state.searchType,
+        state.isLoading,
+        state.hasMore,
+        state.page,
+        resultCount
+    ) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastVisibleItem ->
+                if (state.query.isBlank() || resultCount == 0 || state.isLoading || !state.hasMore) {
+                    return@collect
+                }
+                val triggerIndex = (resultCount - LoadMoreBufferSize).coerceAtLeast(0)
+                if (lastVisibleItem >= triggerIndex && lastVisibleItem > lastLoadMoreTriggerIndex) {
+                    lastLoadMoreTriggerIndex = lastVisibleItem
+                    searchViewModel.loadMore()
+                }
+            }
     }
 
     Column(
@@ -166,46 +196,6 @@ fun SearchScreen(
         )
 
         Box(modifier = Modifier.fillMaxSize()) {
-            // Suggestion overlay
-            if (state.showSuggestions && state.suggestions.isNotEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .zIndex(10f)
-                        .padding(horizontal = 16.dp)
-                        .glassSurface(RoundedCornerShape(12.dp))
-                        .padding(8.dp)
-                ) {
-                    state.suggestions.take(8).forEach { suggestion ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { searchViewModel.onSuggestionClick(suggestion) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = when (suggestion.type) {
-                                    SuggestionType.SONG -> Icons.Outlined.MusicNote
-                                    SuggestionType.ARTIST -> Icons.AutoMirrored.Outlined.TrendingUp
-                                    else -> Icons.Default.Search
-                                },
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = suggestion.text,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
-
             // Main content
             when {
                 state.error != null && resultCount == 0 -> {
@@ -410,6 +400,58 @@ fun SearchScreen(
                                     ShimmerMediaListItem(modifier = Modifier.padding(16.dp))
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            if (state.showSuggestions) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(9f)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = dismissSuggestions
+                        )
+                )
+            }
+
+            if (state.showSuggestions && state.suggestions.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .zIndex(10f)
+                        .padding(horizontal = 16.dp)
+                        .glassSurface(RoundedCornerShape(12.dp))
+                        .padding(8.dp)
+                ) {
+                    state.suggestions.take(8).forEach { suggestion ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { searchViewModel.onSuggestionClick(suggestion) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = when (suggestion.type) {
+                                    SuggestionType.SONG -> Icons.Outlined.MusicNote
+                                    SuggestionType.ARTIST -> Icons.AutoMirrored.Outlined.TrendingUp
+                                    else -> Icons.Default.Search
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = suggestion.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }

@@ -6,7 +6,9 @@ import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.datastore.SearchHistoryStore
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.SearchResultItem
+import com.music.myapplication.domain.model.SearchSuggestion
 import com.music.myapplication.domain.model.SearchType
+import com.music.myapplication.domain.model.SuggestionType
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -26,6 +28,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -240,6 +243,98 @@ class SearchViewModelTest {
             assertEquals(Platform.QQ, viewModel.state.value.tracks.first().platform)
             coVerify(atLeast = 1) { onlineRepo.search(Platform.QQ, "夜曲", 1, any()) }
             coVerify(exactly = 0) { onlineRepo.search(Platform.KUWO, any(), any(), any()) }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun submitSearchAndQuickPickKeywordsShareConsistentSubmitBehavior() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val preferences = mockk<PlayerPreferences>()
+            every { preferences.platform } returns flow { emit(Platform.NETEASE.id) }
+            coEvery { preferences.setPlatform(any()) } returns Unit
+            coEvery { onlineRepo.getHotSearchKeywords(any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.getSearchSuggestions(any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.search(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.searchArtists(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.searchAlbums(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.searchPlaylists(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
+
+            val historyStore = mockk<SearchHistoryStore>(relaxed = true)
+            every { historyStore.history } returns flow { emit(emptyList<String>()) }
+
+            val viewModel = SearchViewModel(onlineRepo, localRepo, preferences, historyStore)
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("周杰伦")
+            viewModel.submitSearch()
+            advanceUntilIdle()
+
+            viewModel.onHistoryClick("夜曲")
+            advanceUntilIdle()
+
+            viewModel.onHotKeywordClick("稻香")
+            advanceUntilIdle()
+
+            viewModel.onSuggestionClick(SearchSuggestion("晴天", SuggestionType.SONG))
+            advanceUntilIdle()
+
+            assertEquals("晴天", viewModel.state.value.query)
+            assertFalse(viewModel.state.value.showSuggestions)
+            assertTrue(viewModel.state.value.suggestions.isEmpty())
+
+            coVerify(exactly = 1) { historyStore.record("周杰伦") }
+            coVerify(exactly = 1) { historyStore.record("夜曲") }
+            coVerify(exactly = 1) { historyStore.record("稻香") }
+            coVerify(exactly = 1) { historyStore.record("晴天") }
+
+            coVerify(exactly = 1) { onlineRepo.search(Platform.NETEASE, "周杰伦", 1, any()) }
+            coVerify(exactly = 1) { onlineRepo.search(Platform.NETEASE, "夜曲", 1, any()) }
+            coVerify(exactly = 1) { onlineRepo.search(Platform.NETEASE, "稻香", 1, any()) }
+            coVerify(exactly = 1) { onlineRepo.search(Platform.NETEASE, "晴天", 1, any()) }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun dismissSuggestionsDoesNotReopenWhenLateSuggestionResponseArrives() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val preferences = mockk<PlayerPreferences>()
+            every { preferences.platform } returns flow { emit(Platform.NETEASE.id) }
+            coEvery { preferences.setPlatform(any()) } returns Unit
+            coEvery { onlineRepo.getHotSearchKeywords(any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.search(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
+            coEvery { onlineRepo.getSearchSuggestions(Platform.NETEASE, "夜曲") } coAnswers {
+                delay(100)
+                Result.Success(listOf(SearchSuggestion("夜曲", SuggestionType.KEYWORD)))
+            }
+
+            val historyStore = mockk<SearchHistoryStore>(relaxed = true)
+            every { historyStore.history } returns flow { emit(emptyList<String>()) }
+
+            val viewModel = SearchViewModel(onlineRepo, localRepo, preferences, historyStore)
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("夜曲")
+            advanceTimeBy(151)
+            viewModel.dismissSuggestions()
+            advanceUntilIdle()
+
+            assertFalse(viewModel.state.value.showSuggestions)
+            assertFalse(viewModel.state.value.isSuggestionLoading)
+            assertEquals(listOf(SearchSuggestion("夜曲", SuggestionType.KEYWORD)), viewModel.state.value.suggestions)
         } finally {
             Dispatchers.resetMain()
         }

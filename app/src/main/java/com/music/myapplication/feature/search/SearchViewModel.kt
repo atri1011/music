@@ -123,42 +123,23 @@ class SearchViewModel @Inject constructor(
     }
 
     fun submitSearch() {
-        val s = _state.value
-        if (s.query.isNotBlank()) {
-            searchQueryFlow.value = ""
-            suggestionQueryFlow.value = ""
-            _state.update { it.copy(showSuggestions = false) }
-            viewModelScope.launch { historyStore.record(s.query) }
-            performSearchByType(s.query, s.platform, 1, s.searchType)
-        }
+        submitQuery(_state.value.query)
     }
 
     fun onHistoryClick(keyword: String) {
-        _state.update { it.copy(query = keyword, showSuggestions = false) }
-        searchQueryFlow.value = ""
-        suggestionQueryFlow.value = ""
-        viewModelScope.launch { historyStore.record(keyword) }
-        performSearchByType(keyword, _state.value.platform, 1, _state.value.searchType)
+        submitQuery(keyword)
     }
 
     fun onSuggestionClick(suggestion: SearchSuggestion) {
-        _state.update { it.copy(query = suggestion.text, showSuggestions = false) }
-        searchQueryFlow.value = ""
-        suggestionQueryFlow.value = ""
-        viewModelScope.launch { historyStore.record(suggestion.text) }
-        performSearchByType(suggestion.text, _state.value.platform, 1, _state.value.searchType)
+        submitQuery(suggestion.text)
     }
 
     fun onHotKeywordClick(keyword: String) {
-        _state.update { it.copy(query = keyword, showSuggestions = false) }
-        searchQueryFlow.value = ""
-        suggestionQueryFlow.value = ""
-        viewModelScope.launch { historyStore.record(keyword) }
-        performSearchByType(keyword, _state.value.platform, 1, _state.value.searchType)
+        submitQuery(keyword)
     }
 
     fun dismissSuggestions() {
-        _state.update { it.copy(showSuggestions = false) }
+        _state.update { it.copy(showSuggestions = false, isSuggestionLoading = false) }
     }
 
     fun clearHistory() {
@@ -216,12 +197,39 @@ class SearchViewModel @Inject constructor(
                 error = null,
                 page = 1,
                 hasMore = true,
-                isLoading = false
+                isLoading = false,
+                suggestions = emptyList(),
+                showSuggestions = false,
+                isSuggestionLoading = false
             )
         }
         if (currentState.query.isNotBlank()) {
             performSearchByType(currentState.query, currentState.platform, 1, type)
         }
+    }
+
+    private fun submitQuery(query: String, recordHistory: Boolean = true) {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) return
+
+        searchQueryFlow.value = ""
+        suggestionQueryFlow.value = ""
+        _state.update {
+            it.copy(
+                query = normalizedQuery,
+                error = null,
+                page = 1,
+                hasMore = true,
+                suggestions = emptyList(),
+                showSuggestions = false,
+                isSuggestionLoading = false
+            )
+        }
+        if (recordHistory) {
+            viewModelScope.launch { historyStore.record(normalizedQuery) }
+        }
+        val currentState = _state.value
+        performSearchByType(normalizedQuery, currentState.platform, 1, currentState.searchType)
     }
 
     private fun performSearchByType(query: String, platform: Platform, page: Int, type: SearchType) {
@@ -355,7 +363,7 @@ class SearchViewModel @Inject constructor(
                     if (s.platform != platform || s.query.trim() != keyword.trim()) return@update s
                     s.copy(
                         suggestions = result.data,
-                        showSuggestions = result.data.isNotEmpty(),
+                        showSuggestions = s.showSuggestions && result.data.isNotEmpty(),
                         isSuggestionLoading = false
                     )
                 }
