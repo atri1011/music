@@ -76,6 +76,16 @@ fun AppNavGraph(
                 onNavigateToPlaylist = { id, name ->
                     navController.navigate(Routes.PlaylistDetail(id, "local", name, "local"))
                 },
+                onNavigateToFavorites = {
+                    navController.navigate(
+                        Routes.PlaylistDetail(
+                            id = "favorites",
+                            platform = "local",
+                            name = "收藏",
+                            source = "favorites"
+                        )
+                    )
+                },
                 onNavigateToPlayRanking = {
                     navController.navigate(Routes.PlayRanking)
                 },
@@ -84,8 +94,7 @@ fun AppNavGraph(
                 },
                 onNavigateToLocalMusic = {
                     navController.navigate(Routes.LocalMusic)
-                },
-                playerViewModel = playerViewModel
+                }
             )
         }
         composable<Routes.More> {

@@ -22,6 +22,7 @@ data class PlaylistDetailUiState(
     val isLoading: Boolean = false,
     val isSavingEdits: Boolean = false,
     val isLocalPlaylist: Boolean = false,
+    val isFavoritesCollection: Boolean = false,
     val isEditMode: Boolean = false,
     val error: String? = null,
     val editMessage: String? = null,
@@ -34,6 +35,10 @@ class PlaylistDetailViewModel @Inject constructor(
     private val onlineRepo: OnlineMusicRepository,
     private val localRepo: LocalLibraryRepository
 ) : ViewModel() {
+
+    private companion object {
+        const val SOURCE_FAVORITES = "favorites"
+    }
 
     private val _state = MutableStateFlow(PlaylistDetailUiState())
     val state: StateFlow<PlaylistDetailUiState> = _state.asStateFlow()
@@ -49,6 +54,7 @@ class PlaylistDetailViewModel @Inject constructor(
                 isLoading = true,
                 isSavingEdits = false,
                 isLocalPlaylist = isLocalPlaylist,
+                isFavoritesCollection = source == SOURCE_FAVORITES,
                 isEditMode = false,
                 editingTracks = emptyList(),
                 error = null,
@@ -57,7 +63,22 @@ class PlaylistDetailViewModel @Inject constructor(
             )
         }
         loadJob = viewModelScope.launch {
-            if (platform == "local") {
+            if (source == SOURCE_FAVORITES) {
+                localRepo.getFavorites().collect { tracks ->
+                    _state.update { current ->
+                        current.copy(
+                            title = title.ifBlank { "收藏" },
+                            coverUrl = tracks.firstOrNull()?.coverUrl.orEmpty(),
+                            tracks = tracks,
+                            editingTracks = emptyList(),
+                            isLoading = false,
+                            isLocalPlaylist = false,
+                            isFavoritesCollection = true,
+                            isEditMode = false
+                        )
+                    }
+                }
+            } else if (platform == "local") {
                 val playlist = localRepo.getPlaylistById(id)
                 _state.update {
                     it.copy(
@@ -72,6 +93,7 @@ class PlaylistDetailViewModel @Inject constructor(
                             editingTracks = if (current.isEditMode) current.editingTracks else tracks,
                             isLoading = false,
                             isLocalPlaylist = true,
+                            isFavoritesCollection = false,
                             coverUrl = current.coverUrl.ifBlank { playlist?.coverUrl.orEmpty() }
                         )
                     }
@@ -88,7 +110,8 @@ class PlaylistDetailViewModel @Inject constructor(
                                         tracks = enriched,
                                         editingTracks = emptyList(),
                                         isLoading = false,
-                                        isLocalPlaylist = false
+                                        isLocalPlaylist = false,
+                                        isFavoritesCollection = false
                                     )
                                 }
                             }
@@ -97,7 +120,8 @@ class PlaylistDetailViewModel @Inject constructor(
                                     it.copy(
                                         error = result.error.message,
                                         isLoading = false,
-                                        isLocalPlaylist = false
+                                        isLocalPlaylist = false,
+                                        isFavoritesCollection = false
                                     )
                                 }
                             }
@@ -113,7 +137,8 @@ class PlaylistDetailViewModel @Inject constructor(
                                         tracks = baseTracks,
                                         editingTracks = emptyList(),
                                         isLoading = false,
-                                        isLocalPlaylist = false
+                                        isLocalPlaylist = false,
+                                        isFavoritesCollection = false
                                     )
                                 }
 
@@ -132,7 +157,8 @@ class PlaylistDetailViewModel @Inject constructor(
                                     it.copy(
                                         error = result.error.message,
                                         isLoading = false,
-                                        isLocalPlaylist = false
+                                        isLocalPlaylist = false,
+                                        isFavoritesCollection = false
                                     )
                                 }
                             }

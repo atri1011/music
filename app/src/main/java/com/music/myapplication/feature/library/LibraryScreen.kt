@@ -72,7 +72,6 @@ import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
-import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.LocalGlassColors
 import com.music.myapplication.ui.theme.QQMusicGreen
 import kotlin.math.abs
@@ -84,11 +83,11 @@ private val LocalAccent = Color(0xFF5B8DEF)
 @Composable
 fun LibraryScreen(
     onNavigateToPlaylist: (id: String, name: String) -> Unit,
+    onNavigateToFavorites: () -> Unit,
     onNavigateToPlayRanking: () -> Unit = {},
     onNavigateToDownloaded: () -> Unit = {},
     onNavigateToLocalMusic: () -> Unit = {},
-    viewModel: LibraryViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel
+    viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var pendingPlaylistCoverId by remember { mutableStateOf<String?>(null) }
@@ -148,13 +147,7 @@ fun LibraryScreen(
             item {
                 QuickAccessGrid(
                     favoritesCount = state.favorites.size,
-                    onFavoritesClick = {
-                        if (state.favorites.isNotEmpty()) {
-                            playerViewModel.playTrack(
-                                state.favorites.first(), state.favorites, 0
-                            )
-                        }
-                    },
+                    onFavoritesClick = onNavigateToFavorites,
                     downloadedCount = state.downloadedCount,
                     onDownloadedClick = onNavigateToDownloaded,
                     localTrackCount = state.localTrackCount,

@@ -2,6 +2,7 @@ package com.music.myapplication.feature.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.core.download.DownloadManager
@@ -340,7 +341,7 @@ class LibraryViewModel @Inject constructor(
                 is Result.Error -> uiExtras.update {
                     it.copy(
                         isSyncingNeteaseData = false,
-                        syncError = result.error.message
+                        syncError = result.error.toNeteaseSyncMessage()
                     )
                 }
                 is Result.Loading -> Unit
@@ -476,7 +477,7 @@ class LibraryViewModel @Inject constructor(
                     }
                 }
                 is Result.Error -> uiExtras.update {
-                    it.copy(syncError = result.error.message)
+                    it.copy(syncError = result.error.toNeteaseSessionRefreshMessage())
                 }
                 is Result.Loading -> Unit
             }
@@ -614,4 +615,22 @@ private fun appendImportedPlaylistHint(message: String, rawInput: String): Strin
         ?.let { " 可识别链接片段：$it" }
         .orEmpty()
     return message + hint
+}
+
+private fun AppError.toNeteaseSessionRefreshMessage(): String = when (this) {
+    is AppError.Network -> "网易云登录状态校验失败，已保留本地登录信息，请稍后重试。"
+    is AppError.Api -> when (code) {
+        301 -> "网易云登录已失效，请重新登录。"
+        else -> "网易云连接异常，已保留本地登录信息，请稍后重试。"
+    }
+    else -> "网易云状态检查出了点问题，已保留本地登录信息，请稍后重试。"
+}
+
+private fun AppError.toNeteaseSyncMessage(): String = when (this) {
+    is AppError.Network -> "同步网易云失败，网络有点飘，请稍后重试。"
+    is AppError.Api -> when (code) {
+        301 -> "网易云登录已失效，请重新登录后再同步。"
+        else -> message.ifBlank { "同步网易云失败，请稍后重试。" }
+    }
+    else -> message.ifBlank { "同步网易云失败，请稍后重试。" }
 }

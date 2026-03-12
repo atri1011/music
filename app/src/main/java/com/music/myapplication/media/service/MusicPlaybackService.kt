@@ -1,27 +1,39 @@
 package com.music.myapplication.media.service
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
+import androidx.core.graphics.drawable.toBitmap
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.util.BitmapLoader
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.core.datastore.EqualizerPreferences
 import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.feature.player.state.SleepTimerStateHolder
@@ -65,6 +77,7 @@ class MusicPlaybackService : MediaLibraryService() {
     @Inject lateinit var localLibraryRepository: LocalLibraryRepository
 
     private var mediaSession: MediaLibraryService.MediaLibrarySession? = null
+    private val sessionPlayer: Player by lazy { PlaybackNavigationPlayer(exoPlayer) }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var positionUpdateJob: Job? = null
     private var equalizerSettingsJob: Job? = null
@@ -102,7 +115,8 @@ class MusicPlaybackService : MediaLibraryService() {
 
         exoPlayer.addListener(playerListener)
 
-        mediaSession = MediaLibraryService.MediaLibrarySession.Builder(this, exoPlayer, sessionCallback)
+        mediaSession = MediaLibraryService.MediaLibrarySession.Builder(this, sessionPlayer, sessionCallback)
+            .setBitmapLoader(sessionBitmapLoader)
             .build()
 
         stateStore.updateSpeed(exoPlayer.playbackParameters.speed)
@@ -130,12 +144,10 @@ class MusicPlaybackService : MediaLibraryService() {
         transitionJob?.cancel()
         equalizerManager.release()
         setPlayerVolume(1f)
-        mediaSession?.run {
-            player.removeListener(playerListener)
-            player.stop()
-            player.clearMediaItems()
-            release()
-        }
+        exoPlayer.removeListener(playerListener)
+        exoPlayer.stop()
+        exoPlayer.clearMediaItems()
+        mediaSession?.release()
         mediaSession = null
         serviceScope.cancel()
         super.onDestroy()
@@ -225,7 +237,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 .build()
             return MediaSession.ConnectionResult.accept(
                 sessionCommands,
-                defaultResult.availablePlayerCommands
+                buildSessionPlayerCommands(defaultResult.availablePlayerCommands)
             )
         }
 
@@ -291,6 +303,32 @@ class MusicPlaybackService : MediaLibraryService() {
                 }
                 else -> super.onCustomCommand(session, controller, customCommand, args)
             }
+        }
+    }
+
+    private fun canSkipToPrevious(): Boolean {
+        queueManager.currentTrack ?: return false
+        return when (modeManager.currentMode()) {
+            PlaybackMode.SEQUENTIAL -> queueManager.hasPrevious()
+            PlaybackMode.REPEAT_ONE -> true
+            PlaybackMode.SHUFFLE -> queueManager.size > 0
+        }
+    }
+
+    private fun buildSessionPlayerCommands(base: Player.Commands): Player.Commands =
+        base.buildUpon()
+            .addIf(Player.COMMAND_SEEK_TO_PREVIOUS, queueManager.currentTrack != null)
+            .addIf(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, queueManager.currentTrack != null)
+            .addIf(Player.COMMAND_SEEK_TO_NEXT, queueManager.currentTrack != null)
+            .addIf(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, queueManager.currentTrack != null)
+            .build()
+
+    private fun canSkipToNext(): Boolean {
+        queueManager.currentTrack ?: return false
+        return when (modeManager.currentMode()) {
+            PlaybackMode.SEQUENTIAL -> queueManager.hasNext()
+            PlaybackMode.REPEAT_ONE -> true
+            PlaybackMode.SHUFFLE -> queueManager.size > 0
         }
     }
 
@@ -382,16 +420,7 @@ class MusicPlaybackService : MediaLibraryService() {
     private fun buildTrackItem(track: Track): MediaItem {
         val mediaId = trackMediaId(track)
         libraryTrackCache[mediaId] = track
-        val metadataBuilder = MediaMetadata.Builder()
-            .setTitle(track.title)
-            .setArtist(track.artist)
-            .setAlbumTitle(track.album)
-            .setIsBrowsable(false)
-            .setIsPlayable(true)
-            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-        track.coverUrl.takeIf { it.isNotBlank() }?.let { url ->
-            metadataBuilder.setArtworkUri(Uri.parse(url))
-        }
+        val metadataBuilder = buildTrackMetadata(track)
         return MediaItem.Builder()
             .setMediaId(mediaId)
             .setMediaMetadata(metadataBuilder.build())
@@ -415,13 +444,7 @@ class MusicPlaybackService : MediaLibraryService() {
         libraryTrackCache[mediaItem.mediaId] = resolvedTrack
         return mediaItem.buildUpon()
             .setUri(resolvedTrack.playableUrl)
-            .setMediaMetadata(
-                mediaItem.mediaMetadata.buildUpon()
-                    .setTitle(resolvedTrack.title)
-                    .setArtist(resolvedTrack.artist)
-                    .setAlbumTitle(resolvedTrack.album)
-                    .build()
-            )
+            .setMediaMetadata(buildTrackMetadata(resolvedTrack).build())
             .build()
     }
 
@@ -455,6 +478,66 @@ class MusicPlaybackService : MediaLibraryService() {
         }
     }
 
+    private fun handleSkipToNextCommand() {
+        handleSkipCommand(
+            moveToTarget = { modeManager.getNextTrack() }
+        )
+    }
+
+    private fun handleSkipToPreviousCommand() {
+        handleSkipCommand(
+            moveToTarget = { modeManager.getPreviousTrack() }
+        )
+    }
+
+    private fun handleSkipCommand(
+        moveToTarget: () -> Track?
+    ) {
+        val previousIndex = queueManager.currentIndex
+        val targetTrack = moveToTarget() ?: run {
+            return
+        }
+
+        launchTransition {
+            when (val result = withContext(Dispatchers.IO) {
+                if (targetTrack.playableUrl.isNotBlank()) {
+                    Result.Success(targetTrack)
+                } else {
+                    trackPlaybackResolver.resolve(targetTrack, cachedQuality)
+                }
+            }) {
+                is Result.Success -> {
+                    val playable = result.data
+                    queueManager.updateTrack(queueManager.currentIndex, playable)
+                    stateStore.updateTrack(playable)
+                    stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+                    stateStore.updatePosition(0L)
+                    stateStore.updateDuration(playable.durationMs.coerceAtLeast(0L))
+                    loadTrackOnPlayer(
+                        track = playable,
+                        autoPlay = true,
+                        startPositionMs = 0L,
+                        transitionMode = if (shouldUseCrossfade(autoPlay = true)) {
+                            CrossfadeTransitionMode.FADE_THROUGH
+                        } else {
+                            CrossfadeTransitionMode.DIRECT
+                        }
+                    )
+                    withContext(Dispatchers.IO) {
+                        localLibraryRepository.recordRecentPlay(playable)
+                    }
+                }
+                is Result.Error,
+                Result.Loading -> {
+                    if (previousIndex >= 0) {
+                        queueManager.moveToIndex(previousIndex)
+                    }
+                    stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+                }
+            }
+        }
+    }
+
     private fun launchTransition(block: suspend () -> Unit) {
         cancelActiveTransition()
         val job = serviceScope.launch { block() }
@@ -484,7 +567,11 @@ class MusicPlaybackService : MediaLibraryService() {
         startPositionMs: Long,
         transitionMode: CrossfadeTransitionMode
     ) {
-        val mediaItem = MediaItem.fromUri(track.playableUrl)
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(trackMediaId(track))
+            .setUri(track.playableUrl)
+            .setMediaMetadata(buildTrackMetadata(track).build())
+            .build()
         try {
             when (transitionMode) {
                 CrossfadeTransitionMode.FADE_THROUGH -> fadePlayerVolumeTo(
@@ -525,6 +612,60 @@ class MusicPlaybackService : MediaLibraryService() {
             throw cancelled
         } catch (_: IllegalStateException) {
             setPlayerVolume(1f)
+        }
+    }
+
+    private fun buildTrackMetadata(track: Track): MediaMetadata.Builder {
+        val normalizedCoverUrl = normalizeCoverUrl(track.coverUrl)
+        return MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artist)
+            .setAlbumTitle(track.album)
+            .setIsBrowsable(false)
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            .apply {
+                normalizedCoverUrl.takeIf { it.isNotBlank() }?.let { coverUrl ->
+                    setArtworkUri(Uri.parse(coverUrl))
+                }
+            }
+    }
+
+    private val sessionBitmapLoader = object : BitmapLoader {
+        override fun supportsMimeType(mimeType: String): Boolean =
+            mimeType.startsWith("image/", ignoreCase = true)
+
+        override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> {
+            val future = SettableFuture.create<Bitmap>()
+            serviceScope.launch(Dispatchers.IO) {
+                runCatching {
+                    BitmapFactory.decodeByteArray(data, 0, data.size)
+                        ?: error("Unable to decode artwork bytes")
+                }.onSuccess(future::set)
+                    .onFailure(future::setException)
+            }
+            return future
+        }
+
+        override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> {
+            val future = SettableFuture.create<Bitmap>()
+            serviceScope.launch(Dispatchers.IO) {
+                runCatching {
+                    val request = ImageRequest.Builder(this@MusicPlaybackService)
+                        .data(uri.toString())
+                        .allowHardware(false)
+                        .build()
+                    val result = imageLoader.execute(request)
+                    val drawable = (result as? SuccessResult)?.drawable
+                        ?: error("Artwork request failed for $uri")
+                    when (drawable) {
+                        is BitmapDrawable -> drawable.bitmap
+                        else -> drawable.toBitmap()
+                    }
+                }.onSuccess(future::set)
+                    .onFailure(future::setException)
+            }
+            return future
         }
     }
 
@@ -601,6 +742,69 @@ class MusicPlaybackService : MediaLibraryService() {
                     stateStore.updatePlaying(false)
                 }
             }
+        }
+    }
+
+    private inner class PlaybackNavigationPlayer(
+        delegate: Player
+    ) : ForwardingPlayer(delegate) {
+
+        override fun getAvailableCommands(): Player.Commands =
+            buildSessionPlayerCommands(super.getAvailableCommands())
+
+        override fun isCommandAvailable(command: Int): Boolean = when (command) {
+            Player.COMMAND_SEEK_TO_PREVIOUS,
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> queueManager.currentTrack != null
+            Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> queueManager.currentTrack != null
+            else -> super.isCommandAvailable(command)
+        }
+
+        override fun hasPreviousMediaItem(): Boolean = canSkipToPrevious()
+
+        override fun hasNextMediaItem(): Boolean = canSkipToNext()
+
+        override fun getPreviousMediaItemIndex(): Int =
+            if (canSkipToPrevious()) {
+                when (modeManager.currentMode()) {
+                    PlaybackMode.SEQUENTIAL -> (queueManager.currentIndex - 1).coerceAtLeast(0)
+                    PlaybackMode.REPEAT_ONE,
+                    PlaybackMode.SHUFFLE -> queueManager.currentIndex.coerceAtLeast(0)
+                }
+            } else {
+                C.INDEX_UNSET
+            }
+
+        override fun getNextMediaItemIndex(): Int =
+            if (canSkipToNext()) {
+                when (modeManager.currentMode()) {
+                    PlaybackMode.SEQUENTIAL -> (queueManager.currentIndex + 1).coerceAtMost(queueManager.size - 1)
+                    PlaybackMode.REPEAT_ONE,
+                    PlaybackMode.SHUFFLE -> queueManager.currentIndex.coerceAtLeast(0)
+                }
+            } else {
+                C.INDEX_UNSET
+            }
+
+        override fun seekToPrevious() {
+            handleSkipToPreviousCommand()
+        }
+
+        override fun seekToPreviousMediaItem() {
+            handleSkipToPreviousCommand()
+        }
+
+        override fun seekToNext() {
+            handleSkipToNextCommand()
+        }
+
+        override fun seekToNextMediaItem() {
+            handleSkipToNextCommand()
+        }
+
+        @Deprecated("兼容旧控制器的下一首命令")
+        override fun next() {
+            handleSkipToNextCommand()
         }
     }
 

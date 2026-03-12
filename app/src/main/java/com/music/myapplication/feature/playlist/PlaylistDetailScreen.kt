@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -156,6 +157,7 @@ fun PlaylistDetailScreen(
                             title = state.title.ifBlank { title },
                             coverUrl = headerCoverUrl,
                             trackCount = displayTracks.size,
+                            isFavoritesCollection = state.isFavoritesCollection,
                             isEditable = state.isLocalPlaylist,
                             isEditMode = state.isEditMode,
                             isSavingEdits = state.isSavingEdits,
@@ -169,6 +171,14 @@ fun PlaylistDetailScreen(
                                 }
                             }
                         )
+                    }
+
+                    if (displayTracks.isEmpty() && !state.isEditMode) {
+                        item(key = "empty_state", contentType = "empty") {
+                            EmptyPlaylistState(
+                                isFavoritesCollection = state.isFavoritesCollection
+                            )
+                        }
                     }
 
                     if (state.isEditMode) {
@@ -257,6 +267,7 @@ private fun PlaylistHeader(
     title: String,
     coverUrl: String,
     trackCount: Int,
+    isFavoritesCollection: Boolean,
     isEditable: Boolean,
     isEditMode: Boolean,
     isSavingEdits: Boolean,
@@ -359,6 +370,22 @@ private fun PlaylistHeader(
                             .clip(RoundedCornerShape(16.dp))
                     )
                     Spacer(modifier = Modifier.height(16.dp))
+                } else if (isFavoritesCollection) {
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = null,
+                            tint = Color(0xFFFF6B8A),
+                            modifier = Modifier.size(52.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
 
                 Text(
@@ -372,7 +399,11 @@ private fun PlaylistHeader(
                 )
 
                 Text(
-                    text = if (isEditMode) "编辑模式 · ${trackCount}首歌曲" else "${trackCount}首歌曲",
+                    text = when {
+                        isEditMode -> "编辑模式 · ${trackCount}首歌曲"
+                        isFavoritesCollection -> "我喜欢的歌 · ${trackCount}首"
+                        else -> "${trackCount}首歌曲"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.7f),
                     modifier = Modifier.padding(top = 4.dp)
@@ -408,6 +439,42 @@ private fun PlaylistHeader(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EmptyPlaylistState(
+    isFavoritesCollection: Boolean
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = if (isFavoritesCollection) Icons.Default.Favorite else Icons.Default.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(42.dp)
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (isFavoritesCollection) "你还没收藏歌曲" else "这个歌单还是空的",
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = if (isFavoritesCollection) {
+                "看到喜欢的歌就点心心，回这儿就能慢慢盘。"
+            } else {
+                "先加几首歌进来，这里才热闹。"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
