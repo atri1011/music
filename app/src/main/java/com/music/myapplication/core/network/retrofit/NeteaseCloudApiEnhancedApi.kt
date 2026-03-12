@@ -32,4 +32,76 @@ interface NeteaseCloudApiEnhancedApi {
         @Url url: String,
         @Query("id") id: String
     ): JsonElement
+
+    @GET
+    suspend fun loginCellphone(
+        @Url url: String,
+        @Query("phone") phone: String,
+        @Query("password") password: String? = null,
+        @Query("captcha") captcha: String? = null,
+        @Query("countrycode") countryCode: String = "86",
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
+
+    @GET
+    suspend fun sendCaptcha(
+        @Url url: String,
+        @Query("phone") phone: String,
+        @Query("ctcode") countryCode: String = "86",
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
+
+    @GET
+    suspend fun loginQrKey(
+        @Url url: String,
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
+
+    @GET
+    suspend fun loginQrCreate(
+        @Url url: String,
+        @Query("key") key: String,
+        @Query("qrimg") qrImage: Boolean = true,
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
+
+    @GET
+    suspend fun loginQrCheck(
+        @Url url: String,
+        @Query("key") key: String,
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
+
+    @GET
+    suspend fun loginStatus(
+        @Url url: String,
+        @Query("cookie") cookie: String,
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
+
+    @GET
+    suspend fun userPlaylist(
+        @Url url: String,
+        @Query("uid") uid: Long,
+        @Query("limit") limit: Int = 1000,
+        @Query("offset") offset: Int = 0,
+        @Query("cookie") cookie: String,
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
+
+    @GET
+    suspend fun likeList(
+        @Url url: String,
+        @Query("uid") uid: Long,
+        @Query("cookie") cookie: String,
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
 }

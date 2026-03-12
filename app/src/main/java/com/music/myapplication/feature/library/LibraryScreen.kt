@@ -133,9 +133,12 @@ fun LibraryScreen(
                 .statusBarsPadding(),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            // Top 5 tilted album covers
             item {
-                TopCoversHeader(topTracks = state.topPlayedTracks)
+                NeteaseAccountHeaderCard(
+                    state = state,
+                    onClick = { viewModel.showLoginSheet(true) },
+                    onSyncClick = viewModel::syncNeteaseData
+                )
             }
 
             // Stats capsules (listening time + play count)
@@ -230,6 +233,19 @@ fun LibraryScreen(
                 importError = state.importError,
                 onDismiss = { viewModel.showImportDialog(false) },
                 onConfirm = viewModel::importPlaylist
+            )
+        }
+
+        if (state.showLoginSheet) {
+            NeteaseLoginSheet(
+                state = state,
+                onDismiss = { viewModel.showLoginSheet(false) },
+                onPasswordLogin = viewModel::loginWithPassword,
+                onSendCaptcha = viewModel::sendCaptcha,
+                onCaptchaLogin = viewModel::loginWithCaptcha,
+                onStartQrLogin = viewModel::prepareQrLogin,
+                onSyncClick = viewModel::syncNeteaseData,
+                onLogout = viewModel::logoutNeteaseAccount
             )
         }
     }

@@ -5,12 +5,19 @@ import androidx.lifecycle.viewModelScope
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.core.download.DownloadManager
-import com.music.myapplication.domain.model.Playlist
+import com.music.myapplication.domain.model.NeteaseAccountSession
+import com.music.myapplication.domain.model.NeteaseQrLoginPayload
+import com.music.myapplication.domain.model.NeteaseQrLoginState
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
+import com.music.myapplication.domain.repository.NeteaseAccountRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +25,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 data class LibraryUiState(
     val favorites: List<Track> = emptyList(),
@@ -28,10 +34,22 @@ data class LibraryUiState(
     val totalListenDurationMs: Long = 0L,
     val downloadedCount: Int = 0,
     val localTrackCount: Int = 0,
+    val account: NeteaseAccountSession? = null,
+    val isNeteaseConfigured: Boolean = false,
     val showCreateDialog: Boolean = false,
     val showImportDialog: Boolean = false,
+    val showLoginSheet: Boolean = false,
     val isImporting: Boolean = false,
+    val isAuthenticating: Boolean = false,
+    val isSendingCaptcha: Boolean = false,
+    val isPollingQr: Boolean = false,
+    val isSyncingNeteaseData: Boolean = false,
     val importError: String? = null,
+    val authError: String? = null,
+    val syncError: String? = null,
+    val syncMessage: String? = null,
+    val qrPayload: NeteaseQrLoginPayload? = null,
+    val qrStatusMessage: String? = null,
     val importedPlaylist: ImportedPlaylistDestination? = null
 )
 
@@ -44,10 +62,12 @@ data class ImportedPlaylistDestination(
 class LibraryViewModel @Inject constructor(
     private val localRepo: LocalLibraryRepository,
     private val onlineRepo: OnlineMusicRepository,
-    private val downloadManager: DownloadManager
+    private val downloadManager: DownloadManager,
+    private val neteaseAccountRepository: NeteaseAccountRepository
 ) : ViewModel() {
 
-    private val _uiExtras = MutableStateFlow(LibraryExtras())
+    private val uiExtras = MutableStateFlow(LibraryExtras())
+    private var qrPollingJob: Job? = null
 
     private val statsFlow = combine(
         localRepo.getTotalPlayCount(),
@@ -63,8 +83,20 @@ class LibraryViewModel @Inject constructor(
         localRepo.getTopPlayedTracks(),
         localRepo.getPlaylists(),
         statsFlow,
-        _uiExtras
-    ) { favorites, topPlayed, playlists, stats, extras ->
+        neteaseAccountRepository.session,
+        neteaseAccountRepository.isConfigured,
+        uiExtras
+    ) { values ->
+        @Suppress("UNCHECKED_CAST")
+        val favorites = values[0] as List<Track>
+        @Suppress("UNCHECKED_CAST")
+        val topPlayed = values[1] as List<Pair<Track, Int>>
+        @Suppress("UNCHECKED_CAST")
+        val playlists = values[2] as List<Playlist>
+        val stats = values[3] as StatsBundle
+        val account = values[4] as NeteaseAccountSession?
+        val isConfigured = values[5] as Boolean
+        val extras = values[6] as LibraryExtras
         LibraryUiState(
             favorites = favorites,
             playlists = playlists,
@@ -73,16 +105,38 @@ class LibraryViewModel @Inject constructor(
             totalListenDurationMs = stats.totalListenDurationMs,
             downloadedCount = stats.downloadedCount,
             localTrackCount = stats.localTrackCount,
+            account = account,
+            isNeteaseConfigured = isConfigured,
             showCreateDialog = extras.showCreateDialog,
             showImportDialog = extras.showImportDialog,
+            showLoginSheet = extras.showLoginSheet,
             isImporting = extras.isImporting,
+            isAuthenticating = extras.isAuthenticating,
+            isSendingCaptcha = extras.isSendingCaptcha,
+            isPollingQr = extras.isPollingQr,
+            isSyncingNeteaseData = extras.isSyncingNeteaseData,
             importError = extras.importError,
+            authError = extras.authError,
+            syncError = extras.syncError,
+            syncMessage = extras.syncMessage,
+            qrPayload = extras.qrPayload,
+            qrStatusMessage = extras.qrStatusMessage,
             importedPlaylist = extras.importedPlaylist
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryUiState())
 
-    fun showCreateDialog(show: Boolean) = _uiExtras.update { it.copy(showCreateDialog = show) }
-    fun showImportDialog(show: Boolean) = _uiExtras.update {
+    init {
+        refreshNeteaseSession(syncOnSuccess = true)
+    }
+
+    override fun onCleared() {
+        qrPollingJob?.cancel()
+        super.onCleared()
+    }
+
+    fun showCreateDialog(show: Boolean) = uiExtras.update { it.copy(showCreateDialog = show) }
+
+    fun showImportDialog(show: Boolean) = uiExtras.update {
         it.copy(
             showImportDialog = show,
             isImporting = false,
@@ -90,20 +144,35 @@ class LibraryViewModel @Inject constructor(
         )
     }
 
-    fun createPlaylist(name: String) {
-        viewModelScope.launch {
-            localRepo.createPlaylist(name)
-            _uiExtras.update { it.copy(showCreateDialog = false) }
+    fun showLoginSheet(show: Boolean) {
+        if (!show) {
+            qrPollingJob?.cancel()
+        }
+        uiExtras.update {
+            it.copy(
+                showLoginSheet = show,
+                authError = null,
+                qrStatusMessage = if (show) it.qrStatusMessage else null,
+                qrPayload = if (show) it.qrPayload else null,
+                isPollingQr = if (show) it.isPollingQr else false
+            )
         }
     }
 
-    fun consumeImportedPlaylist() = _uiExtras.update { it.copy(importedPlaylist = null) }
+    fun createPlaylist(name: String) {
+        viewModelScope.launch {
+            localRepo.createPlaylist(name)
+            uiExtras.update { it.copy(showCreateDialog = false) }
+        }
+    }
+
+    fun consumeImportedPlaylist() = uiExtras.update { it.copy(importedPlaylist = null) }
 
     fun importPlaylist(platform: Platform, rawInput: String, customName: String) {
         viewModelScope.launch {
             val resolvedInput = resolveImportedPlaylistImportInput(platform, rawInput)
             if (resolvedInput == null) {
-                _uiExtras.update {
+                uiExtras.update {
                     it.copy(
                         showImportDialog = true,
                         isImporting = false,
@@ -113,7 +182,7 @@ class LibraryViewModel @Inject constructor(
                 return@launch
             }
 
-            _uiExtras.update {
+            uiExtras.update {
                 it.copy(
                     showImportDialog = true,
                     isImporting = true,
@@ -129,7 +198,7 @@ class LibraryViewModel @Inject constructor(
                     is Result.Success -> {
                         val tracks = result.data
                         if (tracks.isEmpty()) {
-                            _uiExtras.update {
+                            uiExtras.update {
                                 it.copy(
                                     showImportDialog = true,
                                     isImporting = false,
@@ -146,7 +215,7 @@ class LibraryViewModel @Inject constructor(
                             .ifBlank { defaultImportedPlaylistName(resolvedPlatform, playlistId) }
                         val playlist = localRepo.createPlaylist(playlistName)
                         localRepo.addAllToPlaylist(playlist.id, tracks)
-                        _uiExtras.update {
+                        uiExtras.update {
                             it.copy(
                                 showImportDialog = false,
                                 isImporting = false,
@@ -159,7 +228,7 @@ class LibraryViewModel @Inject constructor(
                         }
                     }
                     is Result.Error -> {
-                        _uiExtras.update {
+                        uiExtras.update {
                             it.copy(
                                 showImportDialog = true,
                                 isImporting = false,
@@ -170,7 +239,7 @@ class LibraryViewModel @Inject constructor(
                     is Result.Loading -> Unit
                 }
             } catch (e: Exception) {
-                _uiExtras.update {
+                uiExtras.update {
                     it.copy(
                         showImportDialog = true,
                         isImporting = false,
@@ -180,6 +249,236 @@ class LibraryViewModel @Inject constructor(
                         )
                     )
                 }
+            }
+        }
+    }
+
+    fun loginWithPassword(phone: String, password: String) {
+        authenticate(
+            action = { neteaseAccountRepository.loginWithPassword(phone.trim(), password) }
+        )
+    }
+
+    fun sendCaptcha(phone: String) {
+        viewModelScope.launch {
+            uiExtras.update { it.copy(isSendingCaptcha = true, authError = null) }
+            when (val result = neteaseAccountRepository.sendCaptcha(phone.trim())) {
+                is Result.Success -> uiExtras.update {
+                    it.copy(
+                        isSendingCaptcha = false,
+                        syncMessage = "验证码已发送，请留意短信"
+                    )
+                }
+                is Result.Error -> uiExtras.update {
+                    it.copy(
+                        isSendingCaptcha = false,
+                        authError = result.error.message
+                    )
+                }
+                is Result.Loading -> Unit
+            }
+        }
+    }
+
+    fun loginWithCaptcha(phone: String, captcha: String) {
+        authenticate(
+            action = { neteaseAccountRepository.loginWithCaptcha(phone.trim(), captcha.trim()) }
+        )
+    }
+
+    fun prepareQrLogin() {
+        viewModelScope.launch {
+            qrPollingJob?.cancel()
+            uiExtras.update {
+                it.copy(
+                    isAuthenticating = true,
+                    authError = null,
+                    qrPayload = null,
+                    qrStatusMessage = null,
+                    isPollingQr = false
+                )
+            }
+            when (val result = neteaseAccountRepository.createQrLogin()) {
+                is Result.Success -> {
+                    val payload = result.data
+                    uiExtras.update {
+                        it.copy(
+                            isAuthenticating = false,
+                            qrPayload = payload,
+                            qrStatusMessage = "请使用网易云音乐 App 扫码登录"
+                        )
+                    }
+                    startQrPolling(payload.key)
+                }
+                is Result.Error -> uiExtras.update {
+                    it.copy(
+                        isAuthenticating = false,
+                        authError = result.error.message
+                    )
+                }
+                is Result.Loading -> Unit
+            }
+        }
+    }
+
+    fun syncNeteaseData() {
+        viewModelScope.launch {
+            uiExtras.update {
+                it.copy(
+                    isSyncingNeteaseData = true,
+                    syncError = null,
+                    syncMessage = null
+                )
+            }
+            when (val result = neteaseAccountRepository.syncLocalLibrary()) {
+                is Result.Success -> uiExtras.update {
+                    it.copy(
+                        isSyncingNeteaseData = false,
+                        syncMessage = "已同步 ${result.data.syncedPlaylistCount} 个歌单，收藏 ${result.data.syncedFavoriteCount} 首"
+                    )
+                }
+                is Result.Error -> uiExtras.update {
+                    it.copy(
+                        isSyncingNeteaseData = false,
+                        syncError = result.error.message
+                    )
+                }
+                is Result.Loading -> Unit
+            }
+        }
+    }
+
+    fun logoutNeteaseAccount() {
+        viewModelScope.launch {
+            qrPollingJob?.cancel()
+            neteaseAccountRepository.logout()
+            uiExtras.update {
+                it.copy(
+                    showLoginSheet = false,
+                    authError = null,
+                    qrPayload = null,
+                    qrStatusMessage = null,
+                    isPollingQr = false,
+                    syncMessage = "网易云账号已退出"
+                )
+            }
+        }
+    }
+
+    fun clearSyncMessage() = uiExtras.update { it.copy(syncMessage = null, syncError = null) }
+
+    fun deletePlaylist(playlistId: String) {
+        viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
+    }
+
+    fun updatePlaylistCover(playlistId: String, sourceUri: String) {
+        viewModelScope.launch {
+            localRepo.updatePlaylistCover(playlistId, sourceUri)
+        }
+    }
+
+    private fun authenticate(action: suspend () -> Result<NeteaseAccountSession>) {
+        viewModelScope.launch {
+            uiExtras.update {
+                it.copy(
+                    isAuthenticating = true,
+                    authError = null,
+                    syncMessage = null
+                )
+            }
+            when (val result = action()) {
+                is Result.Success -> {
+                    uiExtras.update {
+                        it.copy(
+                            isAuthenticating = false,
+                            showLoginSheet = false,
+                            qrPayload = null,
+                            qrStatusMessage = null,
+                            isPollingQr = false
+                        )
+                    }
+                    syncNeteaseData()
+                }
+                is Result.Error -> uiExtras.update {
+                    it.copy(
+                        isAuthenticating = false,
+                        authError = result.error.message
+                    )
+                }
+                is Result.Loading -> Unit
+            }
+        }
+    }
+
+    private fun startQrPolling(key: String) {
+        qrPollingJob?.cancel()
+        qrPollingJob = viewModelScope.launch {
+            uiExtras.update { it.copy(isPollingQr = true, authError = null) }
+            while (true) {
+                when (val result = neteaseAccountRepository.checkQrLogin(key)) {
+                    is Result.Success -> {
+                        val status = result.data
+                        when (status.state) {
+                            NeteaseQrLoginState.WAITING,
+                            NeteaseQrLoginState.SCANNED -> {
+                                uiExtras.update {
+                                    it.copy(
+                                        isPollingQr = true,
+                                        qrStatusMessage = status.message
+                                    )
+                                }
+                                delay(QR_POLL_INTERVAL_MS)
+                            }
+                            NeteaseQrLoginState.AUTHORIZED -> {
+                                uiExtras.update {
+                                    it.copy(
+                                        isPollingQr = false,
+                                        showLoginSheet = false,
+                                        qrPayload = null,
+                                        qrStatusMessage = null
+                                    )
+                                }
+                                syncNeteaseData()
+                                return@launch
+                            }
+                            NeteaseQrLoginState.EXPIRED -> {
+                                uiExtras.update {
+                                    it.copy(
+                                        isPollingQr = false,
+                                        qrStatusMessage = status.message
+                                    )
+                                }
+                                return@launch
+                            }
+                        }
+                    }
+                    is Result.Error -> {
+                        uiExtras.update {
+                            it.copy(
+                                isPollingQr = false,
+                                authError = result.error.message
+                            )
+                        }
+                        return@launch
+                    }
+                    is Result.Loading -> delay(QR_POLL_INTERVAL_MS)
+                }
+            }
+        }
+    }
+
+    private fun refreshNeteaseSession(syncOnSuccess: Boolean) {
+        viewModelScope.launch {
+            when (val result = neteaseAccountRepository.refreshLoginStatus()) {
+                is Result.Success -> {
+                    if (result.data != null && syncOnSuccess) {
+                        syncNeteaseData()
+                    }
+                }
+                is Result.Error -> uiExtras.update {
+                    it.copy(syncError = result.error.message)
+                }
+                is Result.Loading -> Unit
             }
         }
     }
@@ -196,21 +495,21 @@ class LibraryViewModel @Inject constructor(
         return resolveImportedPlaylistInput(selectedPlatform, resolvedUrl)
     }
 
-    fun deletePlaylist(playlistId: String) {
-        viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
-    }
-
-    fun updatePlaylistCover(playlistId: String, sourceUri: String) {
-        viewModelScope.launch {
-            localRepo.updatePlaylistCover(playlistId, sourceUri)
-        }
-    }
-
     private data class LibraryExtras(
         val showCreateDialog: Boolean = false,
         val showImportDialog: Boolean = false,
+        val showLoginSheet: Boolean = false,
         val isImporting: Boolean = false,
+        val isAuthenticating: Boolean = false,
+        val isSendingCaptcha: Boolean = false,
+        val isPollingQr: Boolean = false,
+        val isSyncingNeteaseData: Boolean = false,
         val importError: String? = null,
+        val authError: String? = null,
+        val syncError: String? = null,
+        val syncMessage: String? = null,
+        val qrPayload: NeteaseQrLoginPayload? = null,
+        val qrStatusMessage: String? = null,
         val importedPlaylist: ImportedPlaylistDestination? = null
     )
 
@@ -220,6 +519,10 @@ class LibraryViewModel @Inject constructor(
         val downloadedCount: Int,
         val localTrackCount: Int
     )
+
+    private companion object {
+        const val QR_POLL_INTERVAL_MS = 2_000L
+    }
 }
 
 internal data class ImportedPlaylistInput(
@@ -278,64 +581,37 @@ private fun defaultImportedPlaylistName(platform: Platform, playlistId: String):
     return "${platform.displayName}歌单-$playlistId"
 }
 
-private fun importedPlaylistInputError(rawInput: String): String {
-    return if (containsImportedSongLink(rawInput)) {
-        "这里只支持导入歌单，不支持单曲链接。你填歌单分享链接或者歌单 ID 就行。"
-    } else {
-        "没识别出来歌单链接或歌单 ID。确认别填成单曲 ID，老老实实贴歌单分享链接或者歌单 ID。"
-    }
+private fun importedPlaylistInputCandidates(rawInput: String): List<String> {
+    val trimmed = rawInput.trim()
+    if (trimmed.isBlank()) return emptyList()
+    return buildList {
+        add(trimmed)
+        addAll(ShareUtils.extractShareUrlCandidates(rawInput))
+    }.distinct()
 }
 
-private fun appendImportedPlaylistHint(message: String, rawInput: String): String {
-    val normalizedMessage = message.trim().ifBlank { "导入歌单失败，稍后再试。" }
-    val hint = when {
-        containsImportedSongLink(rawInput) -> "这里只支持歌单，不支持单曲链接。"
-        rawInput.trim().all(Char::isDigit) -> "确认填的是歌单 ID，不是单曲 ID。"
-        else -> ""
-    }
-    return listOf(normalizedMessage, hint)
-        .filter { it.isNotBlank() }
-        .joinToString(" ")
-}
-
-private fun detectImportedPlatform(rawInput: String): Platform? {
-    val normalizedInput = rawInput.trim().lowercase()
+private fun detectImportedPlatform(input: String): Platform? {
+    val value = input.lowercase()
     return when {
-        "music.163.com" in normalizedInput ||
-            "163cn.tv" in normalizedInput ||
-            "网易云" in normalizedInput -> Platform.NETEASE
-        "y.qq.com" in normalizedInput ||
-            "qq.com" in normalizedInput ||
-            "qq音乐" in normalizedInput -> Platform.QQ
-        "kuwo.cn" in normalizedInput || "酷我" in normalizedInput -> Platform.KUWO
+        "music.163.com" in value || "y.music.163.com" in value || "网易云" in value -> Platform.NETEASE
+        "qq.com" in value || "@qq音乐" in value || "qq音乐" in value -> Platform.QQ
+        "kuwo.cn" in value || "酷我" in value -> Platform.KUWO
         else -> null
     }
 }
 
-private fun importedPlaylistInputCandidates(rawInput: String): List<String> {
-    val normalizedInput = rawInput.trim()
-    if (normalizedInput.isBlank()) return emptyList()
-
-    return buildList {
-        add(normalizedInput)
-        addAll(ShareUtils.extractShareUrlCandidates(normalizedInput))
-    }.map(String::trim)
-        .filter { it.isNotBlank() }
-        .distinct()
+private fun looksLikeSongLink(input: String): Boolean {
+    val value = input.lowercase()
+    return listOf("songdetail", "/song/", "song?id=", "program?id=").any { it in value }
 }
 
-private fun containsImportedSongLink(rawInput: String): Boolean {
-    return importedPlaylistInputCandidates(rawInput)
-        .any(::looksLikeSongLink)
-}
+private fun importedPlaylistInputError(rawInput: String): String =
+    appendImportedPlaylistHint("没识别出歌单链接或歌单 ID。", rawInput)
 
-private fun looksLikeSongLink(rawInput: String): Boolean {
-    val normalizedInput = rawInput.trim()
-    val songPatterns = listOf(
-        Regex("""songDetail/[A-Za-z0-9]+""", RegexOption.IGNORE_CASE),
-        Regex("""(?:^|[#/])song\?id=\d+""", RegexOption.IGNORE_CASE),
-        Regex("""/song/\d+""", RegexOption.IGNORE_CASE),
-        Regex("""/play_detail/\d+""", RegexOption.IGNORE_CASE)
-    )
-    return songPatterns.any { it.containsMatchIn(normalizedInput) }
+private fun appendImportedPlaylistHint(message: String, rawInput: String): String {
+    val hint = ShareUtils.extractShareUrlCandidates(rawInput).firstOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { " 可识别链接片段：$it" }
+        .orEmpty()
+    return message + hint
 }

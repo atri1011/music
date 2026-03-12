@@ -55,3 +55,27 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `idx_local_tracks_album` ON `local_tracks` (`album`)")
     }
 }
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `playlist_remote_map` (
+                `playlist_id` TEXT NOT NULL,
+                `source_platform` TEXT NOT NULL,
+                `source_playlist_id` TEXT NOT NULL,
+                `owner_uid` TEXT NOT NULL,
+                `last_synced_at` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`playlist_id`),
+                FOREIGN KEY(`playlist_id`) REFERENCES `playlists`(`playlist_id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS `idx_playlist_remote_map_source_unique`
+            ON `playlist_remote_map` (`source_platform`, `source_playlist_id`, `owner_uid`)
+            """.trimIndent()
+        )
+    }
+}

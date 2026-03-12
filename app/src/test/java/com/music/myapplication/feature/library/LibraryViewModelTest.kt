@@ -1,11 +1,15 @@
 package com.music.myapplication.feature.library
 
+import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.download.DownloadManager
+import com.music.myapplication.domain.model.NeteaseAccountSession
+import com.music.myapplication.domain.model.NeteaseSyncSummary
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
+import com.music.myapplication.domain.repository.NeteaseAccountRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -33,6 +37,65 @@ class LibraryViewModelTest {
         val dm = mockk<DownloadManager>()
         every { dm.getDownloadedCount() } returns flowOf(0)
         return dm
+    }
+
+    private fun createNeteaseAccountRepositoryMock(): NeteaseAccountRepository {
+        val repo = mockk<NeteaseAccountRepository>()
+        every { repo.session } returns flowOf(null)
+        every { repo.isConfigured } returns flowOf(true)
+        coEvery { repo.refreshLoginStatus() } returns Result.Success(null)
+        coEvery { repo.sendCaptcha(any()) } returns Result.Success(Unit)
+        coEvery { repo.loginWithPassword(any(), any()) } returns Result.Error(AppError.Api("未模拟"))
+        coEvery { repo.loginWithCaptcha(any(), any()) } returns Result.Error(AppError.Api("未模拟"))
+        coEvery { repo.createQrLogin() } returns Result.Error(AppError.Api("未模拟"))
+        coEvery { repo.checkQrLogin(any()) } returns Result.Error(AppError.Api("未模拟"))
+        coEvery { repo.syncLocalLibrary() } returns Result.Success(NeteaseSyncSummary(0, 0))
+        coEvery { repo.logout() } returns Unit
+        return repo
+    }
+
+    @Test
+    fun passwordLoginTriggersAutomaticSync() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val accountRepo = mockk<NeteaseAccountRepository>()
+            val account = NeteaseAccountSession(
+                userId = 9527L,
+                nickname = "测试云村用户",
+                cookie = "MUSIC_U=test_cookie"
+            )
+
+            every { localRepo.getFavorites() } returns flowOf(emptyList())
+            every { localRepo.getTopPlayedTracks(any()) } returns flowOf(emptyList())
+            every { localRepo.getPlaylists() } returns flowOf(emptyList())
+            every { localRepo.getTotalPlayCount() } returns flowOf(0)
+            every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
+            every { localRepo.getLocalTrackCount() } returns flowOf(0)
+
+            every { accountRepo.session } returns flowOf(account)
+            every { accountRepo.isConfigured } returns flowOf(true)
+            coEvery { accountRepo.refreshLoginStatus() } returns Result.Success(null)
+            coEvery { accountRepo.loginWithPassword("13800138000", "123456") } returns Result.Success(account)
+            coEvery { accountRepo.syncLocalLibrary() } returns Result.Success(
+                NeteaseSyncSummary(2, 8)
+            )
+
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock(), accountRepo)
+            viewModel.showLoginSheet(true)
+            viewModel.loginWithPassword("13800138000", "123456")
+
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { accountRepo.loginWithPassword("13800138000", "123456") }
+            coVerify(exactly = 1) { accountRepo.syncLocalLibrary() }
+            assertFalse(viewModel.state.value.showLoginSheet)
+            assertEquals("已同步 2 个歌单，收藏 8 首", viewModel.state.value.syncMessage)
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
     @Test
@@ -63,7 +126,7 @@ class LibraryViewModelTest {
             coEvery { localRepo.createPlaylist("夜曲合集") } returns Playlist(id = "local-1", name = "夜曲合集")
             coEvery { localRepo.addAllToPlaylist("local-1", importedTracks) } returns Unit
 
-            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock(), createNeteaseAccountRepositoryMock())
             viewModel.showImportDialog(true)
             viewModel.importPlaylist(
                 platform = Platform.NETEASE,
@@ -113,7 +176,7 @@ class LibraryViewModelTest {
             coEvery { localRepo.createPlaylist("QQ收藏") } returns Playlist(id = "local-qq-1", name = "QQ收藏")
             coEvery { localRepo.addAllToPlaylist("local-qq-1", importedTracks) } returns Unit
 
-            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock(), createNeteaseAccountRepositoryMock())
             viewModel.showImportDialog(true)
             viewModel.importPlaylist(
                 platform = Platform.QQ,
@@ -163,7 +226,7 @@ class LibraryViewModelTest {
             coEvery { localRepo.createPlaylist("手机QQ收藏") } returns Playlist(id = "local-qq-mobile-1", name = "手机QQ收藏")
             coEvery { localRepo.addAllToPlaylist("local-qq-mobile-1", importedTracks) } returns Unit
 
-            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock(), createNeteaseAccountRepositoryMock())
             viewModel.showImportDialog(true)
             viewModel.importPlaylist(
                 platform = Platform.QQ,
@@ -198,7 +261,7 @@ class LibraryViewModelTest {
             every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
             every { localRepo.getLocalTrackCount() } returns flowOf(0)
 
-            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock())
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock(), createNeteaseAccountRepositoryMock())
             viewModel.showImportDialog(true)
             viewModel.importPlaylist(
                 platform = Platform.QQ,
