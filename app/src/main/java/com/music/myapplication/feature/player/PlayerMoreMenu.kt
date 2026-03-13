@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.GraphicEq
@@ -61,7 +60,6 @@ data class MenuActionItem(
 fun PlayerMoreMenu(
     onDismiss: () -> Unit,
     onSleepTimer: () -> Unit,
-    onQueueManager: () -> Unit,
     onVideoPlayer: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onShare: () -> Unit,
@@ -90,11 +88,11 @@ fun PlayerMoreMenu(
             }
         ),
         MenuActionItem(
-            icon = Icons.AutoMirrored.Filled.QueueMusic,
-            label = "播放队列",
+            icon = Icons.Default.GraphicEq,
+            label = "均衡器",
             onClick = {
                 onDismiss()
-                onQueueManager()
+                onEqualizer()
             }
         ),
         MenuActionItem(
@@ -103,14 +101,6 @@ fun PlayerMoreMenu(
             onClick = {
                 onDismiss()
                 onVideoPlayer()
-            }
-        ),
-        MenuActionItem(
-            icon = Icons.Default.GraphicEq,
-            label = "均衡器",
-            onClick = {
-                onDismiss()
-                onEqualizer()
             }
         ),
         MenuActionItem(

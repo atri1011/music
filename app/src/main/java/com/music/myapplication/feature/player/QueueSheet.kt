@@ -64,6 +64,11 @@ fun QueueSheet(
     val itemHeights = remember { mutableMapOf<Int, Int>() }
     var draggingIndex by remember { mutableIntStateOf(-1) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val queueStatusText = when {
+        queue.isEmpty() -> "暂无待播歌曲"
+        currentIndex in queue.indices -> "正在播放 ${currentIndex + 1} / ${queue.size} · 长按拖拽排序"
+        else -> "共 ${queue.size} 首 · 长按拖拽排序"
+    }
 
     LaunchedEffect(queue.size) {
         if (draggingIndex > queue.lastIndex) {
@@ -118,13 +123,11 @@ fun QueueSheet(
                         text = "播放队列 (${queue.size})",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    if (queue.isNotEmpty()) {
-                        Text(
-                            text = "长按拖拽排序",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = queueStatusText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 if (queue.isNotEmpty()) {
                     TextButton(

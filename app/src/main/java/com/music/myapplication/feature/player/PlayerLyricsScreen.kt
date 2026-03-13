@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Forum
@@ -37,6 +38,9 @@ import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
@@ -63,6 +67,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +84,7 @@ import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.domain.model.LyricLine
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.TrackComment
 import com.music.myapplication.domain.repository.TrackCommentSort
@@ -186,7 +192,7 @@ fun PlayerLyricsScreen(
                         }
                     }
                 } else {
-                    // Lyrics/Info page: small cover + title/artist + heart + more
+                    // Lyrics/Info page: small cover + title/artist + more
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -217,14 +223,6 @@ fun PlayerLyricsScreen(
                                 color = Color.White.copy(alpha = 0.6f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        IconButton(onClick = playerViewModel::toggleFavorite) {
-                            Icon(
-                                imageVector = if (currentTrack.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                contentDescription = "收藏",
-                                tint = if (currentTrack.isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.7f),
-                                modifier = Modifier.size(20.dp)
                             )
                         }
                         IconButton(onClick = { showMoreMenu = true }) {
@@ -279,18 +277,17 @@ fun PlayerLyricsScreen(
                     .padding(vertical = 12.dp)
             )
 
-            if (pagerState.currentPage == 0) {
-                CoverActionRow(
-                    isFavorite = currentTrack.isFavorite,
-                    onOpenVideo = onNavigateToVideoPlayer?.let { { it(currentTrack) } },
-                    onToggleFavorite = playerViewModel::toggleFavorite,
-                    onShowComments = playerViewModel::showComments,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
+            SecondaryActionRow(
+                isFavorite = currentTrack.isFavorite,
+                onOpenVideo = onNavigateToVideoPlayer?.let { { it(currentTrack) } },
+                onToggleFavorite = playerViewModel::toggleFavorite,
+                onShowComments = playerViewModel::showComments,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Progress bar + time
             PlayerProgressSection(
@@ -302,14 +299,17 @@ fun PlayerLyricsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // Play controls
-            PlayControlRow(
+            TransportControlRow(
                 isPlaying = staticState.isPlaying,
+                playbackMode = staticState.playbackMode,
+                onToggleMode = playerViewModel::togglePlaybackMode,
                 onPlayPause = playerViewModel::togglePlayPause,
                 onPrevious = playerViewModel::skipPrevious,
                 onNext = playerViewModel::skipNext,
+                onOpenQueue = { showQueueSheet = true },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 40.dp)
+                    .padding(horizontal = 24.dp)
             )
         }
 
@@ -326,7 +326,6 @@ fun PlayerLyricsScreen(
             PlayerMoreMenu(
                 onDismiss = { showMoreMenu = false },
                 onSleepTimer = { showSleepTimerPicker = true },
-                onQueueManager = { showQueueSheet = true },
                 onVideoPlayer = { onNavigateToVideoPlayer?.invoke(currentTrack) },
                 onAddToPlaylist = {
                     showMoreMenu = false
@@ -484,7 +483,7 @@ private fun CoverPage(
 }
 
 @Composable
-private fun CoverActionRow(
+private fun SecondaryActionRow(
     isFavorite: Boolean,
     onOpenVideo: (() -> Unit)?,
     onToggleFavorite: () -> Unit,
@@ -500,10 +499,10 @@ private fun CoverActionRow(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        CoverActionButton(
+        SecondaryActionButton(
             onClick = onOpenVideo ?: {},
             icon = Icons.Default.OndemandVideo,
-            contentDescription = "Open video",
+            contentDescription = "视频",
             enabled = onOpenVideo != null,
             buttonSize = buttonSize,
             iconSize = iconSize
@@ -511,10 +510,10 @@ private fun CoverActionRow(
 
         Spacer(modifier = Modifier.width(buttonSpacing))
 
-        CoverActionButton(
+        SecondaryActionButton(
             onClick = onToggleFavorite,
             icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-            contentDescription = "Favorite",
+            contentDescription = "收藏",
             tint = if (isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.72f),
             buttonSize = buttonSize,
             iconSize = iconSize
@@ -522,10 +521,10 @@ private fun CoverActionRow(
 
         Spacer(modifier = Modifier.width(buttonSpacing))
 
-        CoverActionButton(
+        SecondaryActionButton(
             onClick = onShowComments,
             icon = Icons.Default.Forum,
-            contentDescription = "Comments",
+            contentDescription = "评论",
             buttonSize = buttonSize,
             iconSize = iconSize
         )
@@ -533,9 +532,9 @@ private fun CoverActionRow(
 }
 
 @Composable
-private fun CoverActionButton(
+private fun SecondaryActionButton(
     onClick: () -> Unit,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     contentDescription: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
@@ -1215,19 +1214,27 @@ private fun PlayerProgressSection(
 // ── Play Controls ───────────────────────────────────────────────────────────
 
 @Composable
-private fun PlayControlRow(
+private fun TransportControlRow(
     isPlaying: Boolean,
+    playbackMode: PlaybackMode,
+    onToggleMode: () -> Unit,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onPrevious) {
+        TransportEdgeControl(
+            icon = playbackMode.icon(),
+            contentDescription = "播放模式",
+            onClick = onToggleMode
+        )
+        IconButton(onClick = onPrevious, modifier = Modifier.size(56.dp)) {
             Icon(
                 imageVector = Icons.Default.SkipPrevious,
                 contentDescription = "上一首",
@@ -1249,7 +1256,7 @@ private fun PlayControlRow(
                 tint = Color.White
             )
         }
-        IconButton(onClick = onNext) {
+        IconButton(onClick = onNext, modifier = Modifier.size(56.dp)) {
             Icon(
                 imageVector = Icons.Default.SkipNext,
                 contentDescription = "下一首",
@@ -1257,6 +1264,31 @@ private fun PlayControlRow(
                 tint = Color.White
             )
         }
+        TransportEdgeControl(
+            icon = Icons.AutoMirrored.Filled.QueueMusic,
+            contentDescription = "播放队列",
+            onClick = onOpenQueue
+        )
+    }
+}
+
+@Composable
+private fun TransportEdgeControl(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(56.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(24.dp),
+            tint = Color.White.copy(alpha = 0.9f)
+        )
     }
 }
 
@@ -1288,6 +1320,12 @@ private fun resolveCoverLyricsPreview(
         currentLine = currentLine,
         nextLine = nextLine
     )
+}
+
+private fun PlaybackMode.icon(): ImageVector = when (this) {
+    PlaybackMode.SEQUENTIAL -> Icons.Default.Repeat
+    PlaybackMode.SHUFFLE -> Icons.Default.Shuffle
+    PlaybackMode.REPEAT_ONE -> Icons.Default.RepeatOne
 }
 
 @Composable
