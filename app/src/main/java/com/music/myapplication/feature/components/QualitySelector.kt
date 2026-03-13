@@ -1,14 +1,17 @@
 package com.music.myapplication.feature.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -40,11 +43,18 @@ fun QualitySelector(
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
 
-    OutlinedButton(
+    ChoicePill(
+        selected = true,
         onClick = { showSheet = true },
         modifier = modifier
     ) {
-        Text(QUALITY_LABELS[currentQuality] ?: currentQuality)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(QUALITY_LABELS[currentQuality] ?: currentQuality)
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null
+            )
+        }
     }
 
     if (showSheet) {
@@ -63,7 +73,6 @@ fun QualitySelector(
                         headlineContent = { Text(QUALITY_LABELS[quality] ?: quality) },
                         supportingContent = { Text(quality) },
                         modifier = Modifier
-                            .fillMaxWidth()
                             .clickable {
                                 onQualitySelected(quality)
                                 scope.launch {

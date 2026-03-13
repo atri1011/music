@@ -15,7 +15,6 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -44,7 +43,11 @@ import com.music.myapplication.app.navigation.Routes
 import com.music.myapplication.feature.player.MiniPlayerBar
 import com.music.myapplication.feature.player.MiniPlayerUiState
 import com.music.myapplication.feature.player.PlayerViewModel
-import com.music.myapplication.ui.theme.glassSurface
+import com.music.myapplication.ui.theme.AppShapes
+import com.music.myapplication.ui.theme.AppSpacing
+import com.music.myapplication.ui.theme.AppSurfaceTone
+import com.music.myapplication.ui.theme.appSurfaceBorderColor
+import com.music.myapplication.ui.theme.appSurfaceColor
 
 data class BottomNavItem(
     val route: Routes,
@@ -116,62 +119,71 @@ fun AppRoot(
                     MiniPlayerContainer(
                         playerViewModel = playerViewModel,
                         miniPlayerState = miniPlayerState,
+                        showResolvingIndicator = trackActionState.isResolving && chromeState.showResolvingIndicator,
                         onClick = {
                             navController.navigate(Routes.PlayerLyrics) { launchSingleTop = true }
                         },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
-                }
-
-                if (trackActionState.isResolving && chromeState.showResolvingIndicator) {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .padding(horizontal = 12.dp)
+                        modifier = Modifier.padding(
+                            start = AppSpacing.Small,
+                            end = AppSpacing.Small,
+                            top = AppSpacing.XSmall,
+                            bottom = if (chromeState.showBottomBar) AppSpacing.Small else AppSpacing.XSmall
+                        )
                     )
                 }
 
                 if (chromeState.showBottomBar) {
-                    NavigationBar(
-                        containerColor = Color.Transparent,
-                        tonalElevation = 0.dp,
+                    val navShape = RoundedCornerShape(
+                        topStart = AppShapes.XLarge,
+                        topEnd = AppShapes.XLarge
+                    )
+                    Surface(
+                        color = appSurfaceColor(AppSurfaceTone.Plain).copy(alpha = 0.97f),
+                        tonalElevation = 1.dp,
+                        shadowElevation = 12.dp,
+                        shape = navShape,
                         modifier = Modifier
-                            .glassSurface(shape = RoundedCornerShape(0.dp))
                             .border(
-                                BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f)),
-                                RoundedCornerShape(0.dp)
+                                BorderStroke(0.5.dp, appSurfaceBorderColor(AppSurfaceTone.Plain)),
+                                navShape
                             )
                     ) {
-                        bottomNavItems.forEach { item ->
-                            val selected = navBackStackEntry?.destination?.hasRoute(item.route::class) == true
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = {
-                                    navController.navigate(item.route) {
-                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                                        contentDescription = item.label
+                        NavigationBar(
+                            containerColor = Color.Transparent,
+                            tonalElevation = 0.dp
+                        ) {
+                            bottomNavItems.forEach { item ->
+                                val selected = navBackStackEntry?.destination?.hasRoute(item.route::class) == true
+                                NavigationBarItem(
+                                    selected = selected,
+                                    onClick = {
+                                        navController.navigate(item.route) {
+                                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    icon = {
+                                        Icon(
+                                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                            contentDescription = item.label
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = item.label,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                                        indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                },
-                                label = {
-                                    Text(
-                                        text = item.label,
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                            )
+                            }
                         }
                     }
                 }
@@ -191,6 +203,7 @@ fun AppRoot(
 private fun MiniPlayerContainer(
     playerViewModel: PlayerViewModel,
     miniPlayerState: MiniPlayerUiState,
+    showResolvingIndicator: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -203,6 +216,7 @@ private fun MiniPlayerContainer(
         onNext = playerViewModel::skipNext,
         onToggleFavorite = playerViewModel::toggleFavorite,
         onClick = onClick,
+        showResolvingIndicator = showResolvingIndicator,
         progressFraction = miniProgress,
         modifier = modifier
     )

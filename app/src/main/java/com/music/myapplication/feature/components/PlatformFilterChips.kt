@@ -3,6 +3,7 @@ package com.music.myapplication.feature.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,11 +98,12 @@ fun ChoicePill(
     CompositionLocalProvider(LocalContentColor provides contentColor) {
         androidx.compose.foundation.layout.Box(
             modifier = modifier
+                .defaultMinSize(minHeight = 44.dp)
                 .clip(shape)
                 .background(containerColor)
                 .border(width = 1.dp, color = borderColor, shape = shape)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             label()
         }

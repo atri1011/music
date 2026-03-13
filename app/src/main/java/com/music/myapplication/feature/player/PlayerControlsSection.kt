@@ -4,14 +4,17 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -47,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.feature.components.QualitySelector
 import com.music.myapplication.feature.components.formatDuration
+import com.music.myapplication.ui.theme.AppSpacing
 
 @Composable
 fun PlayerControlsSection(
@@ -74,18 +78,68 @@ fun PlayerControlsSection(
     }
 
     val contentColor = if (useLightContent) Color.White else MaterialTheme.colorScheme.onSurface
-    val subtleColor = if (useLightContent) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val subtleColor = if (useLightContent) Color.White.copy(alpha = 0.64f) else MaterialTheme.colorScheme.onSurfaceVariant
     val activeAccent = if (useLightContent) accentColor else MaterialTheme.colorScheme.primary
+    val toolBackground = if (useLightContent) {
+        Color.White.copy(alpha = 0.10f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val toolBorder = if (useLightContent) {
+        Color.White.copy(alpha = 0.12f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
+    }
 
     Column(modifier = modifier) {
-        QualitySelector(
-            currentQuality = staticState.quality,
-            onQualitySelected = onQualityChange
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            QualitySelector(
+                currentQuality = staticState.quality,
+                onQualitySelected = onQualityChange
+            )
 
-        Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlayerUtilityButton(
+                    onClick = onToggleMode,
+                    backgroundColor = toolBackground,
+                    borderColor = toolBorder
+                ) {
+                    Icon(
+                        imageVector = when (staticState.playbackMode) {
+                            PlaybackMode.SEQUENTIAL -> Icons.Default.Repeat
+                            PlaybackMode.SHUFFLE -> Icons.Default.Shuffle
+                            PlaybackMode.REPEAT_ONE -> Icons.Default.RepeatOne
+                        },
+                        contentDescription = "播放模式",
+                        modifier = Modifier.size(22.dp),
+                        tint = subtleColor
+                    )
+                }
 
-        // Custom Canvas-drawn slider
+                PlayerUtilityButton(
+                    onClick = onToggleFavorite,
+                    backgroundColor = toolBackground,
+                    borderColor = toolBorder
+                ) {
+                    Icon(
+                        imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = "收藏",
+                        modifier = Modifier.size(22.dp),
+                        tint = if (track.isFavorite) activeAccent else subtleColor
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(AppSpacing.Medium))
+
         val density = LocalDensity.current
         val trackHeightPx = with(density) { 4.dp.toPx() }
         val thumbRadius by animateDpAsState(
@@ -130,7 +184,6 @@ fun PlayerControlsSection(
             val currentFraction = progressFraction.coerceIn(0f, 1f)
             val thumbRadiusPx = thumbRadius.toPx()
 
-            // Inactive track (full width capsule)
             drawRoundRect(
                 color = contentColor.copy(alpha = 0.15f),
                 topLeft = Offset(0f, centerY - trackHeightPx / 2f),
@@ -138,7 +191,6 @@ fun PlayerControlsSection(
                 cornerRadius = trackCornerRadius
             )
 
-            // Active track
             if (currentFraction > 0f) {
                 drawRoundRect(
                     color = activeAccent,
@@ -148,9 +200,7 @@ fun PlayerControlsSection(
                 )
             }
 
-            // Thumb circle
             val thumbX = canvasWidth * currentFraction
-            // Shadow
             if (sliderDragging) {
                 drawCircle(
                     color = Color.Black.copy(alpha = 0.15f),
@@ -173,77 +223,107 @@ fun PlayerControlsSection(
                 text = formatDuration(
                     if (sliderDragging) (sliderPosition * progress.durationMs).toLong() else progress.positionMs
                 ),
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFeatureSettings = "tnum"
-                ),
+                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                 color = subtleColor
             )
             Text(
                 text = formatDuration(progress.durationMs),
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFeatureSettings = "tnum"
-                ),
+                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                 color = subtleColor
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.XLarge))
 
-        Row(
+        Box(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+            contentAlignment = Alignment.Center
         ) {
-            IconButton(onClick = onToggleMode) {
-                Icon(
-                    imageVector = when (staticState.playbackMode) {
-                        PlaybackMode.SEQUENTIAL -> Icons.Default.Repeat
-                        PlaybackMode.SHUFFLE -> Icons.Default.Shuffle
-                        PlaybackMode.REPEAT_ONE -> Icons.Default.RepeatOne
-                    },
-                    contentDescription = "播放模式",
-                    modifier = Modifier.size(24.dp),
-                    tint = subtleColor
-                )
-            }
-            IconButton(onClick = onPrevious) {
-                Icon(
-                    imageVector = Icons.Default.SkipPrevious,
-                    contentDescription = "上一首",
-                    modifier = Modifier.size(36.dp),
-                    tint = contentColor
-                )
-            }
-            IconButton(
-                onClick = onPlayPause,
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(activeAccent)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.Large),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = if (staticState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (staticState.isPlaying) "暂停" else "播放",
-                    modifier = Modifier.size(36.dp),
-                    tint = Color.White
-                )
-            }
-            IconButton(onClick = onNext) {
-                Icon(
-                    imageVector = Icons.Default.SkipNext,
-                    contentDescription = "下一首",
-                    modifier = Modifier.size(36.dp),
-                    tint = contentColor
-                )
-            }
-            IconButton(onClick = onToggleFavorite) {
-                Icon(
-                    imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "收藏",
-                    modifier = Modifier.size(24.dp),
-                    tint = if (track.isFavorite) activeAccent else subtleColor
-                )
+                PlayerTransportButton(
+                    onClick = onPrevious,
+                    size = 52.dp,
+                    backgroundColor = toolBackground,
+                    borderColor = toolBorder
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SkipPrevious,
+                        contentDescription = "上一首",
+                        modifier = Modifier.size(28.dp),
+                        tint = contentColor
+                    )
+                }
+
+                PlayerTransportButton(
+                    onClick = onPlayPause,
+                    size = 72.dp,
+                    backgroundColor = activeAccent,
+                    borderColor = Color.Transparent
+                ) {
+                    Icon(
+                        imageVector = if (staticState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (staticState.isPlaying) "暂停" else "播放",
+                        modifier = Modifier.size(34.dp),
+                        tint = Color.White
+                    )
+                }
+
+                PlayerTransportButton(
+                    onClick = onNext,
+                    size = 52.dp,
+                    backgroundColor = toolBackground,
+                    borderColor = toolBorder
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SkipNext,
+                        contentDescription = "下一首",
+                        modifier = Modifier.size(28.dp),
+                        tint = contentColor
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun PlayerUtilityButton(
+    onClick: () -> Unit,
+    backgroundColor: Color,
+    borderColor: Color,
+    content: @Composable () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(backgroundColor)
+            .border(1.dp, borderColor, CircleShape)
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun PlayerTransportButton(
+    onClick: () -> Unit,
+    size: androidx.compose.ui.unit.Dp,
+    backgroundColor: Color,
+    borderColor: Color,
+    content: @Composable () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(backgroundColor)
+            .border(1.dp, borderColor, CircleShape)
+    ) {
+        content()
     }
 }

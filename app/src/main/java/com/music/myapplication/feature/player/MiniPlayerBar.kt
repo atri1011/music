@@ -4,9 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -35,6 +37,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
+import com.music.myapplication.ui.theme.AppShapes
+import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.LocalGlassColors
 
 @Composable
@@ -46,11 +50,12 @@ fun MiniPlayerBar(
     onNext: () -> Unit,
     onToggleFavorite: () -> Unit = {},
     onClick: () -> Unit,
+    showResolvingIndicator: Boolean = false,
     progressFraction: Float = 0f,
     modifier: Modifier = Modifier
 ) {
     val currentTrack = track ?: return
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(AppShapes.Large)
     val glassColors = LocalGlassColors.current
 
     Column(
@@ -60,33 +65,48 @@ fun MiniPlayerBar(
             .background(glassColors.surface, shape)
             .border(0.5.dp, glassColors.border, shape)
     ) {
+        if (showResolvingIndicator) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = AppShapes.Large,
+                            topEnd = AppShapes.Large
+                        )
+                    ),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = AppSpacing.Small, vertical = AppSpacing.Small),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .defaultMinSize(minHeight = 44.dp)
+                    .clip(RoundedCornerShape(AppShapes.Medium))
                     .clickable(onClick = onClick)
-                    .padding(end = 8.dp),
+                    .padding(end = AppSpacing.XSmall),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Album cover — rounded square, more modern than circle
                 CoverImage(
                     url = currentTrack.coverUrl,
                     contentDescription = currentTrack.title,
                     modifier = Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(AppShapes.Small))
                 )
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(AppSpacing.Small))
 
-                // Song info
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = currentTrack.title,
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
@@ -94,62 +114,71 @@ fun MiniPlayerBar(
                         maxLines = 1,
                         modifier = Modifier.basicMarquee()
                     )
-                    Text(
-                        text = currentTrack.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = currentTrack.artist,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (isVipTrack(quality)) {
+                            MiniQualityBadge(quality = quality)
+                        }
+                    }
                 }
             }
 
-            // Favorite
-            IconButton(
-                onClick = onToggleFavorite,
-                modifier = Modifier.size(36.dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = if (currentTrack.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = if (currentTrack.isFavorite) "取消收藏" else "收藏",
-                    tint = if (currentTrack.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+                IconButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = if (currentTrack.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (currentTrack.isFavorite) "取消收藏" else "收藏",
+                        tint = if (currentTrack.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
 
-            // Play/Pause
-            IconButton(
-                onClick = onPlayPause,
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "暂停" else "播放",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+                IconButton(
+                    onClick = onPlayPause,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "暂停" else "播放",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
 
-            Spacer(modifier = Modifier.width(4.dp))
-
-            // Next
-            IconButton(
-                onClick = onNext,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SkipNext,
-                    contentDescription = "下一首",
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                IconButton(
+                    onClick = onNext,
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SkipNext,
+                        contentDescription = "下一首",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
-        // Mini progress bar at bottom
         val progress = progressFraction
         if (progress > 0f) {
             LinearProgressIndicator(
@@ -157,7 +186,12 @@ fun MiniPlayerBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(2.dp)
-                    .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)),
+                    .clip(
+                        RoundedCornerShape(
+                            bottomStart = AppShapes.Large,
+                            bottomEnd = AppShapes.Large
+                        )
+                    ),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = Color.Transparent
             )
@@ -166,14 +200,17 @@ fun MiniPlayerBar(
 }
 
 @Composable
-private fun VipBadge(modifier: Modifier = Modifier) {
+private fun MiniQualityBadge(
+    quality: String,
+    modifier: Modifier = Modifier
+) {
     Text(
-        text = "VIP",
+        text = quality.uppercase(),
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurface,
+        color = MaterialTheme.colorScheme.primary,
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .clip(RoundedCornerShape(AppShapes.Small))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
             .padding(horizontal = 6.dp, vertical = 2.dp)
     )
 }

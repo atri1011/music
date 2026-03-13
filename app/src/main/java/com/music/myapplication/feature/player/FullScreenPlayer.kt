@@ -11,17 +11,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.music.myapplication.ui.theme.AppShapes
+import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.playerGradientBackground
 import com.music.myapplication.ui.theme.rememberDominantColorState
 import androidx.compose.animation.animateColorAsState
@@ -76,18 +80,18 @@ fun FullScreenPlayer(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(horizontal = 24.dp)
-                .padding(top = 48.dp, bottom = 32.dp),
+                .padding(horizontal = AppSpacing.XLarge)
+                .padding(top = 32.dp, bottom = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             RotatingCover(
                 coverUrl = track.coverUrl,
                 isPlaying = staticState.isPlaying,
                 glowColor = animatedDominant,
-                modifier = Modifier.size(280.dp)
+                modifier = Modifier.size(272.dp)
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
             Text(
                 text = track.title,
@@ -98,7 +102,7 @@ fun FullScreenPlayer(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(AppSpacing.XSmall))
             Text(
                 text = track.artist,
                 style = MaterialTheme.typography.bodyMedium,
@@ -111,20 +115,28 @@ fun FullScreenPlayer(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            PlayerControlsSection(
-                staticState = staticState,
-                progress = progress,
-                onPlayPause = onPlayPause,
-                onNext = onNext,
-                onPrevious = onPrevious,
-                onSeek = onSeek,
-                onToggleMode = onToggleMode,
-                onToggleFavorite = onToggleFavorite,
-                onQualityChange = onQualityChange,
-                accentColor = animatedDominant,
-                useLightContent = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(AppShapes.XLarge))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .padding(horizontal = AppSpacing.Large, vertical = AppSpacing.XLarge)
+            ) {
+                PlayerControlsSection(
+                    staticState = staticState,
+                    progress = progress,
+                    onPlayPause = onPlayPause,
+                    onNext = onNext,
+                    onPrevious = onPrevious,
+                    onSeek = onSeek,
+                    onToggleMode = onToggleMode,
+                    onToggleFavorite = onToggleFavorite,
+                    onQualityChange = onQualityChange,
+                    accentColor = animatedDominant,
+                    useLightContent = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
