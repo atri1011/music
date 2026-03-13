@@ -33,15 +33,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,9 +62,11 @@ import com.music.myapplication.domain.model.PlaylistPreview
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.ToplistInfo
 import com.music.myapplication.feature.components.CoverImage
+import com.music.myapplication.feature.components.ChoicePill
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.PlatformFilterChips
 import com.music.myapplication.feature.components.PlaylistCard
+import com.music.myapplication.feature.components.SegmentedChoiceRow
 import com.music.myapplication.feature.components.ShimmerGridCard
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.QQMusicGreen
@@ -132,37 +128,19 @@ fun HomeScreen(
                 }
             }
 
-            // Tab row
+            // Top section switcher
             val tabs = listOf("为你推荐", "榜单", "歌单广场")
-            TabRow(
-                selectedTabIndex = state.selectedTab,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                indicator = { tabPositions ->
-                    if (state.selectedTab < tabPositions.size) {
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[state.selectedTab]),
-                            color = QQMusicGreen
-                        )
-                    }
-                },
-                divider = {},
-                modifier = Modifier.padding(horizontal = 20.dp)
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = state.selectedTab == index,
-                        onClick = { viewModel.onTabChange(index) },
-                        text = {
-                            Text(
-                                text = title,
-                                fontWeight = if (state.selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                color = if (state.selectedTab == index) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    )
-                }
+            SegmentedChoiceRow(
+                items = tabs.indices.toList(),
+                selectedItem = state.selectedTab,
+                onItemSelected = viewModel::onTabChange,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+            ) { index, selected ->
+                Text(
+                    text = tabs[index],
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                )
             }
 
             when (state.selectedTab) {
@@ -907,26 +885,29 @@ private fun PlaylistSquareContent(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
         )
 
-        // Category chips
+        // Category pills
         if (state.playlistCategories.isNotEmpty()) {
-            ScrollableTabRow(
-                selectedTabIndex = state.playlistCategories.indexOfFirst {
-                    it.name == state.selectedPlaylistCategory
-                }.coerceAtLeast(0),
-                containerColor = Color.Transparent,
-                edgePadding = 16.dp,
-                divider = {},
-                indicator = {},
-                modifier = Modifier.padding(vertical = 4.dp)
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                state.playlistCategories.forEach { category ->
+                items(
+                    items = state.playlistCategories,
+                    key = { it.name }
+                ) { category ->
                     val selected = category.name == state.selectedPlaylistCategory
-                    FilterChip(
+                    ChoicePill(
                         selected = selected,
-                        onClick = { onCategoryChange(category.name) },
-                        label = { Text(category.name, maxLines = 1) },
-                        modifier = Modifier.padding(end = 4.dp)
-                    )
+                        onClick = { onCategoryChange(category.name) }
+                    ) {
+                        Text(
+                            text = category.name,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                        )
+                    }
                 }
             }
         }

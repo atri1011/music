@@ -44,8 +44,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,6 +75,7 @@ import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.components.PlatformFilterChips
+import com.music.myapplication.feature.components.SegmentedChoiceRow
 import com.music.myapplication.feature.components.ShimmerMediaListItem
 import com.music.myapplication.feature.player.AddTrackToPlaylistSheet
 import com.music.myapplication.feature.player.TrackMoreMenu
@@ -487,29 +486,17 @@ private fun SearchTypeTabRow(
     modifier: Modifier = Modifier
 ) {
     val types = SearchType.entries
-    val selectedIndex = types.indexOf(selectedType)
-
-    ScrollableTabRow(
-        selectedTabIndex = selectedIndex,
-        modifier = modifier,
-        edgePadding = 16.dp,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        divider = {}
-    ) {
-        types.forEach { type ->
-            Tab(
-                selected = type == selectedType,
-                onClick = { onTypeSelected(type) },
-                text = {
-                    Text(
-                        text = type.displayName,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (type == selectedType) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
-            )
-        }
+    SegmentedChoiceRow(
+        items = types,
+        selectedItem = selectedType,
+        onItemSelected = onTypeSelected,
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+    ) { type, selected ->
+        Text(
+            text = type.displayName,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+        )
     }
 }
 
