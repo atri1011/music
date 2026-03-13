@@ -8,8 +8,10 @@ import com.music.myapplication.core.database.dao.PlaylistSongsDao
 import com.music.myapplication.core.database.dao.PlaylistsDao
 import com.music.myapplication.core.database.entity.PlaylistEntity
 import com.music.myapplication.core.database.entity.PlaylistRemoteMapEntity
+import com.music.myapplication.core.database.entity.PlaylistSongEntity
 import com.music.myapplication.core.database.mapper.toFavoriteEntity
 import com.music.myapplication.core.database.mapper.toPlaylistSongEntity
+import com.music.myapplication.core.database.mapper.toTrack
 import com.music.myapplication.core.datastore.NeteaseAccountStore
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.network.retrofit.NeteaseCloudApiEnhancedApi
@@ -23,7 +25,6 @@ import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.NeteaseAccountRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
-import dagger.hilt.android.scopes.ViewModelScoped
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -271,16 +272,20 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
 
             val likedSongIds = likeListResponse.jsonObjectOrNull()?.jsonArrayAt("ids")
                 ?.mapNotNull { it.jsonPrimitiveOrNull()?.contentOrNull }
+                ?.distinct()
                 .orEmpty()
-            val likedTracks = fetchNeteaseTracksByIds(likedSongIds)
-            likedTracks.forEach { favoritesDao.insert(it.copy(isFavorite = true).toFavoriteEntity()) }
+            val localNeteaseFavoriteIds = favoritesDao.getSongIdsByPlatform(Platform.NETEASE.id)
+                .toHashSet()
+            val newlyLikedSongIds = likedSongIds.filterNot(localNeteaseFavoriteIds::contains)
+            val newlyLikedTracks = fetchNeteaseTracksByIds(newlyLikedSongIds)
+            newlyLikedTracks.forEach { favoritesDao.insert(it.copy(isFavorite = true).toFavoriteEntity()) }
 
             val updatedSession = currentSession.copy(lastSyncAt = now())
             accountStore.saveSession(updatedSession)
             Result.Success(
                 NeteaseSyncSummary(
                     syncedPlaylistCount = remotePlaylists.size,
-                    syncedFavoriteCount = likedTracks.size
+                    syncedFavoriteCount = newlyLikedTracks.size
                 )
             )
         } catch (e: Exception) {
@@ -329,46 +334,100 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
         session: NeteaseAccountSession,
         remotePlaylist: RemotePlaylistSummary
     ) {
+        val ownerUid = session.userId.toString()
         val mapping = playlistRemoteMapDao.getByRemoteSource(
             sourcePlatform = Platform.NETEASE.id,
             sourcePlaylistId = remotePlaylist.id,
-            ownerUid = session.userId.toString()
+            ownerUid = ownerUid
         )
-        val localPlaylistId = mapping?.playlistId ?: UUID.randomUUID().toString()
-        val now = now()
-        val currentEntity = playlistsDao.getById(localPlaylistId)
-
-        val playlistEntity = PlaylistEntity(
-            playlistId = localPlaylistId,
-            name = remotePlaylist.name,
-            coverUrl = remotePlaylist.coverUrl,
-            createdAt = currentEntity?.createdAt ?: now,
-            updatedAt = now
-        )
-        playlistsDao.insert(playlistEntity)
-
-        when (val detailResult = onlineRepo.getPlaylistDetail(Platform.NETEASE, remotePlaylist.id)) {
-            is Result.Success -> {
-                val tracks = detailResult.data
-                playlistSongsDao.replacePlaylistSongs(
-                    playlistId = localPlaylistId,
-                    entities = tracks.mapIndexed { index, track ->
-                        track.toPlaylistSongEntity(localPlaylistId, index)
-                    }
-                )
-                playlistRemoteMapDao.insert(
-                    PlaylistRemoteMapEntity(
-                        playlistId = localPlaylistId,
-                        sourcePlatform = Platform.NETEASE.id,
-                        sourcePlaylistId = remotePlaylist.id,
-                        ownerUid = session.userId.toString(),
-                        lastSyncedAt = now
-                    )
-                )
-            }
-            is Result.Error -> throw IllegalStateException(detailResult.error.message)
-            is Result.Loading -> Unit
+        val syncedAt = now()
+        val remoteSignature = remotePlaylist.toRemoteSignature()
+        if (mapping != null && mapping.remoteSignature == remoteSignature) {
+            return
         }
+
+        val tracks = when (val detailResult = onlineRepo.getPlaylistDetail(Platform.NETEASE, remotePlaylist.id)) {
+            is Result.Success -> detailResult.data
+            is Result.Error -> throw IllegalStateException(
+                detailResult.error.message.ifBlank { "获取网易歌单详情失败" }
+            )
+            is Result.Loading -> return
+        }
+
+        if (mapping == null) {
+            val remoteSongSignature = tracks.toTrackSignature()
+            val newPlaylistId = UUID.randomUUID().toString()
+            upsertPlaylistAndSongs(
+                playlistId = newPlaylistId,
+                playlistName = remotePlaylist.name,
+                coverUrl = remotePlaylist.coverUrl,
+                tracks = tracks,
+                syncedAt = syncedAt
+            )
+            playlistRemoteMapDao.insert(
+                PlaylistRemoteMapEntity(
+                    playlistId = newPlaylistId,
+                    sourcePlatform = Platform.NETEASE.id,
+                    sourcePlaylistId = remotePlaylist.id,
+                    ownerUid = ownerUid,
+                    remoteSignature = remoteSignature,
+                    lastSyncedSongSignature = remoteSongSignature,
+                    lastSyncedAt = syncedAt
+                )
+            )
+            return
+        }
+
+        val localSongs = playlistSongsDao.getSongsByPlaylistOnce(mapping.playlistId)
+        val mergedTracks = mergeRemoteAndLocalTracks(
+            remoteTracks = tracks,
+            localSongs = localSongs
+        )
+        val mergedSongSignature = mergedTracks.toTrackSignature()
+
+        upsertPlaylistAndSongs(
+            playlistId = mapping.playlistId,
+            playlistName = remotePlaylist.name,
+            coverUrl = remotePlaylist.coverUrl,
+            tracks = mergedTracks,
+            syncedAt = syncedAt
+        )
+        playlistRemoteMapDao.insert(
+            PlaylistRemoteMapEntity(
+                playlistId = mapping.playlistId,
+                sourcePlatform = Platform.NETEASE.id,
+                sourcePlaylistId = remotePlaylist.id,
+                ownerUid = ownerUid,
+                remoteSignature = remoteSignature,
+                lastSyncedSongSignature = mergedSongSignature,
+                lastSyncedAt = syncedAt
+            )
+        )
+    }
+
+    private suspend fun upsertPlaylistAndSongs(
+        playlistId: String,
+        playlistName: String,
+        coverUrl: String,
+        tracks: List<Track>,
+        syncedAt: Long
+    ) {
+        val currentEntity = playlistsDao.getById(playlistId)
+        playlistsDao.insert(
+            PlaylistEntity(
+                playlistId = playlistId,
+                name = playlistName,
+                coverUrl = coverUrl,
+                createdAt = currentEntity?.createdAt ?: syncedAt,
+                updatedAt = syncedAt
+            )
+        )
+        playlistSongsDao.replacePlaylistSongs(
+            playlistId = playlistId,
+            entities = tracks.mapIndexed { index, track ->
+                track.toPlaylistSongEntity(playlistId, index)
+            }
+        )
     }
 
     private suspend fun fetchNeteaseTracksByIds(songIds: List<String>): List<Track> {
@@ -419,7 +478,15 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
         val id = long("id")?.toString() ?: string("id") ?: return null
         val name = string("name").orEmpty().ifBlank { return null }
         val coverUrl = string("coverImgUrl").orEmpty()
-        return RemotePlaylistSummary(id = id, name = name, coverUrl = coverUrl)
+        val trackCount = int("trackCount")
+        val updateTime = long("updateTime")
+        return RemotePlaylistSummary(
+            id = id,
+            name = name,
+            coverUrl = coverUrl,
+            trackCount = trackCount,
+            updateTime = updateTime
+        )
     }
 
     private fun JsonObject.toTrack(): Track? {
@@ -474,6 +541,31 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
 
     private fun JsonObject.int(key: String): Int? = string(key)?.toIntOrNull()
 
+    private fun RemotePlaylistSummary.toRemoteSignature(): String {
+        return if (updateTime != null || trackCount != null) {
+            "ut=${updateTime ?: -1}|tc=${trackCount ?: -1}|n=$name|c=$coverUrl"
+        } else {
+            "n=$name|c=$coverUrl|tc=${trackCount ?: -1}"
+        }
+    }
+
+    private fun List<Track>.toTrackSignature(): String =
+        joinToString(separator = "|") { "${it.platform.id}:${it.id}" }
+
+    private fun mergeRemoteAndLocalTracks(
+        remoteTracks: List<Track>,
+        localSongs: List<PlaylistSongEntity>
+    ): List<Track> {
+        if (localSongs.isEmpty()) return remoteTracks
+        val remoteKeys = remoteTracks
+            .map { "${it.platform.id}:${it.id}" }
+            .toHashSet()
+        val localOnlyTracks = localSongs
+            .filter { localSong -> "${localSong.platform}:${localSong.songId}" !in remoteKeys }
+            .map { it.toTrack() }
+        return remoteTracks + localOnlyTracks
+    }
+
     private suspend fun recoverSessionFromPlaylistProbe(
         baseUrl: String,
         savedSession: NeteaseAccountSession,
@@ -510,7 +602,9 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
     private data class RemotePlaylistSummary(
         val id: String,
         val name: String,
-        val coverUrl: String
+        val coverUrl: String,
+        val trackCount: Int? = null,
+        val updateTime: Long? = null
     )
 
     private companion object {

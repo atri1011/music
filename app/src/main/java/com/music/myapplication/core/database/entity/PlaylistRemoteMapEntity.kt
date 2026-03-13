@@ -34,6 +34,10 @@ data class PlaylistRemoteMapEntity(
     val sourcePlaylistId: String,
     @ColumnInfo(name = "owner_uid")
     val ownerUid: String,
+    @ColumnInfo(name = "remote_signature")
+    val remoteSignature: String = "",
+    @ColumnInfo(name = "last_synced_song_signature")
+    val lastSyncedSongSignature: String = "",
     @ColumnInfo(name = "last_synced_at")
     val lastSyncedAt: Long = System.currentTimeMillis()
 )

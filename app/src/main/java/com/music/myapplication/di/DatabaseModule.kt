@@ -6,6 +6,7 @@ import com.music.myapplication.core.database.AppDatabase
 import com.music.myapplication.core.database.MIGRATION_1_2
 import com.music.myapplication.core.database.MIGRATION_2_3
 import com.music.myapplication.core.database.MIGRATION_3_4
+import com.music.myapplication.core.database.MIGRATION_4_5
 import com.music.myapplication.core.database.dao.*
 import dagger.Module
 import dagger.Provides
@@ -22,7 +23,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "music_db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
     @Provides

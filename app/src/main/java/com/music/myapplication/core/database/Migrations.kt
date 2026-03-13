@@ -79,3 +79,20 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         )
     }
 }
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            ALTER TABLE `playlist_remote_map`
+            ADD COLUMN `remote_signature` TEXT NOT NULL DEFAULT ''
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            ALTER TABLE `playlist_remote_map`
+            ADD COLUMN `last_synced_song_signature` TEXT NOT NULL DEFAULT ''
+            """.trimIndent()
+        )
+    }
+}
