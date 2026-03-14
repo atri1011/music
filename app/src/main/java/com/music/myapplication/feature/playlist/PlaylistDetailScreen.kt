@@ -1,6 +1,7 @@
 package com.music.myapplication.feature.playlist
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +82,8 @@ fun PlaylistDetailScreen(
     var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var trackPendingPlaylistAddition by remember { mutableStateOf<Track?>(null) }
     val displayTracks = if (state.isEditMode) state.editingTracks else state.tracks
+    val selectedFavoriteCount = state.selectedFavoriteKeys.size
+    val areAllFavoritesSelected = displayTracks.isNotEmpty() && selectedFavoriteCount == displayTracks.size
     val itemHeights = remember { mutableMapOf<Int, Int>() }
     var draggingIndex by remember { mutableIntStateOf(-1) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
@@ -88,12 +92,12 @@ fun PlaylistDetailScreen(
         viewModel.loadPlaylist(playlistId, platform, title, source)
     }
 
-    LaunchedEffect(state.isEditMode, displayTracks.size) {
+    LaunchedEffect(state.isEditMode, state.isFavoritesSelectionMode, displayTracks.size) {
         if (!state.isEditMode || draggingIndex > displayTracks.lastIndex) {
             draggingIndex = -1
             dragOffsetY = 0f
         }
-        if (state.isEditMode) {
+        if (state.isEditMode || state.isFavoritesSelectionMode) {
             selectedTrackForMenu = null
         }
     }
@@ -158,13 +162,21 @@ fun PlaylistDetailScreen(
                             coverUrl = headerCoverUrl,
                             trackCount = displayTracks.size,
                             isFavoritesCollection = state.isFavoritesCollection,
+                            isFavoritesSelectionMode = state.isFavoritesSelectionMode,
+                            selectedFavoritesCount = selectedFavoriteCount,
+                            areAllFavoritesSelected = areAllFavoritesSelected,
                             isEditable = state.isLocalPlaylist,
                             isEditMode = state.isEditMode,
                             isSavingEdits = state.isSavingEdits,
+                            isDeletingFavorites = state.isDeletingFavorites,
                             onBack = onBack,
                             onEdit = viewModel::enterEditMode,
                             onCancelEdit = viewModel::cancelEditMode,
                             onSaveEdit = viewModel::commitPlaylistEdits,
+                            onEnterFavoritesSelection = viewModel::enterFavoritesSelectionMode,
+                            onCancelFavoritesSelection = viewModel::cancelFavoritesSelectionMode,
+                            onToggleSelectAllFavorites = viewModel::toggleSelectAllFavorites,
+                            onDeleteSelectedFavorites = viewModel::deleteSelectedFavorites,
                             onPlayAll = {
                                 if (displayTracks.isNotEmpty()) {
                                     playerViewModel.playTrack(displayTracks.first(), displayTracks, 0)
@@ -185,15 +197,22 @@ fun PlaylistDetailScreen(
                         item(key = "edit_hint", contentType = "hint") {
                             EditModeHint(trackCount = displayTracks.size)
                         }
-                        state.editMessage?.let { message ->
-                            item(key = "edit_message", contentType = "message") {
-                                Text(
-                                    text = message,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-                                )
-                            }
+                    }
+
+                    if (state.isFavoritesSelectionMode) {
+                        item(key = "favorite_select_hint", contentType = "hint") {
+                            FavoritesSelectionHint(trackCount = selectedFavoriteCount)
+                        }
+                    }
+
+                    state.editMessage?.let { message ->
+                        item(key = "edit_message", contentType = "message") {
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                            )
                         }
                     }
 
@@ -221,6 +240,13 @@ fun PlaylistDetailScreen(
                                     dragOffsetY = 0f
                                 }
                             )
+                        } else if (state.isFavoritesSelectionMode) {
+                            SelectableFavoriteItem(
+                                track = track,
+                                index = index,
+                                selected = "${track.platform.id}:${track.id}" in state.selectedFavoriteKeys,
+                                onToggle = { viewModel.toggleFavoriteSelection(track) }
+                            )
                         } else {
                             MediaListItem(
                                 track = track,
@@ -239,7 +265,7 @@ fun PlaylistDetailScreen(
         }
     }
 
-    if (!state.isEditMode) {
+    if (!state.isEditMode && !state.isFavoritesSelectionMode) {
         selectedTrackForMenu?.let { track ->
             TrackMoreMenu(
                 onDismiss = { selectedTrackForMenu = null },
@@ -268,13 +294,21 @@ private fun PlaylistHeader(
     coverUrl: String,
     trackCount: Int,
     isFavoritesCollection: Boolean,
+    isFavoritesSelectionMode: Boolean,
+    selectedFavoritesCount: Int,
+    areAllFavoritesSelected: Boolean,
     isEditable: Boolean,
     isEditMode: Boolean,
     isSavingEdits: Boolean,
+    isDeletingFavorites: Boolean,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onCancelEdit: () -> Unit,
     onSaveEdit: () -> Unit,
+    onEnterFavoritesSelection: () -> Unit,
+    onCancelFavoritesSelection: () -> Unit,
+    onToggleSelectAllFavorites: () -> Unit,
+    onDeleteSelectedFavorites: () -> Unit,
     onPlayAll: () -> Unit
 ) {
     Box(
@@ -329,25 +363,58 @@ private fun PlaylistHeader(
                         tint = Color.White
                     )
                 }
-                if (isEditable) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isEditMode) {
-                            HeaderActionButton(
-                                text = "取消",
-                                enabled = !isSavingEdits,
-                                onClick = onCancelEdit
-                            )
-                            HeaderActionButton(
-                                text = if (isSavingEdits) "保存中..." else "完成",
-                                enabled = !isSavingEdits,
-                                onClick = onSaveEdit
-                            )
-                        } else {
-                            HeaderActionButton(
-                                text = "编辑",
-                                enabled = true,
-                                onClick = onEdit
-                            )
+                when {
+                    isEditable -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isEditMode) {
+                                HeaderActionButton(
+                                    text = "取消",
+                                    enabled = !isSavingEdits,
+                                    onClick = onCancelEdit
+                                )
+                                HeaderActionButton(
+                                    text = if (isSavingEdits) "保存中..." else "完成",
+                                    enabled = !isSavingEdits,
+                                    onClick = onSaveEdit
+                                )
+                            } else {
+                                HeaderActionButton(
+                                    text = "编辑",
+                                    enabled = true,
+                                    onClick = onEdit
+                                )
+                            }
+                        }
+                    }
+                    isFavoritesCollection && trackCount > 0 -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isFavoritesSelectionMode) {
+                                HeaderActionButton(
+                                    text = "取消",
+                                    enabled = !isDeletingFavorites,
+                                    onClick = onCancelFavoritesSelection
+                                )
+                                HeaderActionButton(
+                                    text = if (areAllFavoritesSelected) "清空" else "全选",
+                                    enabled = !isDeletingFavorites,
+                                    onClick = onToggleSelectAllFavorites
+                                )
+                                HeaderActionButton(
+                                    text = if (isDeletingFavorites) {
+                                        "删除中..."
+                                    } else {
+                                        "删除($selectedFavoritesCount)"
+                                    },
+                                    enabled = selectedFavoritesCount > 0 && !isDeletingFavorites,
+                                    onClick = onDeleteSelectedFavorites
+                                )
+                            } else {
+                                HeaderActionButton(
+                                    text = "管理",
+                                    enabled = true,
+                                    onClick = onEnterFavoritesSelection
+                                )
+                            }
                         }
                     }
                 }
@@ -400,6 +467,7 @@ private fun PlaylistHeader(
 
                 Text(
                     text = when {
+                        isFavoritesSelectionMode -> "已选择 ${selectedFavoritesCount} 首"
                         isEditMode -> "编辑模式 · ${trackCount}首歌曲"
                         isFavoritesCollection -> "我喜欢的歌 · ${trackCount}首"
                         else -> "${trackCount}首歌曲"
@@ -411,7 +479,7 @@ private fun PlaylistHeader(
             }
 
             // Play all button
-            if (trackCount > 0 && !isEditMode) {
+            if (trackCount > 0 && !isEditMode && !isFavoritesSelectionMode) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -504,6 +572,79 @@ private fun EditModeHint(trackCount: Int) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
     )
+}
+
+@Composable
+private fun FavoritesSelectionHint(trackCount: Int) {
+    Text(
+        text = if (trackCount > 0) {
+            "已选 $trackCount 首，点右上角“删除”可批量移出收藏。"
+        } else {
+            "点列表前面的勾选框，选择要删除的歌曲。"
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+    )
+}
+
+@Composable
+private fun SelectableFavoriteItem(
+    track: Track,
+    index: Int,
+    selected: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clickable(onClick = onToggle)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                else MaterialTheme.colorScheme.surface
+            )
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = selected,
+            onCheckedChange = { onToggle() }
+        )
+        Text(
+            text = "${index + 1}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(24.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        CoverImage(
+            url = track.coverUrl,
+            contentDescription = track.title,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = track.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+    }
 }
 
 @Composable

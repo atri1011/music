@@ -97,6 +97,17 @@ interface NeteaseCloudApiEnhancedApi {
     ): JsonElement
 
     @GET
+    suspend fun playlistTrackAll(
+        @Url url: String,
+        @Query("id") id: String,
+        @Query("limit") limit: Int = 1000,
+        @Query("offset") offset: Int = 0,
+        @Query("cookie") cookie: String,
+        @Query("realIP") realIp: String? = null,
+        @Query("timestamp") timestamp: Long
+    ): JsonElement
+
+    @GET
     suspend fun likeList(
         @Url url: String,
         @Query("uid") uid: Long,

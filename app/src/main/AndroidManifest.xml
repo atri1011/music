@@ -48,6 +48,12 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <meta-data
             android:name="com.android.automotive"
             android:resource="@xml/automotive_app_desc" />

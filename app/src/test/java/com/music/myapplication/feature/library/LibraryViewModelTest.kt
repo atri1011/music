@@ -17,6 +17,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -93,6 +94,87 @@ class LibraryViewModelTest {
             coVerify(exactly = 1) { accountRepo.syncLocalLibrary() }
             assertFalse(viewModel.state.value.showLoginSheet)
             assertEquals("已同步 2 个歌单，收藏 8 首", viewModel.state.value.syncMessage)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun syncNeteaseDataIgnoresDuplicateTriggerWhileRunning() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val accountRepo = mockk<NeteaseAccountRepository>()
+            val account = NeteaseAccountSession(
+                userId = 9527L,
+                nickname = "测试云村用户",
+                cookie = "MUSIC_U=test_cookie"
+            )
+
+            every { localRepo.getFavorites() } returns flowOf(emptyList())
+            every { localRepo.getTopPlayedTracks(any()) } returns flowOf(emptyList())
+            every { localRepo.getPlaylists() } returns flowOf(emptyList())
+            every { localRepo.getTotalPlayCount() } returns flowOf(0)
+            every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
+            every { localRepo.getLocalTrackCount() } returns flowOf(0)
+
+            every { accountRepo.session } returns flowOf(account)
+            every { accountRepo.isConfigured } returns flowOf(true)
+            coEvery { accountRepo.refreshLoginStatus() } returns Result.Success(null)
+            coEvery { accountRepo.syncLocalLibrary() } coAnswers {
+                delay(1_000)
+                Result.Success(NeteaseSyncSummary(1, 1))
+            }
+
+            val viewModel = LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock(), accountRepo)
+            viewModel.syncNeteaseData()
+            viewModel.syncNeteaseData()
+
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { accountRepo.syncLocalLibrary() }
+            assertEquals("已同步 1 个歌单，收藏 1 首", viewModel.state.value.syncMessage)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun initSkipsAutoSyncWhenLastSyncIsRecent() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val accountRepo = mockk<NeteaseAccountRepository>()
+            val account = NeteaseAccountSession(
+                userId = 9527L,
+                nickname = "测试云村用户",
+                cookie = "MUSIC_U=test_cookie",
+                lastSyncAt = System.currentTimeMillis()
+            )
+
+            every { localRepo.getFavorites() } returns flowOf(emptyList())
+            every { localRepo.getTopPlayedTracks(any()) } returns flowOf(emptyList())
+            every { localRepo.getPlaylists() } returns flowOf(emptyList())
+            every { localRepo.getTotalPlayCount() } returns flowOf(0)
+            every { localRepo.getTotalListenDurationMs() } returns flowOf(0L)
+            every { localRepo.getLocalTrackCount() } returns flowOf(0)
+
+            every { accountRepo.session } returns flowOf(account)
+            every { accountRepo.isConfigured } returns flowOf(true)
+            coEvery { accountRepo.refreshLoginStatus() } returns Result.Success(account)
+            coEvery { accountRepo.syncLocalLibrary() } returns Result.Success(
+                NeteaseSyncSummary(2, 3)
+            )
+
+            LibraryViewModel(localRepo, onlineRepo, createDownloadManagerMock(), accountRepo)
+
+            advanceUntilIdle()
+
+            coVerify(exactly = 0) { accountRepo.syncLocalLibrary() }
         } finally {
             Dispatchers.resetMain()
         }

@@ -99,6 +99,7 @@ dependencies {
     // WorkManager
     implementation(libs.work.runtime.ktx)
     implementation(libs.work.hilt)
+    ksp(libs.hilt.work.compiler)
 
     // Metrics / JankStats
     implementation(libs.androidx.metrics.performance)

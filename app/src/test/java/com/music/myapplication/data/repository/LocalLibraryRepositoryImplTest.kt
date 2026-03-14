@@ -7,10 +7,12 @@ import com.music.myapplication.core.database.dao.LyricsCacheDao
 import com.music.myapplication.core.database.dao.PlaylistSongsDao
 import com.music.myapplication.core.database.dao.PlaylistsDao
 import com.music.myapplication.core.database.dao.RecentPlaysDao
+import com.music.myapplication.core.database.entity.FavoriteEntity
 import com.music.myapplication.core.database.entity.LocalTrackEntity
 import com.music.myapplication.core.database.entity.PlaylistSongEntity
 import com.music.myapplication.core.database.entity.RecentPlayEntity
 import com.music.myapplication.core.local.LocalMusicScanner
+import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.domain.model.Platform
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -19,6 +21,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,6 +37,8 @@ class LocalLibraryRepositoryImplTest {
     private val cacheManager = mockk<CacheManager>(relaxed = true)
     private val localTracksDao = mockk<LocalTracksDao>(relaxed = true)
     private val localMusicScanner = mockk<LocalMusicScanner>(relaxed = true)
+    private val tuneHubApi = mockk<TuneHubApi>(relaxed = true)
+    private val json = Json { ignoreUnknownKeys = true }
 
     private val repository = LocalLibraryRepositoryImpl(
         context = context,
@@ -44,7 +49,8 @@ class LocalLibraryRepositoryImplTest {
         lyricsCacheDao = lyricsCacheDao,
         cacheManager = cacheManager,
         localTracksDao = localTracksDao,
-        localMusicScanner = localMusicScanner
+        localMusicScanner = localMusicScanner,
+        tuneHubApi = tuneHubApi
     )
 
     @Test
@@ -101,6 +107,51 @@ class LocalLibraryRepositoryImplTest {
 
         coVerify(exactly = 1) { lyricsCacheDao.insert(any()) }
         coVerify(exactly = 1) { cacheManager.enforceLimit() }
+    }
+
+    @Test
+    fun `favorites flow repairs netease missing metadata`() = runTest {
+        every { favoritesDao.getAll() } returns flowOf(
+            listOf(
+                FavoriteEntity(
+                    songId = "101",
+                    platform = Platform.NETEASE.id,
+                    title = "歌B",
+                    artist = "未知歌手",
+                    coverUrl = ""
+                )
+            )
+        )
+        coEvery { tuneHubApi.getNeteaseSongDetail(ids = any()) } returns json.parseToJsonElement(
+            """
+            {
+              "songs": [
+                {
+                  "id": 101,
+                  "name": "歌B",
+                  "dt": 190000,
+                  "artists": [{"name": "歌手B"}],
+                  "album": {"id": 2, "name": "专辑B", "picUrl": "https://example.com/b.jpg"}
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val tracks = repository.getFavorites().first()
+
+        assertEquals(1, tracks.size)
+        assertEquals("歌手B", tracks.first().artist)
+        assertEquals("https://example.com/b.jpg", tracks.first().coverUrl)
+        coVerify(exactly = 1) {
+            favoritesDao.insert(
+                match { entity ->
+                    entity.songId == "101" &&
+                        entity.artist == "歌手B" &&
+                        entity.coverUrl == "https://example.com/b.jpg"
+                }
+            )
+        }
     }
 
     private fun localTrackEntity(

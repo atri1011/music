@@ -323,14 +323,8 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun syncNeteaseData() {
+        if (!tryStartNeteaseSync()) return
         viewModelScope.launch {
-            uiExtras.update {
-                it.copy(
-                    isSyncingNeteaseData = true,
-                    syncError = null,
-                    syncMessage = null
-                )
-            }
             when (val result = neteaseAccountRepository.syncLocalLibrary()) {
                 is Result.Success -> uiExtras.update {
                     it.copy(
@@ -345,6 +339,21 @@ class LibraryViewModel @Inject constructor(
                     )
                 }
                 is Result.Loading -> Unit
+            }
+        }
+    }
+
+    private fun tryStartNeteaseSync(): Boolean {
+        while (true) {
+            val current = uiExtras.value
+            if (current.isSyncingNeteaseData) return false
+            val updated = current.copy(
+                isSyncingNeteaseData = true,
+                syncError = null,
+                syncMessage = null
+            )
+            if (uiExtras.compareAndSet(current, updated)) {
+                return true
             }
         }
     }
@@ -472,7 +481,7 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = neteaseAccountRepository.refreshLoginStatus()) {
                 is Result.Success -> {
-                    if (result.data != null && syncOnSuccess) {
+                    if (result.data != null && syncOnSuccess && shouldAutoSyncNeteaseData(result.data)) {
                         syncNeteaseData()
                     }
                 }
@@ -482,6 +491,12 @@ class LibraryViewModel @Inject constructor(
                 is Result.Loading -> Unit
             }
         }
+    }
+
+    private fun shouldAutoSyncNeteaseData(session: NeteaseAccountSession): Boolean {
+        val lastSyncAt = session.lastSyncAt
+        if (lastSyncAt <= 0L) return true
+        return System.currentTimeMillis() - lastSyncAt >= NETEASE_AUTO_SYNC_MIN_INTERVAL_MS
     }
 
     private suspend fun resolveImportedPlaylistImportInput(
@@ -523,6 +538,7 @@ class LibraryViewModel @Inject constructor(
 
     private companion object {
         const val QR_POLL_INTERVAL_MS = 2_000L
+        const val NETEASE_AUTO_SYNC_MIN_INTERVAL_MS = 10 * 60 * 1000L
     }
 }
 

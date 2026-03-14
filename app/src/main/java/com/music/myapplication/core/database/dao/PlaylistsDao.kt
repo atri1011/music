@@ -34,8 +34,12 @@ interface PlaylistsDao {
             COUNT(ps.song_id) AS trackCount
         FROM playlists p
         LEFT JOIN playlist_songs ps ON ps.playlist_id = p.playlist_id
+        LEFT JOIN playlist_remote_map prm ON prm.playlist_id = p.playlist_id
         GROUP BY p.playlist_id
-        ORDER BY p.updated_at DESC
+        ORDER BY
+            CASE WHEN MIN(prm.remote_order) IS NULL THEN 1 ELSE 0 END ASC,
+            MIN(prm.remote_order) ASC,
+            p.updated_at DESC
         """
     )
     fun getAllWithStats(): Flow<List<PlaylistSummaryRow>>

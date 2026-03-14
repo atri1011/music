@@ -6,11 +6,13 @@ import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
 import com.music.myapplication.core.cache.CacheManager
 import com.music.myapplication.core.database.dao.*
+import com.music.myapplication.core.database.entity.FavoriteEntity
 import com.music.myapplication.core.database.entity.LyricsCacheEntity
 import com.music.myapplication.core.database.entity.PlaylistEntity
 import com.music.myapplication.core.database.mapper.*
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.core.local.LocalMusicScanner
+import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
@@ -32,12 +34,17 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     private val lyricsCacheDao: LyricsCacheDao,
     private val cacheManager: CacheManager,
     private val localTracksDao: LocalTracksDao,
-    private val localMusicScanner: LocalMusicScanner
+    private val localMusicScanner: LocalMusicScanner,
+    private val tuneHubApi: TuneHubApi
 ) : LocalLibraryRepository {
 
     override fun getFavorites(): Flow<List<Track>> =
-        favoritesDao.getAll().map { list ->
-            rehydrateLocalPlayableUrls(list.map { it.toTrack() })
+        favoritesDao.getAll().map { entities ->
+            val repairedTracksByKey = repairFavoriteMetadataIfNeeded(entities)
+            val tracks = entities.map { entity ->
+                repairedTracksByKey[favoriteKeyOf(entity.songId, entity.platform)] ?: entity.toTrack()
+            }
+            rehydrateLocalPlayableUrls(tracks)
         }
 
     override suspend fun isFavorite(songId: String, platform: String): Boolean =
@@ -225,7 +232,69 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     override suspend fun syncLocalTracks(): Int =
         localMusicScanner.sync()
 
+    private suspend fun repairFavoriteMetadataIfNeeded(
+        entities: List<FavoriteEntity>
+    ): Map<String, Track> {
+        if (entities.isEmpty()) return emptyMap()
+
+        val songIdsToRepair = entities.asSequence()
+            .filter { it.platform == Platform.NETEASE.id && it.needsMetadataRepair() }
+            .map { it.songId }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+        if (songIdsToRepair.isEmpty()) return emptyMap()
+
+        val fetchedTracksById = fetchNeteaseTracksByIds(songIdsToRepair).associateBy { it.id }
+        if (fetchedTracksById.isEmpty()) return emptyMap()
+
+        val repairedTracks = linkedMapOf<String, Track>()
+        entities.forEach { entity ->
+            if (entity.platform != Platform.NETEASE.id || !entity.needsMetadataRepair()) return@forEach
+            val fetched = fetchedTracksById[entity.songId] ?: return@forEach
+            val repaired = entity.toTrack().copy(
+                artist = fetched.artist.ifBlank { entity.artist },
+                album = fetched.album.ifBlank { entity.album },
+                coverUrl = fetched.coverUrl.ifBlank { entity.coverUrl },
+                durationMs = if (fetched.durationMs > 0L) fetched.durationMs else entity.durationMs,
+                isFavorite = true
+            )
+            if (!entity.isSameMetadataAs(repaired)) {
+                favoritesDao.insert(repaired.toFavoriteEntity())
+                repairedTracks[favoriteKeyOf(entity.songId, entity.platform)] = repaired
+            }
+        }
+        return repairedTracks
+    }
+
+    private suspend fun fetchNeteaseTracksByIds(songIds: List<String>): List<Track> {
+        if (songIds.isEmpty()) return emptyList()
+        val tracks = mutableListOf<Track>()
+        songIds.chunked(NETEASE_DETAIL_BATCH_SIZE).forEach { chunk ->
+            val response = runCatching {
+                tuneHubApi.getNeteaseSongDetail(
+                    ids = chunk.joinToString(prefix = "[", postfix = "]")
+                )
+            }.getOrNull() ?: return@forEach
+            tracks += extractNeteaseSongTracks(response)
+        }
+        return tracks
+    }
+
+    private fun FavoriteEntity.needsMetadataRepair(): Boolean {
+        val normalizedArtist = artist.trim()
+        return normalizedArtist.isBlank() || normalizedArtist == UNKNOWN_ARTIST || coverUrl.isBlank()
+    }
+
+    private fun FavoriteEntity.isSameMetadataAs(track: Track): Boolean {
+        return artist == track.artist &&
+            album == track.album &&
+            coverUrl == track.coverUrl &&
+            durationMs == track.durationMs
+    }
+
     private fun favoriteKeyOf(track: Track): String = "${track.platform.id}:${track.id}"
+    private fun favoriteKeyOf(songId: String, platform: String): String = "$platform:$songId"
 
     private suspend fun rehydrateLocalPlayableUrls(tracks: List<Track>): List<Track> {
         if (tracks.isEmpty()) return tracks
@@ -317,5 +386,7 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     private companion object {
         const val PLAYLIST_COVER_DIRECTORY = "playlist_covers"
         const val DEFAULT_PLAYLIST_COVER_EXTENSION = "jpg"
+        const val NETEASE_DETAIL_BATCH_SIZE = 200
+        const val UNKNOWN_ARTIST = "未知歌手"
     }
 }

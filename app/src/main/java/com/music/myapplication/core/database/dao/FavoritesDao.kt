@@ -22,8 +22,27 @@ interface FavoritesDao {
     @Query("SELECT song_id FROM favorites WHERE platform = :platform")
     suspend fun getSongIdsByPlatform(platform: String): List<String>
 
+    @Query(
+        """
+        SELECT song_id FROM favorites
+        WHERE platform = :platform
+          AND (TRIM(artist) = '' OR artist = '未知歌手' OR TRIM(cover_url) = '')
+        """
+    )
+    suspend fun getSongIdsWithMissingMetadata(platform: String): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: FavoriteEntity)
+
+    @Query(
+        """
+        UPDATE favorites
+        SET added_at = :addedAt
+        WHERE song_id = :songId
+          AND platform = :platform
+        """
+    )
+    suspend fun updateAddedAt(songId: String, platform: String, addedAt: Long)
 
     @Query("DELETE FROM favorites WHERE song_id = :songId AND platform = :platform")
     suspend fun delete(songId: String, platform: String)

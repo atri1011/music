@@ -15,9 +15,11 @@ import com.music.myapplication.core.database.mapper.toDownloadedTrackEntity
 import com.music.myapplication.core.network.NetworkMonitor
 import com.music.myapplication.domain.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,13 +35,20 @@ class DownloadManager @Inject constructor(
     suspend fun shouldWaitForUnmeteredNetwork(): Boolean =
         preferences.wifiOnly.first() && !networkMonitor.isUnmeteredConnection()
 
-    suspend fun enqueueDownload(track: Track, playableUrl: String, quality: String): Boolean {
+    suspend fun enqueueDownload(track: Track, playableUrl: String, quality: String): Boolean = withContext(Dispatchers.IO) {
         val existing = downloadedTracksDao.get(track.id, track.platform.id)
-        if (
-            existing?.downloadStatus == DownloadedTrackEntity.DownloadStatus.SUCCESS ||
-            existing?.downloadStatus == DownloadedTrackEntity.DownloadStatus.DOWNLOADING
-        ) {
-            return false
+        if (existing?.downloadStatus == DownloadedTrackEntity.DownloadStatus.SUCCESS) {
+            return@withContext false
+        }
+        if (existing?.downloadStatus == DownloadedTrackEntity.DownloadStatus.DOWNLOADING) {
+            if (isWorkInProgress(track.id, track.platform.id)) {
+                return@withContext false
+            }
+            downloadedTracksDao.updateStatus(
+                track.id,
+                track.platform.id,
+                DownloadedTrackEntity.DownloadStatus.FAILED
+            )
         }
 
         downloadedTracksDao.insert(
@@ -78,7 +87,7 @@ class DownloadManager @Inject constructor(
 
         val uniqueWorkName = workName(track.id, track.platform.id)
         workManager.enqueueUniqueWork(uniqueWorkName, ExistingWorkPolicy.KEEP, workRequest)
-        return true
+        return@withContext true
     }
 
     fun cancelDownload(songId: String, platform: String) {
@@ -106,6 +115,19 @@ class DownloadManager @Inject constructor(
     fun getDownloadingTracks(): Flow<List<DownloadedTrackEntity>> =
         downloadedTracksDao.getDownloading()
 
+    suspend fun reconcileStaleDownloadingTracks() = withContext(Dispatchers.IO) {
+        val downloadingTracks = downloadedTracksDao.getDownloadingNow()
+        downloadingTracks.forEach { track ->
+            if (!isWorkInProgress(track.songId, track.platform)) {
+                downloadedTracksDao.updateStatus(
+                    track.songId,
+                    track.platform,
+                    DownloadedTrackEntity.DownloadStatus.FAILED
+                )
+            }
+        }
+    }
+
     fun getDownloadedCount(): Flow<Int> =
         downloadedTracksDao.countDownloaded()
 
@@ -119,8 +141,19 @@ class DownloadManager @Inject constructor(
     fun observeWorkState(songId: String, platform: String): Flow<Boolean> {
         return workManager.getWorkInfosForUniqueWorkFlow(workName(songId, platform))
             .map { workInfoList ->
-                workInfoList.any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+                workInfoList.any { isActiveState(it.state) }
             }
+    }
+
+    private suspend fun isWorkInProgress(songId: String, platform: String): Boolean {
+        val workInfoList = workManager.getWorkInfosForUniqueWorkFlow(workName(songId, platform)).first()
+        return workInfoList.any { isActiveState(it.state) }
+    }
+
+    private fun isActiveState(state: WorkInfo.State): Boolean {
+        return state == WorkInfo.State.RUNNING ||
+            state == WorkInfo.State.ENQUEUED ||
+            state == WorkInfo.State.BLOCKED
     }
 
     private fun workName(songId: String, platform: String) = "download_${platform}_${songId}"

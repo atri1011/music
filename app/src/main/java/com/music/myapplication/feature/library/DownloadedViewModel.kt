@@ -24,6 +24,12 @@ class DownloadedViewModel @Inject constructor(
     private val downloadManager: DownloadManager
 ) : ViewModel() {
 
+    init {
+        viewModelScope.launch {
+            downloadManager.reconcileStaleDownloadingTracks()
+        }
+    }
+
     val state: StateFlow<DownloadedUiState> = downloadManager.getAllTracks()
         .map { entities ->
             DownloadedUiState(

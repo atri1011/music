@@ -21,9 +21,12 @@ data class PlaylistDetailUiState(
     val editingTracks: List<Track> = emptyList(),
     val isLoading: Boolean = false,
     val isSavingEdits: Boolean = false,
+    val isDeletingFavorites: Boolean = false,
     val isLocalPlaylist: Boolean = false,
     val isFavoritesCollection: Boolean = false,
     val isEditMode: Boolean = false,
+    val isFavoritesSelectionMode: Boolean = false,
+    val selectedFavoriteKeys: Set<String> = emptySet(),
     val error: String? = null,
     val editMessage: String? = null,
     val title: String = "",
@@ -53,9 +56,12 @@ class PlaylistDetailViewModel @Inject constructor(
             it.copy(
                 isLoading = true,
                 isSavingEdits = false,
+                isDeletingFavorites = false,
                 isLocalPlaylist = isLocalPlaylist,
                 isFavoritesCollection = source == SOURCE_FAVORITES,
                 isEditMode = false,
+                isFavoritesSelectionMode = false,
+                selectedFavoriteKeys = emptySet(),
                 editingTracks = emptyList(),
                 error = null,
                 editMessage = null,
@@ -65,7 +71,10 @@ class PlaylistDetailViewModel @Inject constructor(
         loadJob = viewModelScope.launch {
             if (source == SOURCE_FAVORITES) {
                 localRepo.getFavorites().collect { tracks ->
+                    val trackKeys = tracks.map(::favoriteTrackKey).toHashSet()
                     _state.update { current ->
+                        val selectedKeys = current.selectedFavoriteKeys.filterTo(linkedSetOf()) { it in trackKeys }
+                        val keepSelectionMode = current.isFavoritesSelectionMode && tracks.isNotEmpty()
                         current.copy(
                             title = title.ifBlank { "收藏" },
                             coverUrl = tracks.firstOrNull()?.coverUrl.orEmpty(),
@@ -74,7 +83,9 @@ class PlaylistDetailViewModel @Inject constructor(
                             isLoading = false,
                             isLocalPlaylist = false,
                             isFavoritesCollection = true,
-                            isEditMode = false
+                            isEditMode = false,
+                            isFavoritesSelectionMode = keepSelectionMode,
+                            selectedFavoriteKeys = selectedKeys
                         )
                     }
                 }
@@ -83,7 +94,10 @@ class PlaylistDetailViewModel @Inject constructor(
                 _state.update {
                     it.copy(
                         title = playlist?.name ?: title,
-                        coverUrl = playlist?.coverUrl.orEmpty()
+                        coverUrl = playlist?.coverUrl.orEmpty(),
+                        isFavoritesSelectionMode = false,
+                        selectedFavoriteKeys = emptySet(),
+                        isDeletingFavorites = false
                     )
                 }
                 localRepo.getPlaylistSongs(id).collect { tracks ->
@@ -94,6 +108,9 @@ class PlaylistDetailViewModel @Inject constructor(
                             isLoading = false,
                             isLocalPlaylist = true,
                             isFavoritesCollection = false,
+                            isFavoritesSelectionMode = false,
+                            selectedFavoriteKeys = emptySet(),
+                            isDeletingFavorites = false,
                             coverUrl = current.coverUrl.ifBlank { playlist?.coverUrl.orEmpty() }
                         )
                     }
@@ -111,7 +128,10 @@ class PlaylistDetailViewModel @Inject constructor(
                                         editingTracks = emptyList(),
                                         isLoading = false,
                                         isLocalPlaylist = false,
-                                        isFavoritesCollection = false
+                                        isFavoritesCollection = false,
+                                        isFavoritesSelectionMode = false,
+                                        selectedFavoriteKeys = emptySet(),
+                                        isDeletingFavorites = false
                                     )
                                 }
                             }
@@ -121,7 +141,10 @@ class PlaylistDetailViewModel @Inject constructor(
                                         error = result.error.message,
                                         isLoading = false,
                                         isLocalPlaylist = false,
-                                        isFavoritesCollection = false
+                                        isFavoritesCollection = false,
+                                        isFavoritesSelectionMode = false,
+                                        selectedFavoriteKeys = emptySet(),
+                                        isDeletingFavorites = false
                                     )
                                 }
                             }
@@ -138,7 +161,10 @@ class PlaylistDetailViewModel @Inject constructor(
                                         editingTracks = emptyList(),
                                         isLoading = false,
                                         isLocalPlaylist = false,
-                                        isFavoritesCollection = false
+                                        isFavoritesCollection = false,
+                                        isFavoritesSelectionMode = false,
+                                        selectedFavoriteKeys = emptySet(),
+                                        isDeletingFavorites = false
                                     )
                                 }
 
@@ -158,7 +184,10 @@ class PlaylistDetailViewModel @Inject constructor(
                                         error = result.error.message,
                                         isLoading = false,
                                         isLocalPlaylist = false,
-                                        isFavoritesCollection = false
+                                        isFavoritesCollection = false,
+                                        isFavoritesSelectionMode = false,
+                                        selectedFavoriteKeys = emptySet(),
+                                        isDeletingFavorites = false
                                     )
                                 }
                             }
@@ -177,6 +206,8 @@ class PlaylistDetailViewModel @Inject constructor(
             } else {
                 current.copy(
                     isEditMode = true,
+                    isFavoritesSelectionMode = false,
+                    selectedFavoriteKeys = emptySet(),
                     editingTracks = current.tracks,
                     error = null,
                     editMessage = null
@@ -191,8 +222,109 @@ class PlaylistDetailViewModel @Inject constructor(
                 isEditMode = false,
                 isSavingEdits = false,
                 editingTracks = current.tracks,
+                editMessage = null,
+                isFavoritesSelectionMode = false,
+                selectedFavoriteKeys = emptySet(),
+                isDeletingFavorites = false
+            )
+        }
+    }
+
+    fun enterFavoritesSelectionMode() {
+        _state.update { current ->
+            if (!current.isFavoritesCollection || current.isLoading || current.tracks.isEmpty()) {
+                current
+            } else {
+                current.copy(
+                    isFavoritesSelectionMode = true,
+                    selectedFavoriteKeys = emptySet(),
+                    isDeletingFavorites = false,
+                    editMessage = null
+                )
+            }
+        }
+    }
+
+    fun cancelFavoritesSelectionMode() {
+        _state.update { current ->
+            current.copy(
+                isFavoritesSelectionMode = false,
+                selectedFavoriteKeys = emptySet(),
+                isDeletingFavorites = false,
                 editMessage = null
             )
+        }
+    }
+
+    fun toggleSelectAllFavorites() {
+        _state.update { current ->
+            if (!current.isFavoritesSelectionMode) return@update current
+            val allKeys = current.tracks.map(::favoriteTrackKey).toSet()
+            val shouldClear = current.selectedFavoriteKeys.size == allKeys.size
+            current.copy(
+                selectedFavoriteKeys = if (shouldClear) emptySet() else allKeys
+            )
+        }
+    }
+
+    fun toggleFavoriteSelection(track: Track) {
+        _state.update { current ->
+            if (!current.isFavoritesSelectionMode) return@update current
+            val key = favoriteTrackKey(track)
+            val selected = current.selectedFavoriteKeys.toMutableSet()
+            if (!selected.add(key)) {
+                selected.remove(key)
+            }
+            current.copy(selectedFavoriteKeys = selected)
+        }
+    }
+
+    fun deleteSelectedFavorites() {
+        val snapshot = state.value
+        if (
+            !snapshot.isFavoritesCollection ||
+            !snapshot.isFavoritesSelectionMode ||
+            snapshot.isDeletingFavorites ||
+            snapshot.selectedFavoriteKeys.isEmpty()
+        ) {
+            return
+        }
+        val selectedTracks = snapshot.tracks.filter { favoriteTrackKey(it) in snapshot.selectedFavoriteKeys }
+        if (selectedTracks.isEmpty()) {
+            cancelFavoritesSelectionMode()
+            return
+        }
+
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    isDeletingFavorites = true,
+                    editMessage = null
+                )
+            }
+            runCatching {
+                selectedTracks.forEach { track ->
+                    if (localRepo.isFavorite(track.id, track.platform.id)) {
+                        localRepo.toggleFavorite(track)
+                    }
+                }
+            }.onSuccess {
+                _state.update {
+                    it.copy(
+                        isDeletingFavorites = false,
+                        isFavoritesSelectionMode = false,
+                        selectedFavoriteKeys = emptySet(),
+                        editMessage = null
+                    )
+                }
+            }.onFailure { throwable ->
+                _state.update {
+                    it.copy(
+                        isDeletingFavorites = false,
+                        editMessage = throwable.message ?: "批量删除失败，请稍后再试。"
+                    )
+                }
+            }
         }
     }
 
@@ -258,4 +390,6 @@ class PlaylistDetailViewModel @Inject constructor(
             }
         }
     }
+
+    private fun favoriteTrackKey(track: Track): String = "${track.platform.id}:${track.id}"
 }

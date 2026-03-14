@@ -154,6 +154,81 @@ class PlaylistDetailViewModelTest {
         }
     }
 
+    @Test
+    fun favoritesBatchDeleteRemovesSelectedTracks() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val trackA = Track(id = "a", platform = Platform.NETEASE, title = "A", artist = "AA")
+            val trackB = Track(id = "b", platform = Platform.QQ, title = "B", artist = "BB")
+            val trackC = Track(id = "c", platform = Platform.KUWO, title = "C", artist = "CC")
+
+            io.mockk.every { localRepo.getFavorites() } returns flowOf(listOf(trackA, trackB, trackC))
+            coEvery { localRepo.isFavorite(any(), any()) } returns true
+            coJustRun { localRepo.toggleFavorite(any()) }
+
+            val viewModel = PlaylistDetailViewModel(onlineRepo, localRepo)
+
+            viewModel.loadPlaylist(
+                id = "favorites",
+                platform = Platform.LOCAL.id,
+                title = "收藏",
+                source = "favorites"
+            )
+            advanceUntilIdle()
+
+            viewModel.enterFavoritesSelectionMode()
+            viewModel.toggleFavoriteSelection(trackA)
+            viewModel.toggleFavoriteSelection(trackC)
+            viewModel.deleteSelectedFavorites()
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { localRepo.toggleFavorite(trackA) }
+            coVerify(exactly = 1) { localRepo.toggleFavorite(trackC) }
+            coVerify(exactly = 0) { localRepo.toggleFavorite(trackB) }
+            assertEquals(false, viewModel.state.value.isFavoritesSelectionMode)
+            assertTrue(viewModel.state.value.selectedFavoriteKeys.isEmpty())
+            assertEquals(false, viewModel.state.value.isDeletingFavorites)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun favoritesSelectAllCanToggleBetweenAllAndNone() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val trackA = Track(id = "a", platform = Platform.NETEASE, title = "A", artist = "AA")
+            val trackB = Track(id = "b", platform = Platform.QQ, title = "B", artist = "BB")
+
+            io.mockk.every { localRepo.getFavorites() } returns flowOf(listOf(trackA, trackB))
+
+            val viewModel = PlaylistDetailViewModel(onlineRepo, localRepo)
+
+            viewModel.loadPlaylist(
+                id = "favorites",
+                platform = Platform.LOCAL.id,
+                title = "收藏",
+                source = "favorites"
+            )
+            advanceUntilIdle()
+
+            viewModel.enterFavoritesSelectionMode()
+            viewModel.toggleSelectAllFavorites()
+            assertEquals(2, viewModel.state.value.selectedFavoriteKeys.size)
+
+            viewModel.toggleSelectAllFavorites()
+            assertTrue(viewModel.state.value.selectedFavoriteKeys.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     private fun everyLocalPlaylist(localRepo: LocalLibraryRepository, tracks: List<Track>) {
         coEvery { localRepo.replacePlaylistSongs(any(), any()) } returns Unit
         coEvery { localRepo.getPlaylistById(any()) } answers {

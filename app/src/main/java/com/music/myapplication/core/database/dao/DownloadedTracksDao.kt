@@ -20,6 +20,9 @@ interface DownloadedTracksDao {
     @Query("SELECT * FROM downloaded_tracks WHERE download_status = 'downloading'")
     fun getDownloading(): Flow<List<DownloadedTrackEntity>>
 
+    @Query("SELECT * FROM downloaded_tracks WHERE download_status = 'downloading'")
+    suspend fun getDownloadingNow(): List<DownloadedTrackEntity>
+
     @Query("SELECT * FROM downloaded_tracks WHERE song_id = :songId AND platform = :platform LIMIT 1")
     suspend fun get(songId: String, platform: String): DownloadedTrackEntity?
 

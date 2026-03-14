@@ -38,6 +38,8 @@ data class PlaylistRemoteMapEntity(
     val remoteSignature: String = "",
     @ColumnInfo(name = "last_synced_song_signature")
     val lastSyncedSongSignature: String = "",
+    @ColumnInfo(name = "remote_order")
+    val remoteOrder: Int? = null,
     @ColumnInfo(name = "last_synced_at")
     val lastSyncedAt: Long = System.currentTimeMillis()
 )

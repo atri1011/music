@@ -27,9 +27,13 @@ import com.music.myapplication.domain.repository.NeteaseAccountRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -49,6 +53,8 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
     private val playlistRemoteMapDao: PlaylistRemoteMapDao,
     private val favoritesDao: FavoritesDao
 ) : NeteaseAccountRepository {
+
+    private val syncMutex = Mutex()
 
     override val session: Flow<NeteaseAccountSession?> = accountStore.session
 
@@ -221,21 +227,26 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun syncLocalLibrary(): Result<NeteaseSyncSummary> {
+    override suspend fun syncLocalLibrary(): Result<NeteaseSyncSummary> = syncMutex.withLock {
         val baseUrl = preferences.neteaseCloudApiBaseUrl.first()
-        if (baseUrl.isBlank()) return Result.Error(AppError.Api(message = "请先设置网易云增强版接口地址"))
+        if (baseUrl.isBlank()) {
+            return@withLock Result.Error(AppError.Api(message = "请先设置网易云增强版接口地址"))
+        }
         val currentSession = accountStore.session.first()
-            ?: return Result.Error(AppError.Api(message = "请先登录网易云账号"))
-        return try {
-            val playlistResponse = enhancedApi.userPlaylist(
-                url = buildEndpoint(baseUrl, "user/playlist"),
-                uid = currentSession.userId,
-                cookie = currentSession.cookie,
-                realIp = DEFAULT_REAL_IP,
-                timestamp = now()
-            )
+            ?: return@withLock Result.Error(AppError.Api(message = "请先登录网易云账号"))
+        val ownerUid = currentSession.userId.toString()
+        try {
+            val playlistResponse = requestWithRateLimitRetry {
+                enhancedApi.userPlaylist(
+                    url = buildEndpoint(baseUrl, "user/playlist"),
+                    uid = currentSession.userId,
+                    cookie = currentSession.cookie,
+                    realIp = DEFAULT_REAL_IP,
+                    timestamp = now()
+                )
+            }
             if (playlistResponse.codeOrDefault() != 200) {
-                return Result.Error(
+                return@withLock Result.Error(
                     AppError.Api(
                         message = playlistResponse.messageOrDefault("获取网易云歌单失败"),
                         code = playlistResponse.codeOrDefault()
@@ -246,23 +257,33 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
             val remotePlaylists = playlistResponse.jsonObjectOrNull()?.jsonArrayAt("playlist")
                 ?.mapNotNull { it.jsonObjectOrNull()?.toRemotePlaylist() }
                 .orEmpty()
+            val likedPlaylistRemoteId = remotePlaylists
+                .firstOrNull { it.isLikedSongsPlaylist() }
+                ?.id
 
-            remotePlaylists.forEach { remotePlaylist ->
-                syncRemotePlaylist(
+            remotePlaylists.forEachIndexed { index, remotePlaylist ->
+                syncRemotePlaylistWithRetry(
+                    baseUrl = baseUrl,
                     session = currentSession,
-                    remotePlaylist = remotePlaylist
+                    remotePlaylist = remotePlaylist,
+                    remoteOrder = index
                 )
+                if (index < remotePlaylists.lastIndex) {
+                    delay(NETEASE_PLAYLIST_SYNC_INTERVAL_MS)
+                }
             }
 
-            val likeListResponse = enhancedApi.likeList(
-                url = buildEndpoint(baseUrl, "likelist"),
-                uid = currentSession.userId,
-                cookie = currentSession.cookie,
-                realIp = DEFAULT_REAL_IP,
-                timestamp = now()
-            )
+            val likeListResponse = requestWithRateLimitRetry {
+                enhancedApi.likeList(
+                    url = buildEndpoint(baseUrl, "likelist"),
+                    uid = currentSession.userId,
+                    cookie = currentSession.cookie,
+                    realIp = DEFAULT_REAL_IP,
+                    timestamp = now()
+                )
+            }
             if (likeListResponse.codeOrDefault() != 200) {
-                return Result.Error(
+                return@withLock Result.Error(
                     AppError.Api(
                         message = likeListResponse.messageOrDefault("获取喜欢音乐失败"),
                         code = likeListResponse.codeOrDefault()
@@ -274,20 +295,35 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
                 ?.mapNotNull { it.jsonPrimitiveOrNull()?.contentOrNull }
                 ?.distinct()
                 .orEmpty()
+            val likedSongIdSet = likedSongIds.toHashSet()
             val localNeteaseFavoriteIds = favoritesDao.getSongIdsByPlatform(Platform.NETEASE.id)
                 .toHashSet()
             val newlyLikedSongIds = likedSongIds.filterNot(localNeteaseFavoriteIds::contains)
-            val newlyLikedTracks = fetchNeteaseTracksByIds(newlyLikedSongIds)
-            newlyLikedTracks.forEach { favoritesDao.insert(it.copy(isFavorite = true).toFavoriteEntity()) }
+            val newlyLikedSongIdSet = newlyLikedSongIds.toHashSet()
+            val metadataRepairSongIds = favoritesDao
+                .getSongIdsWithMissingMetadata(Platform.NETEASE.id)
+                .filter { it in likedSongIdSet }
+            val songIdsToSync = (newlyLikedSongIds + metadataRepairSongIds).distinct()
+            val syncedTracks = fetchNeteaseTracksByIds(songIdsToSync)
+            syncedTracks.forEach { favoritesDao.insert(it.copy(isFavorite = true).toFavoriteEntity()) }
+            val favoriteOrder = resolveNeteaseFavoritesOrder(
+                ownerUid = ownerUid,
+                likedPlaylistRemoteId = likedPlaylistRemoteId,
+                likedSongIds = likedSongIds
+            )
+            alignNeteaseFavoritesOrder(favoriteOrder)
+            val syncedNewFavoriteCount = syncedTracks.count { it.id in newlyLikedSongIdSet }
 
             val updatedSession = currentSession.copy(lastSyncAt = now())
             accountStore.saveSession(updatedSession)
             Result.Success(
                 NeteaseSyncSummary(
                     syncedPlaylistCount = remotePlaylists.size,
-                    syncedFavoriteCount = newlyLikedTracks.size
+                    syncedFavoriteCount = syncedNewFavoriteCount
                 )
             )
+        } catch (e: SyncApiException) {
+            Result.Error(e.error)
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
         }
@@ -331,8 +367,10 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
     }
 
     private suspend fun syncRemotePlaylist(
+        baseUrl: String,
         session: NeteaseAccountSession,
-        remotePlaylist: RemotePlaylistSummary
+        remotePlaylist: RemotePlaylistSummary,
+        remoteOrder: Int
     ) {
         val ownerUid = session.userId.toString()
         val mapping = playlistRemoteMapDao.getByRemoteSource(
@@ -343,16 +381,28 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
         val syncedAt = now()
         val remoteSignature = remotePlaylist.toRemoteSignature()
         if (mapping != null && mapping.remoteSignature == remoteSignature) {
+            if (mapping.remoteOrder != remoteOrder) {
+                playlistRemoteMapDao.insert(
+                    mapping.copy(
+                        remoteOrder = remoteOrder,
+                        lastSyncedAt = syncedAt
+                    )
+                )
+            }
             return
         }
 
-        val tracks = when (val detailResult = onlineRepo.getPlaylistDetail(Platform.NETEASE, remotePlaylist.id)) {
+        val tracksFromPublicApi = when (val detailResult = onlineRepo.getPlaylistDetail(Platform.NETEASE, remotePlaylist.id)) {
             is Result.Success -> detailResult.data
-            is Result.Error -> throw IllegalStateException(
-                detailResult.error.message.ifBlank { "获取网易歌单详情失败" }
-            )
+            is Result.Error -> throw SyncApiException(detailResult.error)
             is Result.Loading -> return
         }
+        val tracks = resolvePlaylistTracksForSync(
+            baseUrl = baseUrl,
+            session = session,
+            remotePlaylist = remotePlaylist,
+            tracksFromPublicApi = tracksFromPublicApi
+        )
 
         if (mapping == null) {
             val remoteSongSignature = tracks.toTrackSignature()
@@ -372,6 +422,7 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
                     ownerUid = ownerUid,
                     remoteSignature = remoteSignature,
                     lastSyncedSongSignature = remoteSongSignature,
+                    remoteOrder = remoteOrder,
                     lastSyncedAt = syncedAt
                 )
             )
@@ -400,9 +451,36 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
                 ownerUid = ownerUid,
                 remoteSignature = remoteSignature,
                 lastSyncedSongSignature = mergedSongSignature,
+                remoteOrder = remoteOrder,
                 lastSyncedAt = syncedAt
             )
         )
+    }
+
+    private suspend fun syncRemotePlaylistWithRetry(
+        baseUrl: String,
+        session: NeteaseAccountSession,
+        remotePlaylist: RemotePlaylistSummary,
+        remoteOrder: Int
+    ) {
+        var attempt = 0
+        while (true) {
+            try {
+                syncRemotePlaylist(
+                    baseUrl = baseUrl,
+                    session = session,
+                    remotePlaylist = remotePlaylist,
+                    remoteOrder = remoteOrder
+                )
+                return
+            } catch (e: SyncApiException) {
+                if (!e.error.isRateLimitError() || attempt >= NETEASE_RATE_LIMIT_RETRY_COUNT) {
+                    throw e
+                }
+            }
+            delay(calculateRateLimitBackoff(attempt))
+            attempt += 1
+        }
     }
 
     private suspend fun upsertPlaylistAndSongs(
@@ -430,18 +508,157 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
         )
     }
 
+    private suspend fun resolvePlaylistTracksForSync(
+        baseUrl: String,
+        session: NeteaseAccountSession,
+        remotePlaylist: RemotePlaylistSummary,
+        tracksFromPublicApi: List<Track>
+    ): List<Track> {
+        val expectedTrackCount = remotePlaylist.trackCount ?: return tracksFromPublicApi
+        if (expectedTrackCount <= 0 || tracksFromPublicApi.size >= expectedTrackCount) {
+            return tracksFromPublicApi
+        }
+
+        val tracksFromEnhancedApi = try {
+            fetchPlaylistTracksFromEnhancedApi(
+                baseUrl = baseUrl,
+                session = session,
+                playlistId = remotePlaylist.id,
+                expectedTrackCount = expectedTrackCount
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        return if (tracksFromEnhancedApi.size > tracksFromPublicApi.size) {
+            tracksFromEnhancedApi
+        } else {
+            tracksFromPublicApi
+        }
+    }
+
+    private suspend fun fetchPlaylistTracksFromEnhancedApi(
+        baseUrl: String,
+        session: NeteaseAccountSession,
+        playlistId: String,
+        expectedTrackCount: Int
+    ): List<Track> {
+        val tracks = mutableListOf<Track>()
+        var offset = 0
+        var resolvedTotalCount = expectedTrackCount
+
+        while (true) {
+            val response = requestWithRateLimitRetry {
+                enhancedApi.playlistTrackAll(
+                    url = buildEndpoint(baseUrl, "playlist/track/all"),
+                    id = playlistId,
+                    limit = NETEASE_PLAYLIST_TRACK_PAGE_SIZE,
+                    offset = offset,
+                    cookie = session.cookie,
+                    realIp = DEFAULT_REAL_IP,
+                    timestamp = now()
+                )
+            }
+            if (response.codeOrDefault() != 200) {
+                throw SyncApiException(
+                    AppError.Api(
+                        message = response.messageOrDefault("获取网易云歌单歌曲失败"),
+                        code = response.codeOrDefault()
+                    )
+                )
+            }
+
+            val pageTracks = extractTracksFromPlaylistTrackAllResponse(response)
+            if (pageTracks.isEmpty()) break
+            tracks += pageTracks
+
+            response.playlistTrackTotalCount()?.let { totalCount ->
+                if (totalCount > resolvedTotalCount) {
+                    resolvedTotalCount = totalCount
+                }
+            }
+            offset += pageTracks.size
+            if (tracks.size >= resolvedTotalCount || pageTracks.size < NETEASE_PLAYLIST_TRACK_PAGE_SIZE) {
+                break
+            }
+            delay(NETEASE_SONG_DETAIL_SYNC_INTERVAL_MS)
+        }
+
+        return tracks
+    }
+
+    private suspend fun alignNeteaseFavoritesOrder(likedSongIds: List<String>) {
+        if (likedSongIds.isEmpty()) return
+        val baseAddedAt = now() + likedSongIds.size.toLong()
+        likedSongIds.forEachIndexed { index, songId ->
+            favoritesDao.updateAddedAt(
+                songId = songId,
+                platform = Platform.NETEASE.id,
+                addedAt = baseAddedAt - index
+            )
+        }
+    }
+
+    private suspend fun resolveNeteaseFavoritesOrder(
+        ownerUid: String,
+        likedPlaylistRemoteId: String?,
+        likedSongIds: List<String>
+    ): List<String> {
+        if (likedSongIds.isEmpty()) return emptyList()
+        if (likedPlaylistRemoteId.isNullOrBlank()) return likedSongIds
+
+        val mapping = playlistRemoteMapDao.getByRemoteSource(
+            sourcePlatform = Platform.NETEASE.id,
+            sourcePlaylistId = likedPlaylistRemoteId,
+            ownerUid = ownerUid
+        ) ?: return likedSongIds
+
+        val orderedSongIds = playlistSongsDao.getSongsByPlaylistOnce(mapping.playlistId)
+            .asSequence()
+            .filter { it.platform == Platform.NETEASE.id && it.songId.isNotBlank() }
+            .map { it.songId }
+            .distinct()
+            .toList()
+
+        if (orderedSongIds.isEmpty()) return likedSongIds
+
+        val orderedSongIdSet = orderedSongIds.toHashSet()
+        val appendSongIds = likedSongIds.filterNot(orderedSongIdSet::contains)
+        return (orderedSongIds + appendSongIds).distinct()
+    }
+
     private suspend fun fetchNeteaseTracksByIds(songIds: List<String>): List<Track> {
         if (songIds.isEmpty()) return emptyList()
         val tracks = mutableListOf<Track>()
-        songIds.chunked(NETEASE_BATCH_SIZE).forEach { chunk ->
-            val response = tuneHubApi.getNeteaseSongDetail(
-                ids = chunk.joinToString(prefix = "[", postfix = "]")
-            )
-            tracks += response.jsonObjectOrNull()?.jsonArrayAt("songs")
-                ?.mapNotNull { it.jsonObjectOrNull()?.toTrack() }
-                .orEmpty()
+        val chunks = songIds.chunked(NETEASE_BATCH_SIZE)
+        chunks.forEachIndexed { index, chunk ->
+            val response = requestWithRateLimitRetry {
+                tuneHubApi.getNeteaseSongDetail(
+                    ids = chunk.joinToString(prefix = "[", postfix = "]")
+                )
+            }
+            tracks += extractNeteaseSongTracks(response)
+            if (index < chunks.lastIndex) {
+                delay(NETEASE_SONG_DETAIL_SYNC_INTERVAL_MS)
+            }
         }
         return tracks
+    }
+
+    private suspend fun requestWithRateLimitRetry(
+        request: suspend () -> JsonElement
+    ): JsonElement {
+        var attempt = 0
+        while (true) {
+            val response = request()
+            if (!response.isRateLimitResponse() || attempt >= NETEASE_RATE_LIMIT_RETRY_COUNT) {
+                return response
+            }
+            delay(calculateRateLimitBackoff(attempt))
+            attempt += 1
+        }
     }
 
     private fun buildEndpoint(baseUrl: String, path: String): String {
@@ -480,33 +697,14 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
         val coverUrl = string("coverImgUrl").orEmpty()
         val trackCount = int("trackCount")
         val updateTime = long("updateTime")
+        val specialType = int("specialType")
         return RemotePlaylistSummary(
             id = id,
             name = name,
             coverUrl = coverUrl,
             trackCount = trackCount,
-            updateTime = updateTime
-        )
-    }
-
-    private fun JsonObject.toTrack(): Track? {
-        val id = long("id")?.toString() ?: string("id") ?: return null
-        val title = string("name").orEmpty().ifBlank { return null }
-        val artists = jsonArrayAt("ar")
-            ?.mapNotNull { it.jsonObjectOrNull()?.string("name") }
-            .orEmpty()
-            .joinToString("/")
-        val album = jsonObjectAt("al")
-        return Track(
-            id = id,
-            platform = Platform.NETEASE,
-            title = title,
-            artist = artists.ifBlank { "未知歌手" },
-            album = album?.string("name").orEmpty(),
-            albumId = album?.long("id")?.toString().orEmpty(),
-            coverUrl = album?.string("picUrl").orEmpty(),
-            durationMs = long("dt") ?: 0L,
-            isFavorite = true
+            updateTime = updateTime,
+            specialType = specialType
         )
     }
 
@@ -516,6 +714,12 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
         jsonObjectOrNull()?.string("message")
             ?: jsonObjectOrNull()?.string("msg")
             ?: default
+
+    private fun JsonElement.isRateLimitResponse(): Boolean {
+        val code = codeOrDefault()
+        if (code in NETEASE_RATE_LIMIT_CODES) return true
+        return messageOrDefault("").containsRateLimitKeyword()
+    }
 
     private fun JsonElement.shouldClearSavedSession(): Boolean {
         val code = codeOrDefault()
@@ -541,12 +745,56 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
 
     private fun JsonObject.int(key: String): Int? = string(key)?.toIntOrNull()
 
+    private fun JsonElement.playlistTrackTotalCount(): Int? {
+        val root = jsonObjectOrNull() ?: return null
+        return root.int("total")
+            ?: root.int("count")
+            ?: root.jsonObjectAt("playlist")?.int("trackCount")
+            ?: root.jsonObjectAt("data")?.int("total")
+            ?: root.jsonObjectAt("data")?.int("count")
+    }
+
+    private fun extractTracksFromPlaylistTrackAllResponse(response: JsonElement): List<Track> {
+        val directTracks = extractNeteaseSongTracks(response)
+        if (directTracks.isNotEmpty()) return directTracks
+
+        val root = response.jsonObjectOrNull() ?: return emptyList()
+        val data = root.jsonObjectAt("data") ?: return emptyList()
+        return extractNeteaseSongTracks(data)
+    }
+
+    private fun AppError.isRateLimitError(): Boolean {
+        return when (this) {
+            is AppError.Api -> code in NETEASE_RATE_LIMIT_CODES || message.containsRateLimitKeyword()
+            is AppError.Network -> message.containsRateLimitKeyword() ||
+                cause?.message.orEmpty().containsRateLimitKeyword()
+            else -> message.containsRateLimitKeyword()
+        }
+    }
+
+    private fun String.containsRateLimitKeyword(): Boolean {
+        if (isBlank()) return false
+        val normalized = lowercase()
+        return NETEASE_RATE_LIMIT_KEYWORDS.any { keyword -> keyword in normalized }
+    }
+
+    private fun calculateRateLimitBackoff(attempt: Int): Long {
+        return NETEASE_RATE_LIMIT_BASE_DELAY_MS +
+            attempt * NETEASE_RATE_LIMIT_INCREMENT_DELAY_MS
+    }
+
     private fun RemotePlaylistSummary.toRemoteSignature(): String {
         return if (updateTime != null || trackCount != null) {
             "ut=${updateTime ?: -1}|tc=${trackCount ?: -1}|n=$name|c=$coverUrl"
         } else {
             "n=$name|c=$coverUrl|tc=${trackCount ?: -1}"
         }
+    }
+
+    private fun RemotePlaylistSummary.isLikedSongsPlaylist(): Boolean {
+        if (specialType == NETEASE_LIKED_PLAYLIST_SPECIAL_TYPE) return true
+        val normalizedName = name.trim()
+        return normalizedName == "我喜欢的音乐" || normalizedName == "喜欢的音乐"
     }
 
     private fun List<Track>.toTrackSignature(): String =
@@ -557,14 +805,57 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
         localSongs: List<PlaylistSongEntity>
     ): List<Track> {
         if (localSongs.isEmpty()) return remoteTracks
-        val remoteKeys = remoteTracks
-            .map { "${it.platform.id}:${it.id}" }
-            .toHashSet()
-        val localOnlyTracks = localSongs
-            .filter { localSong -> "${localSong.platform}:${localSong.songId}" !in remoteKeys }
-            .map { it.toTrack() }
-        return remoteTracks + localOnlyTracks
+        if (remoteTracks.isEmpty()) return localSongs.map { it.toTrack() }
+
+        val remoteTrackByKey = LinkedHashMap<String, Track>()
+        remoteTracks.forEach { track ->
+            remoteTrackByKey.putIfAbsent(track.trackMergeKey(), track)
+        }
+        val orderedKeys = remoteTrackByKey.keys.toMutableList()
+
+        val localTracks = localSongs.map { it.toTrack() }
+        val localTrackByKey = localTracks.associateBy { it.trackMergeKey() }
+        val localKeys = localTracks.map { it.trackMergeKey() }
+        val localOnlyKeys = localKeys.filterNot(remoteTrackByKey::containsKey)
+        if (localOnlyKeys.isEmpty()) {
+            return orderedKeys.mapNotNull(remoteTrackByKey::get)
+        }
+
+        localOnlyKeys.forEach { localOnlyKey ->
+            if (localOnlyKey in orderedKeys) return@forEach
+
+            val localIndex = localKeys.indexOf(localOnlyKey)
+            if (localIndex < 0) return@forEach
+
+            val previousAnchorKey = (localIndex - 1 downTo 0)
+                .firstNotNullOfOrNull { index ->
+                    localKeys[index].takeIf { it in orderedKeys }
+                }
+            val nextAnchorKey = ((localIndex + 1) until localKeys.size)
+                .firstNotNullOfOrNull { index ->
+                    localKeys[index].takeIf { it in orderedKeys }
+                }
+
+            val insertIndex = when {
+                previousAnchorKey != null && nextAnchorKey != null -> {
+                    val previousIndex = orderedKeys.indexOf(previousAnchorKey)
+                    val nextIndex = orderedKeys.indexOf(nextAnchorKey)
+                    if (previousIndex in 0 until nextIndex) nextIndex else previousIndex + 1
+                }
+                previousAnchorKey != null -> orderedKeys.indexOf(previousAnchorKey) + 1
+                nextAnchorKey != null -> orderedKeys.indexOf(nextAnchorKey)
+                else -> orderedKeys.size
+            }.coerceIn(0, orderedKeys.size)
+
+            orderedKeys.add(insertIndex, localOnlyKey)
+        }
+
+        return orderedKeys.mapNotNull { key ->
+            remoteTrackByKey[key] ?: localTrackByKey[key]
+        }
     }
+
+    private fun Track.trackMergeKey(): String = "${platform.id}:${id}"
 
     private suspend fun recoverSessionFromPlaylistProbe(
         baseUrl: String,
@@ -599,16 +890,38 @@ class NeteaseAccountRepositoryImpl @Inject constructor(
 
     private fun now(): Long = System.currentTimeMillis()
 
+    private class SyncApiException(
+        val error: AppError
+    ) : IllegalStateException(error.message, error.cause)
+
     private data class RemotePlaylistSummary(
         val id: String,
         val name: String,
         val coverUrl: String,
         val trackCount: Int? = null,
-        val updateTime: Long? = null
+        val updateTime: Long? = null,
+        val specialType: Int? = null
     )
 
     private companion object {
         const val DEFAULT_REAL_IP = "116.25.146.177"
+        const val NETEASE_LIKED_PLAYLIST_SPECIAL_TYPE = 5
         const val NETEASE_BATCH_SIZE = 200
+        const val NETEASE_RATE_LIMIT_RETRY_COUNT = 2
+        const val NETEASE_RATE_LIMIT_BASE_DELAY_MS = 700L
+        const val NETEASE_RATE_LIMIT_INCREMENT_DELAY_MS = 500L
+        const val NETEASE_PLAYLIST_SYNC_INTERVAL_MS = 220L
+        const val NETEASE_PLAYLIST_TRACK_PAGE_SIZE = 200
+        const val NETEASE_SONG_DETAIL_SYNC_INTERVAL_MS = 120L
+
+        val NETEASE_RATE_LIMIT_CODES = setOf(405, 406, 429, 509, -460, -461, -462)
+        val NETEASE_RATE_LIMIT_KEYWORDS = listOf(
+            "操作频繁",
+            "请求频繁",
+            "过于频繁",
+            "too frequent",
+            "rate limit",
+            "频率限制"
+        )
     }
 }

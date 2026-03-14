@@ -16,7 +16,7 @@ import com.music.myapplication.core.database.entity.*
         DownloadedTrackEntity::class,
         LocalTrackEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
