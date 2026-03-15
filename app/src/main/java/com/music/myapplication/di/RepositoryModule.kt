@@ -1,9 +1,11 @@
 package com.music.myapplication.di
 
+import com.music.myapplication.data.repository.AppUpdateRepositoryImpl
 import com.music.myapplication.data.repository.LocalLibraryRepositoryImpl
 import com.music.myapplication.data.repository.NeteaseAccountRepositoryImpl
 import com.music.myapplication.data.repository.OnlineMusicRepositoryImpl
 import com.music.myapplication.data.repository.RecommendationRepositoryImpl
+import com.music.myapplication.domain.repository.AppUpdateRepository
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.NeteaseAccountRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -41,4 +43,10 @@ abstract class RepositoryModule {
     abstract fun bindRecommendationRepository(
         impl: RecommendationRepositoryImpl
     ): RecommendationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAppUpdateRepository(
+        impl: AppUpdateRepositoryImpl
+    ): AppUpdateRepository
 }

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.music.myapplication.domain.model.AudioSource
@@ -73,6 +74,8 @@ class PlayerPreferences @Inject constructor(
         val WIFI_ONLY = booleanPreferencesKey("wifi_only")
         val CACHE_LIMIT_MB = intPreferencesKey("cache_limit_mb")
         val PLAYBACK_SNAPSHOT = stringPreferencesKey("playback_snapshot")
+        val APP_UPDATE_LAST_CHECK_AT_MS = longPreferencesKey("app_update_last_check_at_ms")
+        val APP_UPDATE_LAST_NOTIFIED_VERSION_CODE = intPreferencesKey("app_update_last_notified_version_code")
     }
 
     @Volatile
@@ -140,6 +143,14 @@ class PlayerPreferences @Inject constructor(
         clampCacheLimitMb(
             prefs[Keys.CACHE_LIMIT_MB] ?: DEFAULT_CACHE_LIMIT_MB
         )
+    }
+
+    val appUpdateLastCheckAtMs: Flow<Long> = context.dataStore.data.map { prefs ->
+        (prefs[Keys.APP_UPDATE_LAST_CHECK_AT_MS] ?: 0L).coerceAtLeast(0L)
+    }
+
+    val appUpdateLastNotifiedVersionCode: Flow<Int> = context.dataStore.data.map { prefs ->
+        (prefs[Keys.APP_UPDATE_LAST_NOTIFIED_VERSION_CODE] ?: 0).coerceAtLeast(0)
     }
 
     val playbackSnapshot: Flow<PlaybackSnapshot?> = context.dataStore.data.map { prefs ->
@@ -229,6 +240,16 @@ class PlayerPreferences @Inject constructor(
 
     suspend fun setCacheLimitMb(limitMb: Int) {
         context.dataStore.edit { it[Keys.CACHE_LIMIT_MB] = clampCacheLimitMb(limitMb) }
+    }
+
+    suspend fun setAppUpdateLastCheckAtMs(timestampMs: Long) {
+        context.dataStore.edit { it[Keys.APP_UPDATE_LAST_CHECK_AT_MS] = timestampMs.coerceAtLeast(0L) }
+    }
+
+    suspend fun setAppUpdateLastNotifiedVersionCode(versionCode: Int) {
+        context.dataStore.edit {
+            it[Keys.APP_UPDATE_LAST_NOTIFIED_VERSION_CODE] = versionCode.coerceAtLeast(0)
+        }
     }
 
     suspend fun savePlaybackSnapshot(state: PlaybackState) {

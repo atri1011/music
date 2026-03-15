@@ -9,6 +9,8 @@ plugins {
 
 val tuneHubApiKey = ((project.findProperty("TUNEHUB_API_KEY") as String?) ?: "")
     .replace("\"", "\\\"")
+val appUpdateFeedUrl = ((project.findProperty("APP_UPDATE_FEED_URL") as String?) ?: "")
+    .replace("\"", "\\\"")
 
 android {
     namespace = "com.music.myapplication"
@@ -18,9 +20,10 @@ android {
         applicationId = "com.music.myapplication"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 12
+        versionName = "1.2.0"
         buildConfigField("String", "TUNEHUB_API_KEY", "\"$tuneHubApiKey\"")
+        buildConfigField("String", "APP_UPDATE_FEED_URL", "\"$appUpdateFeedUrl\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -1,5 +1,6 @@
 package com.music.myapplication.feature.more
 
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,14 +47,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.myapplication.BuildConfig
 import com.music.myapplication.core.datastore.DarkModeOption
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
+import com.music.myapplication.feature.update.AppUpdateUiState
+import com.music.myapplication.feature.update.AppUpdateViewModel
 
 @Composable
 fun MoreScreen(
@@ -62,6 +67,13 @@ fun MoreScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val activity = LocalContext.current as? ComponentActivity
+    val updateViewModel: AppUpdateViewModel = if (activity != null) {
+        hiltViewModel(viewModelStoreOwner = activity)
+    } else {
+        hiltViewModel()
+    }
+    val updateState by updateViewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         viewModel.refreshCacheUsage()
@@ -261,8 +273,15 @@ fun MoreScreen(
             SettingsItem(
                 icon = Icons.Default.Info,
                 title = "版本",
-                subtitle = "1.0.0",
+                subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                 onClick = {}
+            )
+            SettingsItem(
+                icon = Icons.Default.Cached,
+                title = "检查更新",
+                subtitle = updateCheckSubtitle(updateState),
+                onClick = updateViewModel::checkNow,
+                enabled = !updateState.isChecking
             )
             SettingsItem(
                 icon = Icons.Default.MusicNote,
@@ -649,6 +668,13 @@ private fun audioSourceSubtitle(source: AudioSource): String = when (source) {
 }
 
 private fun baseUrlSubtitle(baseUrl: String): String = baseUrl.ifBlank { "未设置" }
+
+private fun updateCheckSubtitle(state: AppUpdateUiState): String = when {
+    state.isChecking -> "检查中..."
+    state.showDialog && state.availableUpdate != null -> "发现新版本：${state.availableUpdate.latestVersionName}"
+    !state.lastCheckMessage.isNullOrBlank() -> state.lastCheckMessage!!
+    else -> "点击检查"
+}
 
 private fun cacheItemSubtitle(sizeBytes: Long, isLoading: Boolean): String {
     return if (isLoading) "统计中..." else formatStorageSize(sizeBytes)
