@@ -7,6 +7,7 @@ import com.music.myapplication.data.repository.extractKuwoSongCoverMap
 import com.music.myapplication.data.repository.extractNeteaseSongCoverMap
 import com.music.myapplication.data.repository.extractQqSongCoverMap
 import com.music.myapplication.data.repository.extractQqToplistSongCoverMap
+import com.music.myapplication.data.repository.isDigitsOnly
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import kotlinx.serialization.json.Json
@@ -197,6 +198,4 @@ internal class OnlineTrackCoverEnricher(
         }
         return result
     }
-
-    private fun String.isDigitsOnly(): Boolean = isNotEmpty() && all(Char::isDigit)
 }

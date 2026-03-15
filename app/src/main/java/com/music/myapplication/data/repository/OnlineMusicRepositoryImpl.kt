@@ -8,7 +8,11 @@ import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.network.dispatch.DispatchExecutor
 import com.music.myapplication.core.network.retrofit.NeteaseCloudApiEnhancedApi
 import com.music.myapplication.core.network.retrofit.TuneHubApi
+import com.music.myapplication.data.repository.online.OnlineMusicCommentCandidateResolver
+import com.music.myapplication.data.repository.online.OnlineMusicCommentsFetcher
 import com.music.myapplication.data.repository.online.OnlineMusicMediaResolver
+import com.music.myapplication.data.repository.online.OnlineMusicNeteasePlaylistTrackResolver
+import com.music.myapplication.data.repository.online.OnlineMusicQqAlbumInfoFetcher
 import com.music.myapplication.data.repository.online.OnlineMusicSearchDelegate
 import com.music.myapplication.data.repository.online.OnlineTrackCoverEnricher
 import com.music.myapplication.domain.model.AlbumDetailResult
@@ -25,7 +29,6 @@ import com.music.myapplication.domain.model.SearchType
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LyricsResult
 import com.music.myapplication.domain.repository.OnlineMusicRepository
-import com.music.myapplication.domain.repository.TrackComment
 import com.music.myapplication.domain.repository.TrackCommentsResult
 import com.music.myapplication.domain.repository.ToplistInfo
 import kotlinx.coroutines.flow.first
@@ -46,7 +49,6 @@ import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.abs
 
 @Singleton
 class OnlineMusicRepositoryImpl @Inject constructor(
@@ -65,11 +67,15 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         qqDetailBatchSize = QQ_DETAIL_BATCH_SIZE,
         kuwoDetailBatchSize = KUWO_DETAIL_BATCH_SIZE
     )
+    private val commentCandidateResolver = OnlineMusicCommentCandidateResolver(
+        api = api,
+        search = ::search
+    )
     private val mediaResolver = OnlineMusicMediaResolver(
         api = api,
         okHttpClient = okHttpClient,
         resolveQqTrackCandidate = { track ->
-            findCommentTrackCandidate(track, Platform.QQ)
+            commentCandidateResolver.findQqTrackCandidate(track)
         }
     )
     private val searchDelegate = OnlineMusicSearchDelegate(
@@ -77,6 +83,17 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         getToplists = ::getToplists,
         getToplistDetailFast = ::getToplistDetailFast,
         officialSearchPageSizeLimit = OFFICIAL_SEARCH_PAGE_SIZE_LIMIT
+    )
+    private val commentsFetcher = OnlineMusicCommentsFetcher(
+        api = api,
+        json = json
+    )
+    private val neteasePlaylistTrackResolver = OnlineMusicNeteasePlaylistTrackResolver(
+        api = api,
+        neteaseDetailBatchSize = NETEASE_DETAIL_BATCH_SIZE
+    )
+    private val qqAlbumInfoFetcher = OnlineMusicQqAlbumInfoFetcher(
+        api = api
     )
 
     override suspend fun search(
@@ -280,9 +297,9 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         val safePageSize = pageSize.coerceIn(1, 50)
         var lastError: AppError? = null
 
-        val neteaseSongId = resolveNeteaseCommentSongId(track)
+        val neteaseSongId = commentCandidateResolver.resolveNeteaseCommentSongId(track)
         if (!neteaseSongId.isNullOrBlank()) {
-            when (val result = fetchNeteaseTrackComments(neteaseSongId, safePage, safePageSize)) {
+            when (val result = commentsFetcher.fetchNeteaseTrackComments(neteaseSongId, safePage, safePageSize)) {
                 is Result.Success -> {
                     if (result.data.totalCount > 0 || result.data.comments.isNotEmpty()) {
                         return result
@@ -294,9 +311,9 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             }
         }
 
-        val qqSongId = resolveQqCommentSongId(track)
+        val qqSongId = commentCandidateResolver.resolveQqCommentSongId(track)
         if (!qqSongId.isNullOrBlank()) {
-            when (val result = fetchQqTrackComments(qqSongId, safePage, safePageSize)) {
+            when (val result = commentsFetcher.fetchQqTrackComments(qqSongId, safePage, safePageSize)) {
                 is Result.Success -> return result
                 is Result.Error -> lastError = result.error
                 Result.Loading -> Unit
@@ -332,7 +349,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
                 )
             }
 
-            val tracks = resolveNeteasePlaylistTracks(response)
+            val tracks = neteasePlaylistTrackResolver.resolvePlaylistTracks(response)
             if (tracks.isEmpty()) {
                 return Result.Error(AppError.Parse(message = "解析网易歌单详情失败"))
             }
@@ -371,7 +388,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
 
     private suspend fun fetchQqAlbumDetailDirect(idOrMid: String): Result<List<Track>> {
         return try {
-            val albumId = resolveQqAlbumId(idOrMid)
+            val albumId = qqAlbumInfoFetcher.resolveAlbumId(idOrMid)
                 ?: return Result.Error(AppError.Parse(message = "解析 QQ 音乐专辑信息失败"))
             val response = api.postQqMusicu(buildQqAlbumSongListBody(albumId))
             val songsResponse = (response as? JsonObject)?.get("songs")
@@ -426,7 +443,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
     }
 
     private suspend fun fetchQqAlbumInfo(idOrMid: String): Result<AlbumInfo> {
-        return when (val albumData = fetchQqAlbumInfoData(idOrMid)) {
+        return when (val albumData = qqAlbumInfoFetcher.fetchAlbumInfoData(idOrMid)) {
             is Result.Success -> Result.Success(parseQqAlbumInfo(idOrMid, albumData.data))
             is Result.Error -> Result.Error(albumData.error)
             is Result.Loading -> Result.Loading
@@ -496,7 +513,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
 
     private suspend fun fetchQqAlbumDetailFull(idOrMid: String): Result<AlbumDetailResult> {
         return try {
-            val albumData = when (val result = fetchQqAlbumInfoData(idOrMid)) {
+            val albumData = when (val result = qqAlbumInfoFetcher.fetchAlbumInfoData(idOrMid)) {
                 is Result.Success -> result.data
                 is Result.Error -> return Result.Error(result.error)
                 is Result.Loading -> return Result.Loading
@@ -813,225 +830,10 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         )
     }
 
-    private suspend fun fetchQqAlbumInfoData(idOrMid: String): Result<JsonObject> {
-        return try {
-            val response = api.postQqMusicu(buildQqAlbumInfoBody(idOrMid))
-            val albumResponse = (response as? JsonObject)?.get("album")
-            val code = extractApiCode(albumResponse)
-            if (code != null && code != 0) {
-                return Result.Error(
-                    AppError.Api(
-                        message = extractApiMessage(albumResponse).ifBlank { "获取 QQ 音乐专辑信息失败" },
-                        code = code
-                    )
-                )
-            }
-
-            val albumData = extractQqAlbumInfoData(response)
-                ?: return Result.Error(AppError.Parse(message = "解析 QQ 音乐专辑信息失败"))
-            Result.Success(albumData)
-        } catch (e: Exception) {
-            Result.Error(AppError.Network(cause = e))
-        }
-    }
-
-    private suspend fun resolveQqAlbumId(idOrMid: String): String? {
-        if (idOrMid.isBlank()) return null
-        if (idOrMid.isDigitsOnly()) return idOrMid
-
-        return runCatching {
-            api.postQqMusicu(buildQqAlbumInfoBody(idOrMid))
-        }.getOrNull()?.let(::extractQqAlbumId)
-    }
-
-    private suspend fun resolveNeteasePlaylistTracks(response: JsonElement): List<Track> {
-        val playlistTracks = extractNeteasePlaylistTracks(response)
-        val trackIds = extractNeteasePlaylistTrackIds(response)
-        if (trackIds.isEmpty()) return playlistTracks
-
-        val resolvedTracks = LinkedHashMap<String, Track>()
-        playlistTracks.forEach { track ->
-            if (track.id.isNotBlank()) {
-                resolvedTracks.putIfAbsent(track.id, track)
-            }
-        }
-
-        val missingTrackIds = trackIds.filterNot(resolvedTracks::containsKey)
-        if (missingTrackIds.isNotEmpty()) {
-            fetchNeteaseSongs(missingTrackIds).forEach { track ->
-                if (track.id.isNotBlank()) {
-                    resolvedTracks.putIfAbsent(track.id, track)
-                }
-            }
-        }
-
-        return trackIds.mapNotNull(resolvedTracks::get)
-            .ifEmpty { playlistTracks }
-    }
-
-    private suspend fun fetchNeteaseSongs(songIds: List<String>): List<Track> {
-        if (songIds.isEmpty()) return emptyList()
-
-        val tracks = mutableListOf<Track>()
-        songIds.chunked(NETEASE_DETAIL_BATCH_SIZE).forEach { chunk ->
-            val idsParam = chunk.joinToString(prefix = "[", postfix = "]")
-            val response = api.getNeteaseSongDetail(ids = idsParam)
-            tracks += extractNeteaseSongTracks(response)
-        }
-        return tracks
-    }
-
     private suspend fun fetchQqToplistsDirect(): List<ToplistInfo> {
         val response = api.postQqMusicu(body = buildQqToplistsRequestBody())
         return extractQqToplists(response)
     }
-
-    private suspend fun resolveNeteaseCommentSongId(track: Track): String? {
-        if (track.platform == Platform.NETEASE && track.id.isDigitsOnly()) return track.id
-        return findCommentTrackCandidate(track, Platform.NETEASE)
-            ?.id
-            ?.takeIf { it.isDigitsOnly() }
-    }
-
-    private suspend fun resolveQqCommentSongId(track: Track): String? {
-        if (track.platform == Platform.QQ) {
-            resolveQqSongId(track.id)?.let { return it }
-        }
-
-        val candidate = findCommentTrackCandidate(track, Platform.QQ) ?: return null
-        return resolveQqSongId(candidate.id)
-    }
-
-    private suspend fun findCommentTrackCandidate(track: Track, platform: Platform): Track? {
-        val keyword = listOf(track.title, track.artist)
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .joinToString(" ")
-        if (keyword.isBlank()) return null
-
-        val searchResult = search(
-            platform = platform,
-            keyword = keyword,
-            page = 1,
-            pageSize = 20
-        )
-        val candidates = (searchResult as? Result.Success)?.data.orEmpty()
-            .filter { it.id.isNotBlank() }
-        return selectBestMatchedTrack(reference = track, candidates = candidates)
-    }
-
-    private suspend fun resolveQqSongId(songIdOrMid: String): String? {
-        if (songIdOrMid.isBlank()) return null
-        if (songIdOrMid.isDigitsOnly()) return songIdOrMid
-
-        return runCatching {
-            api.getQqSongDetail(songMid = songIdOrMid)
-        }.getOrNull()
-            ?.let(::extractFirstQqSongId)
-    }
-
-    private suspend fun fetchNeteaseTrackComments(
-        songId: String,
-        page: Int,
-        pageSize: Int
-    ): Result<TrackCommentsResult> {
-        return try {
-            val legacyResponse = api.getNeteaseSongComments(
-                songId = songId,
-                limit = pageSize,
-                offset = (page - 1) * pageSize
-            )
-            val code = extractApiCode(legacyResponse) ?: -1
-            if (code != 200) {
-                Result.Error(
-                    AppError.Api(
-                        message = extractApiMessage(legacyResponse).ifBlank { "获取网易云评论失败" },
-                        code = code
-                    )
-                )
-            } else {
-                val legacyComments = extractNeteaseTrackComments(legacyResponse)
-                val latestPage = fetchNeteaseSortedCommentPage(
-                    songId = songId,
-                    page = page,
-                    pageSize = pageSize,
-                    sortType = NETEASE_COMMENT_SORT_LATEST
-                )
-                val recommendedPage = fetchNeteaseSortedCommentPage(
-                    songId = songId,
-                    page = page,
-                    pageSize = pageSize,
-                    sortType = NETEASE_COMMENT_SORT_RECOMMENDED
-                )
-                val totalCount = maxOf(
-                    legacyComments.totalCount,
-                    latestPage?.totalCount ?: 0,
-                    recommendedPage?.totalCount ?: 0
-                )
-                Result.Success(
-                    TrackCommentsResult(
-                        sourcePlatform = Platform.NETEASE,
-                        totalCount = totalCount,
-                        hotComments = legacyComments.hotComments,
-                        latestComments = latestPage?.comments.takeUnless { it.isNullOrEmpty() }
-                            ?: legacyComments.latestComments,
-                        recommendedComments = recommendedPage?.comments.takeUnless { it.isNullOrEmpty() }
-                            ?: legacyComments.recommendedComments
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            Result.Error(AppError.Network(cause = e))
-        }
-    }
-
-    private suspend fun fetchQqTrackComments(
-        songId: String,
-        page: Int,
-        pageSize: Int
-    ): Result<TrackCommentsResult> {
-        return try {
-            val rawResponse = api.getQqSongCommentsRaw(
-                songId = songId,
-                pageNum = (page - 1).coerceAtLeast(0),
-                pageSize = pageSize
-            ).use { it.string() }
-
-            val extracted = extractQqTrackComments(rawResponse, json)
-                ?: return Result.Error(AppError.Parse(message = "解析 QQ 音乐评论失败"))
-
-            Result.Success(
-                TrackCommentsResult(
-                    sourcePlatform = Platform.QQ,
-                    totalCount = extracted.totalCount,
-                    latestComments = extracted.comments
-                )
-            )
-        } catch (e: Exception) {
-            Result.Error(AppError.Network(cause = e))
-        }
-    }
-
-    private suspend fun fetchNeteaseSortedCommentPage(
-        songId: String,
-        page: Int,
-        pageSize: Int,
-        sortType: Int
-    ): ExtractedCommentPage? {
-        val response = runCatching {
-            api.getNeteaseSortedSongComments(
-                songId = songId,
-                pageNo = page,
-                pageSize = pageSize,
-                sortType = sortType
-            )
-        }.getOrNull() ?: return null
-
-        if ((extractApiCode(response) ?: -1) != 200) return null
-        return extractNeteaseSortedTrackComments(response)
-    }
-
-    private fun String.isDigitsOnly(): Boolean = isNotEmpty() && all(Char::isDigit)
 
     // ── Hot Search ──
 
@@ -1273,8 +1075,6 @@ class OnlineMusicRepositoryImpl @Inject constructor(
     private companion object {
         const val NETEASE_DETAIL_BATCH_SIZE = 50
         const val NETEASE_ALBUM_FALLBACK_MAX_PAGES = 4
-        const val NETEASE_COMMENT_SORT_RECOMMENDED = 1
-        const val NETEASE_COMMENT_SORT_LATEST = 3
         const val QQ_DETAIL_BATCH_SIZE = 20
         const val KUWO_DETAIL_BATCH_SIZE = 50
         const val OFFICIAL_SEARCH_PAGE_SIZE_LIMIT = 50
@@ -1481,106 +1281,6 @@ internal fun extractKuwoSongCoverMap(rawResponse: String, json: Json): Map<Strin
     return coverMap
 }
 
-internal data class ExtractedTrackComments(
-    val totalCount: Int = 0,
-    val hotComments: List<TrackComment> = emptyList(),
-    val latestComments: List<TrackComment> = emptyList(),
-    val recommendedComments: List<TrackComment> = emptyList()
-) {
-    val comments: List<TrackComment>
-        get() = when {
-            hotComments.isNotEmpty() -> hotComments
-            latestComments.isNotEmpty() -> latestComments
-            recommendedComments.isNotEmpty() -> recommendedComments
-            else -> emptyList()
-        }
-}
-
-internal fun extractNeteaseTrackComments(data: JsonElement?): ExtractedTrackComments {
-    val root = data as? JsonObject ?: return ExtractedTrackComments()
-    val hotComments = ((root.getIgnoreCase("hotComments") as? JsonArray).orEmpty())
-        .mapNotNull { parseNeteaseTrackComment(it as? JsonObject) }
-        .distinctBy(TrackComment::id)
-    val latestComments = ((root.getIgnoreCase("comments") as? JsonArray).orEmpty())
-        .mapNotNull { parseNeteaseTrackComment(it as? JsonObject) }
-        .distinctBy(TrackComment::id)
-
-    val knownCount = maxOf(hotComments.size, latestComments.size).toLong()
-    val total = (root.firstLongOf("total") ?: knownCount)
-        .coerceAtLeast(knownCount)
-        .toInt()
-
-    return ExtractedTrackComments(
-        totalCount = total,
-        hotComments = hotComments,
-        latestComments = latestComments,
-        recommendedComments = hotComments
-    )
-}
-
-internal data class ExtractedCommentPage(
-    val totalCount: Int = 0,
-    val comments: List<TrackComment> = emptyList()
-)
-
-internal fun extractNeteaseSortedTrackComments(data: JsonElement?): ExtractedCommentPage {
-    val root = data as? JsonObject ?: return ExtractedCommentPage()
-    val commentRoot = (root.getIgnoreCase("data") as? JsonObject) ?: root
-    val rawComments = commentRoot.getIgnoreCase("comments") ?: root.getIgnoreCase("comments")
-    val commentList = when (rawComments) {
-        is JsonArray -> rawComments
-        is JsonObject -> (rawComments.getIgnoreCase("list") as? JsonArray)
-            ?: (rawComments.getIgnoreCase("comments") as? JsonArray)
-        else -> null
-    } ?: JsonArray(emptyList())
-
-    val comments = commentList
-        .mapNotNull { parseNeteaseTrackComment(it as? JsonObject) }
-        .distinctBy(TrackComment::id)
-    val total = listOf(commentRoot, root)
-        .firstNotNullOfOrNull { node -> node.firstLongOf("totalCount", "total", "commentCount") }
-        ?.coerceAtLeast(comments.size.toLong())
-        ?.toInt()
-        ?: comments.size
-
-    return ExtractedCommentPage(
-        totalCount = total,
-        comments = comments
-    )
-}
-
-internal fun extractQqTrackComments(rawResponse: String, json: Json): ExtractedTrackComments? {
-    val root = parseJsonObjectFromRaw(rawResponse, json) ?: return null
-    val code = extractApiCode(root)
-    if (code != null && code != 0 && code != 200) return null
-
-    val commentRoot = (root.getIgnoreCase("comment") as? JsonObject)
-        ?: (root.getIgnoreCase("data") as? JsonObject)
-        ?: root
-
-    val rawCommentList = commentRoot.getIgnoreCase("commentlist") ?: root.getIgnoreCase("commentlist")
-    val commentList = when (rawCommentList) {
-        is JsonArray -> rawCommentList
-        is JsonObject -> (rawCommentList.getIgnoreCase("list") as? JsonArray)
-            ?: (rawCommentList.getIgnoreCase("commentlist") as? JsonArray)
-        else -> null
-    } ?: JsonArray(emptyList())
-
-    val comments = commentList.mapNotNull { item ->
-        parseQqTrackComment(item as? JsonObject)
-    }
-    val total = listOf(commentRoot, root)
-        .firstNotNullOfOrNull { node -> node.firstLongOf("commenttotal", "commentTotal", "total") }
-        ?.coerceAtLeast(comments.size.toLong())
-        ?.toInt()
-        ?: comments.size
-
-    return ExtractedTrackComments(
-        totalCount = total,
-        latestComments = comments
-    )
-}
-
 internal fun extractFirstQqSongId(data: JsonElement?): String? {
     val root = data as? JsonObject ?: return null
     val candidates = buildList {
@@ -1685,90 +1385,6 @@ internal fun extractQqMvUrl(data: JsonElement?, vid: String): String? {
     return null
 }
 
-private fun parseNeteaseTrackComment(comment: JsonObject?): TrackComment? {
-    val item = comment ?: return null
-    val content = item.firstStringOf("content").orEmpty().trim()
-    if (content.isBlank()) return null
-
-    val user = item.getIgnoreCase("user") as? JsonObject
-    return TrackComment(
-        id = item.firstStringOf("commentId", "commentid", "id").orEmpty().ifBlank { content.hashCode().toString() },
-        authorName = user?.firstStringOf("nickname", "nickName", "nick").orEmpty().ifBlank { "匿名用户" },
-        content = content,
-        likedCount = (item.firstLongOf("likedCount", "likedcount", "praisenum") ?: 0L).toInt(),
-        timeMs = normalizeCommentTime(item.firstLongOf("time", "timeStamp")),
-        avatarUrl = user?.firstStringOf("avatarUrl", "avatarurl").orEmpty()
-    )
-}
-
-private fun parseQqTrackComment(comment: JsonObject?): TrackComment? {
-    val item = comment ?: return null
-    val content = item.firstStringOf("rootcommentcontent", "content", "middlecommentcontent").orEmpty().trim()
-    if (content.isBlank()) return null
-
-    val user = (item.getIgnoreCase("userinfo") ?: item.getIgnoreCase("user")) as? JsonObject
-    return TrackComment(
-        id = item.firstStringOf("rootcommentid", "commentid", "id").orEmpty().ifBlank { content.hashCode().toString() },
-        authorName = user?.firstStringOf("nick", "nickname", "nickName")
-            .orEmpty()
-            .ifBlank { item.firstStringOf("rootcommentnick", "nick", "nickname").orEmpty().ifBlank { "QQ用户" } },
-        content = content,
-        likedCount = (item.firstLongOf("praisenum", "likedCount", "praiseNum") ?: 0L).toInt(),
-        timeMs = normalizeCommentTime(item.firstLongOf("time", "timeStamp", "commenttime")),
-        avatarUrl = normalizeQqImageUrl(
-            user?.firstStringOf("avatarurl", "avatarUrl", "avatar").orEmpty()
-        )
-    )
-}
-
-private fun parseJsonObjectFromRaw(rawResponse: String, json: Json): JsonObject? {
-    val trimmed = rawResponse.trim()
-    if (trimmed.isBlank()) return null
-
-    val payload = when {
-        trimmed.startsWith("{") -> trimmed
-        trimmed.startsWith("[") -> trimmed
-        else -> Regex(
-            pattern = """^[^(]+\((.*)\)\s*;?$""",
-            options = setOf(RegexOption.DOT_MATCHES_ALL)
-        ).find(trimmed)?.groupValues?.getOrNull(1)
-    } ?: return null
-
-    return runCatching { json.parseToJsonElement(payload) as? JsonObject }.getOrNull()
-}
-
-private fun normalizeCommentTime(rawTime: Long?): Long {
-    val value = rawTime ?: return 0L
-    return if (value in 1..99_999_999_999L) value * 1000 else value
-}
-
-private fun selectBestMatchedTrack(reference: Track, candidates: List<Track>): Track? {
-    if (candidates.isEmpty()) return null
-
-    val titleAndArtistMatches = candidates.filter { candidate ->
-        candidate.title.isLikelySameTitle(reference.title) &&
-            candidate.artist.isLikelySameArtist(reference.artist)
-    }
-    val titleMatches = candidates.filter { candidate ->
-        candidate.title.isLikelySameTitle(reference.title)
-    }
-    val durationMatched = titleAndArtistMatches.firstOrNull { candidate ->
-        candidate.durationMs.isCloseTo(reference.durationMs)
-    }
-
-    return durationMatched
-        ?: titleAndArtistMatches.firstOrNull()
-        ?: titleMatches.firstOrNull { candidate -> candidate.durationMs.isCloseTo(reference.durationMs) }
-        ?: titleMatches.firstOrNull()
-        ?: candidates.firstOrNull { candidate -> candidate.artist.isLikelySameArtist(reference.artist) }
-        ?: candidates.firstOrNull()
-}
-
-private fun Long.isCloseTo(other: Long): Boolean {
-    if (this <= 0L || other <= 0L) return true
-    return abs(this - other) <= 5_000L
-}
-
 internal fun String.isLikelySameTitle(other: String): Boolean {
     val left = normalizeComparisonText()
     val right = other.normalizeComparisonText()
@@ -1776,7 +1392,7 @@ internal fun String.isLikelySameTitle(other: String): Boolean {
     return left == right || left.contains(right) || right.contains(left)
 }
 
-private fun String.isLikelySameArtist(other: String): Boolean {
+internal fun String.isLikelySameArtist(other: String): Boolean {
     if (isBlank() || other.isBlank()) return true
     val left = normalizeComparisonText()
     val right = other.normalizeComparisonText()
@@ -1854,7 +1470,7 @@ private fun buildQqSingerCoverUrl(singerMid: String): String {
     return "https://y.qq.com/music/photo_new/T001R300x300M000$singerMid.jpg"
 }
 
-private fun normalizeQqImageUrl(rawUrl: String): String {
+internal fun normalizeQqImageUrl(rawUrl: String): String {
     val url = rawUrl.trim()
     if (url.isBlank()) return ""
     return when {
@@ -1959,12 +1575,12 @@ private fun extractNeteaseArtistText(track: JsonObject): String {
         )
     }
 
-private fun extractApiCode(data: JsonElement?): Int? {
+internal fun extractApiCode(data: JsonElement?): Int? {
     val root = data as? JsonObject ?: return null
     return (root.getIgnoreCase("code") as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
 }
 
-private fun extractApiMessage(data: JsonElement?): String {
+internal fun extractApiMessage(data: JsonElement?): String {
     val root = data as? JsonObject ?: return ""
     return root.firstStringOf("message", "msg").orEmpty()
 }
@@ -2031,7 +1647,7 @@ private fun shareTargetPriority(url: String): Int {
     }
 }
 
-private fun JsonObject.getIgnoreCase(key: String): JsonElement? {
+internal fun JsonObject.getIgnoreCase(key: String): JsonElement? {
     return this[key] ?: entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
 }
 
@@ -2087,7 +1703,7 @@ internal fun pickNeteaseHotKeywordToplist(toplists: List<ToplistInfo>): ToplistI
     } ?: toplists.first()
 }
 
-private fun JsonObject.firstLongOf(vararg keys: String): Long? {
+internal fun JsonObject.firstLongOf(vararg keys: String): Long? {
     keys.forEach { key ->
         val value = (getIgnoreCase(key) as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
         if (value != null) return value
@@ -2704,55 +2320,6 @@ internal fun buildQqSingerAlbumsBody(singerMid: String, page: Int, pageSize: Int
 }
 
 private const val QQ_DEFAULT_PLAYLIST_CATEGORY_ID = 6
-private const val QQ_ALBUM_DETAIL_PAGE_SIZE = 300
-
-private fun buildQqAlbumInfoBody(idOrMid: String): JsonElement = buildJsonObject {
-    val numericAlbumId = idOrMid.toLongOrNull()
-    put("comm", buildJsonObject {
-        put("cv", 4747474)
-        put("ct", 24)
-        put("format", "json")
-        put("inCharset", "utf-8")
-        put("outCharset", "utf-8")
-        put("uin", 0)
-    })
-    put("album", buildJsonObject {
-        put("module", "music.musichallAlbum.AlbumInfoServer")
-        put("method", "GetAlbumDetail")
-        put("param", buildJsonObject {
-            if (numericAlbumId != null) {
-                put("albumId", numericAlbumId)
-            } else {
-                put("albumMid", idOrMid)
-            }
-        })
-    })
-}
-
-private fun buildQqAlbumSongListBody(albumId: String): JsonElement = buildJsonObject {
-    val numericAlbumId = albumId.toLongOrNull()
-    put("comm", buildJsonObject {
-        put("cv", 4747474)
-        put("ct", 24)
-        put("format", "json")
-        put("inCharset", "utf-8")
-        put("outCharset", "utf-8")
-        put("uin", 0)
-    })
-    put("songs", buildJsonObject {
-        put("module", "music.musichallAlbum.AlbumSongList")
-        put("method", "GetAlbumSongList")
-        put("param", buildJsonObject {
-            if (numericAlbumId != null) {
-                put("albumId", numericAlbumId)
-            } else {
-                put("albumId", albumId)
-            }
-            put("begin", 0)
-            put("num", QQ_ALBUM_DETAIL_PAGE_SIZE)
-        })
-    })
-}
 
 private val qqPlaylistCategoryIdMap = linkedMapOf(
     "流行" to 6, "经典" to 22, "轻音乐" to 12, "摇滚" to 19,
@@ -2903,19 +2470,6 @@ private fun extractQqArtistSong(song: JsonObject?): Track? {
         durationMs = (item.firstLongOf("interval") ?: 0L) * 1000
     )
 }
-
-private fun extractQqAlbumInfoData(data: JsonElement?): JsonObject? {
-    return (((data as? JsonObject)?.get("album") as? JsonObject)
-        ?.get("data") as? JsonObject)
-}
-
-private fun extractQqAlbumIdFromInfoData(albumData: JsonObject?): String? {
-    val basicInfo = albumData?.getIgnoreCase("basicInfo") as? JsonObject ?: return null
-    return basicInfo.firstStringOf("albumID", "albumId", "id")
-}
-
-private fun extractQqAlbumId(data: JsonElement?): String? =
-    extractQqAlbumIdFromInfoData(extractQqAlbumInfoData(data))
 
 private fun extractQqAlbumTracks(data: JsonElement?): List<Track> {
     val songs = ((((data as? JsonObject)?.get("songs") as? JsonObject)

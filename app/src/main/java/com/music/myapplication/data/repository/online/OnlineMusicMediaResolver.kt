@@ -11,6 +11,7 @@ import com.music.myapplication.data.repository.extractNeteaseMvUrl
 import com.music.myapplication.data.repository.extractQqMvUrl
 import com.music.myapplication.data.repository.extractQqMvVid
 import com.music.myapplication.data.repository.extractShareTarget
+import com.music.myapplication.data.repository.isDigitsOnly
 import com.music.myapplication.data.repository.shareRefererFor
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
@@ -309,6 +310,4 @@ internal class OnlineMusicMediaResolver(
             rawUrl
         }
     }
-
-    private fun String.isDigitsOnly(): Boolean = isNotEmpty() && all(Char::isDigit)
 }

@@ -1,0 +1,1 @@
+继续：按 KISS/DRY 最小改动推进；每完成一段就执行 .\gradlew.bat testDebugUnitTest 和 .\gradlew.bat assembleDebug，失败先修复再继续。
