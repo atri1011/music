@@ -107,22 +107,26 @@ class TransformEngine @Inject constructor(private val json: Json) {
     }
 
     private fun scoreObject(obj: JsonObject): Int {
+        val effective = unwrapSongInfoIfNeeded(obj)
         var score = 0
-        if (findStringByKeys(obj, ID_KEYS) != null) score += 4
-        if (findStringByKeys(obj, TITLE_KEYS) != null) score += 4
-        if (findStringByKeys(obj, COVER_KEYS) != null) score += 2
-        if (findStringByKeys(obj, ARTIST_KEYS) != null) score += 1
+        if (findStringByKeys(effective, ID_KEYS) != null) score += 4
+        if (findStringByKeys(effective, TITLE_KEYS) != null) score += 4
+        if (findStringByKeys(effective, COVER_KEYS) != null) score += 2
+        if (findStringByKeys(effective, ARTIST_KEYS) != null) score += 1
         return score
     }
 
     private fun mapWithAliases(obj: JsonObject, platform: Platform): Track? {
-        val id = resolveAliasId(obj, platform) ?: return null
-        val title = findStringByKeys(obj, TITLE_KEYS) ?: ""
-        val artist = findStringByKeys(obj, ARTIST_KEYS) ?: ""
-        val album = findStringByKeys(obj, ALBUM_KEYS) ?: ""
-        val albumId = findStringByKeys(obj, ALBUM_ID_KEYS) ?: ""
-        val cover = findStringByKeys(obj, COVER_KEYS) ?: ""
-        val duration = findDurationByKeys(obj, DURATION_KEYS) ?: 0L
+        val effective = unwrapSongInfoIfNeeded(obj)
+        val id = resolveAliasId(obj, platform)
+            ?: resolveAliasId(effective, platform)
+            ?: return null
+        val title = findStringByKeys(effective, TITLE_KEYS) ?: findStringByKeys(obj, TITLE_KEYS) ?: ""
+        val artist = findStringByKeys(effective, ARTIST_KEYS) ?: findStringByKeys(obj, ARTIST_KEYS) ?: ""
+        val album = findStringByKeys(effective, ALBUM_KEYS) ?: findStringByKeys(obj, ALBUM_KEYS) ?: ""
+        val albumId = findStringByKeys(effective, ALBUM_ID_KEYS) ?: findStringByKeys(obj, ALBUM_ID_KEYS) ?: ""
+        val cover = findStringByKeys(effective, COVER_KEYS) ?: findStringByKeys(obj, COVER_KEYS) ?: ""
+        val duration = findDurationByKeys(effective, DURATION_KEYS) ?: findDurationByKeys(obj, DURATION_KEYS) ?: 0L
         return Track(
             id = id,
             platform = platform,
@@ -135,8 +139,19 @@ class TransformEngine @Inject constructor(private val json: Json) {
         )
     }
 
+    private fun unwrapSongInfoIfNeeded(obj: JsonObject): JsonObject {
+        val songInfo = obj.getIgnoreCase("songInfo") as? JsonObject ?: return obj
+        val hasMid = getElementByPath(songInfo, "mid")?.toText()
+            ?: getElementByPath(songInfo, "songmid")?.toText()
+            ?: getElementByPath(songInfo, "songMid")?.toText()
+            ?: getElementByPath(songInfo, "file.media_mid")?.toText()
+        val hasTitle = getElementByPath(songInfo, "name")?.toText() ?: getElementByPath(songInfo, "title")?.toText()
+        return if (!hasMid.isNullOrBlank() || !hasTitle.isNullOrBlank()) songInfo else obj
+    }
+
     private fun resolveAliasId(obj: JsonObject, platform: Platform): String? {
-        val hasArtist = findStringByKeys(obj, ARTIST_KEYS) != null
+        val effective = unwrapSongInfoIfNeeded(obj)
+        val hasArtist = findStringByKeys(obj, ARTIST_KEYS) != null || findStringByKeys(effective, ARTIST_KEYS) != null
 
         val topId = getElementByPath(obj, "topId")?.toText()
         if (!topId.isNullOrBlank() && !hasArtist) {
@@ -148,6 +163,10 @@ class TransformEngine @Inject constructor(private val json: Json) {
                 ?: getElementByPath(obj, "songmid")?.toText()
                 ?: getElementByPath(obj, "songMid")?.toText()
                 ?: getElementByPath(obj, "file.media_mid")?.toText()
+                ?: getElementByPath(effective, "mid")?.toText()
+                ?: getElementByPath(effective, "songmid")?.toText()
+                ?: getElementByPath(effective, "songMid")?.toText()
+                ?: getElementByPath(effective, "file.media_mid")?.toText()
             if (!qqSongMid.isNullOrBlank()) {
                 return qqSongMid
             }
@@ -163,7 +182,7 @@ class TransformEngine @Inject constructor(private val json: Json) {
             return sourceId
         }
 
-        return findStringByKeys(obj, ID_KEYS)
+        return findStringByKeys(obj, ID_KEYS) ?: findStringByKeys(effective, ID_KEYS)
     }
 
     private fun navigateToRoot(element: JsonElement, path: String): JsonElement {

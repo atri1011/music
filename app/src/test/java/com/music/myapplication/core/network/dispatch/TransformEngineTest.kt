@@ -119,6 +119,41 @@ class TransformEngineTest {
     }
 
     @Test
+    fun transform_unwrapsQqSongInfoWrappersInSearchResponse() {
+        val response = """
+            {
+              "req": {
+                "code": 0,
+                "data": {
+                  "body": {
+                    "song": {
+                      "list": [
+                        {
+                          "songInfo": {
+                            "id": 1,
+                            "mid": "001TestMid",
+                            "name": "测试歌曲",
+                            "singer": [{ "name": "测试歌手" }],
+                            "album": { "mid": "001AlbumMid", "name": "测试专辑" },
+                            "interval": 123
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        val tracks = engine.transform(responseBody = response, rule = null, platform = Platform.QQ)
+
+        assertTrue(tracks.isNotEmpty())
+        assertEquals("001TestMid", tracks.first().id)
+        assertEquals("测试歌曲", tracks.first().title)
+    }
+
+    @Test
     fun transform_withRule_mapsAlbumIdFromKnownAliases() {
         val response = """
             {
