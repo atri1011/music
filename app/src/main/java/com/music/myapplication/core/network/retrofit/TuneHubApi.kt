@@ -23,6 +23,11 @@ interface TuneHubApi {
         @Url url: String
     ): AppUpdateManifestDto
 
+    @GET
+    suspend fun fetchJsonElement(
+        @Url url: String
+    ): JsonElement
+
     @POST("v1/parse")
     suspend fun parse(
         @Header("X-API-Key") apiKey: String,
