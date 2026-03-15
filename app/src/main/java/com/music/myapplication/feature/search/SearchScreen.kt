@@ -80,6 +80,7 @@ import com.music.myapplication.feature.components.ShimmerMediaListItem
 import com.music.myapplication.feature.player.AddTrackToPlaylistSheet
 import com.music.myapplication.feature.player.TrackMoreMenu
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.glassSurface
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -423,7 +424,7 @@ fun SearchScreen(
                         .fillMaxWidth()
                         .zIndex(10f)
                         .padding(horizontal = 16.dp)
-                        .glassSurface(RoundedCornerShape(12.dp))
+                        .glassSurface(RoundedCornerShape(AppShapes.Small))
                         .padding(8.dp)
                 ) {
                     state.suggestions.take(8).forEach { suggestion ->
@@ -507,7 +508,7 @@ private fun SearchResultListItem(
     modifier: Modifier = Modifier
 ) {
     val coverSize = if (item.type == SearchType.ARTIST) 52.dp else 56.dp
-    val coverShape = if (item.type == SearchType.ARTIST) CircleShape else RoundedCornerShape(8.dp)
+    val coverShape = if (item.type == SearchType.ARTIST) CircleShape else RoundedCornerShape(AppShapes.ExtraSmall)
 
     Row(
         modifier = modifier

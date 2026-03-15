@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.music.myapplication.ui.theme.AppShapes
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -288,7 +289,7 @@ private fun DailyRecommendCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(AppShapes.Medium))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
             .padding(16.dp)
     ) {
@@ -335,7 +336,7 @@ private fun DailyRecommendCard(
                             contentDescription = track.title,
                             modifier = Modifier
                                 .size(44.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(RoundedCornerShape(AppShapes.ExtraSmall)),
                             contentScale = ContentScale.Crop
                         )
                     }
@@ -372,7 +373,7 @@ private fun PersonalFmCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(AppShapes.Medium))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             .clickable(onClick = onPlay)
             .padding(12.dp),
@@ -383,7 +384,7 @@ private fun PersonalFmCard(
             contentDescription = track.title,
             modifier = Modifier
                 .size(72.dp)
-                .clip(RoundedCornerShape(12.dp)),
+                .clip(RoundedCornerShape(AppShapes.Small)),
             contentScale = ContentScale.Crop
         )
         Spacer(modifier = Modifier.width(14.dp))
@@ -451,7 +452,7 @@ private fun RecommendedPlaylistRow(
                     Box(
                         modifier = Modifier
                             .size(120.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(AppShapes.Small))
                     ) {
                         CoverImage(
                             url = playlist.coverUrl,
@@ -524,7 +525,7 @@ private fun GuessYouLikeSection(
             )
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(AppShapes.Medium))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                     .clickable(onClick = onPlayAll)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
@@ -572,7 +573,7 @@ private fun GuessYouLikeItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(AppShapes.ExtraSmall))
             .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -582,7 +583,7 @@ private fun GuessYouLikeItem(
             contentDescription = track.title,
             modifier = Modifier
                 .size(56.dp)
-                .clip(RoundedCornerShape(8.dp)),
+                .clip(RoundedCornerShape(AppShapes.ExtraSmall)),
             contentScale = ContentScale.Crop
         )
         Spacer(modifier = Modifier.width(12.dp))
@@ -619,7 +620,7 @@ private fun GuessYouLikeItemPlaceholder() {
         Box(
             modifier = Modifier
                 .size(56.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(AppShapes.ExtraSmall))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         )
         Spacer(modifier = Modifier.width(12.dp))
@@ -628,7 +629,7 @@ private fun GuessYouLikeItemPlaceholder() {
                 modifier = Modifier
                     .fillMaxWidth(0.6f)
                     .height(14.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(AppShapes.Tiny))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -636,7 +637,7 @@ private fun GuessYouLikeItemPlaceholder() {
                 modifier = Modifier
                     .fillMaxWidth(0.4f)
                     .height(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(AppShapes.Tiny))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
             )
         }
@@ -672,7 +673,7 @@ private fun ChartContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(180.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(AppShapes.Medium))
                         )
                     }
                 }
@@ -747,7 +748,7 @@ private fun ToplistPreviewCard(
             Box(
                 modifier = Modifier
                     .size(100.dp)
-                    .clip(RoundedCornerShape(12.dp)),
+                    .clip(RoundedCornerShape(AppShapes.Small)),
                 contentAlignment = Alignment.Center
             ) {
                 CoverImage(
@@ -843,7 +844,7 @@ private fun ChartSongRowPlaceholder(rank: Int) {
             modifier = Modifier
                 .weight(1f)
                 .height(14.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(AppShapes.Tiny))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         )
     }
@@ -931,7 +932,7 @@ private fun PlaylistSquareContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(140.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(AppShapes.Small))
                         )
                     }
                 }

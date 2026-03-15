@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.music.myapplication.domain.model.LyricLine
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.ui.theme.AppShapes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,7 +93,7 @@ fun LyricsPosterDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 24.dp),
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(AppShapes.XLarge),
             tonalElevation = 8.dp
         ) {
             Column(
@@ -118,7 +119,7 @@ fun LyricsPosterDialog(
                         .aspectRatio(9f / 16f)
                         .background(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(24.dp)
+                            shape = RoundedCornerShape(AppShapes.Large)
                         ),
                     contentAlignment = Alignment.Center
                 ) {

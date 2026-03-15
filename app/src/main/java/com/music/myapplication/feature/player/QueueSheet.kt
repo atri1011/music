@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.ui.theme.AppShapes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -226,7 +227,7 @@ private fun QueueItem(
             .padding(horizontal = 12.dp, vertical = 2.dp)
             .zIndex(if (isDragging) 1f else 0f)
             .graphicsLayer { translationY = dragOffsetY }
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(AppShapes.Medium))
             .background(bgColor)
             .onSizeChanged { onMeasured(it.height) }
             .clickable(enabled = !isDragging, onClick = onPlay)
@@ -278,7 +279,7 @@ private fun QueueItem(
         if (isCurrent) {
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(AppShapes.Tiny))
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {

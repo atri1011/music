@@ -1,6 +1,8 @@
 package com.music.myapplication.feature.player
 
 import android.os.Build
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
@@ -26,10 +28,15 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -122,22 +129,89 @@ fun LyricsView(
                 }
                 val animatedAlpha by animateFloatAsState(
                     targetValue = targetAlpha,
-                    animationSpec = spring(),
+                    animationSpec = spring(stiffness = Spring.StiffnessLow),
                     label = "lyricAlpha_$index"
                 )
 
-                // Blur modifier for distant lines (API 31+)
-                val blurModifier = if (distance >= 3 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    Modifier.blur(2.dp)
+                // Scale animation: current line larger, distant lines shrink
+                val targetScale = when {
+                    isCurrent -> 1.08f
+                    distance == 1 -> 1.0f
+                    distance == 2 -> 0.97f
+                    else -> 0.95f
+                }
+                val animatedScale by animateFloatAsState(
+                    targetValue = targetScale,
+                    animationSpec = spring(stiffness = Spring.StiffnessLow),
+                    label = "lyricScale_$index"
+                )
+
+                // Enhanced blur gradient for distant lines (API 31+)
+                val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    when {
+                        distance <= 1 -> Modifier
+                        distance == 2 -> Modifier.blur(1.dp)
+                        distance == 3 -> Modifier.blur(2.dp)
+                        else -> Modifier.blur(3.dp)
+                    }
                 } else {
                     Modifier
                 }
 
-                val lyricShadow = Shadow(
-                    color = Color.Black.copy(alpha = 0.45f),
-                    offset = Offset(0f, 1f),
-                    blurRadius = 4f
+                // Enhanced shadow for current line: stronger glow
+                val lyricShadow = if (isCurrent) {
+                    Shadow(
+                        color = activeLineColor.copy(alpha = 0.4f),
+                        offset = Offset(0f, 1f),
+                        blurRadius = 8f
+                    )
+                } else {
+                    Shadow(
+                        color = Color.Black.copy(alpha = 0.45f),
+                        offset = Offset(0f, 1f),
+                        blurRadius = 4f
+                    )
+                }
+
+                // Animated vertical padding for rhythm feel
+                val targetVerticalPadding = when {
+                    isCurrent -> 20.dp
+                    distance == 1 -> 14.dp
+                    else -> 10.dp
+                }
+                val animatedVerticalPadding by animateDpAsState(
+                    targetValue = targetVerticalPadding,
+                    animationSpec = spring(stiffness = Spring.StiffnessLow),
+                    label = "lyricPadding_$index"
                 )
+
+                // Glow effect behind current line text
+                val glowModifier = if (isCurrent) {
+                    val glowColor = activeLineColor.copy(alpha = 0.3f)
+                    Modifier.drawBehind {
+                        drawIntoCanvas { canvas ->
+                            val paint = Paint().asFrameworkPaint().apply {
+                                isAntiAlias = true
+                                color = glowColor.toArgb()
+                                maskFilter = android.graphics.BlurMaskFilter(
+                                    48f,
+                                    android.graphics.BlurMaskFilter.Blur.NORMAL
+                                )
+                            }
+                            canvas.nativeCanvas.drawRoundRect(
+                                0f,
+                                size.height * 0.2f,
+                                size.width,
+                                size.height * 0.8f,
+                                size.height / 2f,
+                                size.height / 2f,
+                                paint
+                            )
+                        }
+                    }
+                } else {
+                    Modifier
+                }
 
                 Column(
                     modifier = Modifier
@@ -153,22 +227,21 @@ fun LyricsView(
                         }
                         .graphicsLayer {
                             alpha = animatedAlpha
-                            if (isCurrent) {
-                                scaleX = 1.05f
-                                scaleY = 1.05f
-                            }
+                            scaleX = animatedScale
+                            scaleY = animatedScale
                         }
                         .then(blurModifier)
-                        .padding(vertical = if (isCurrent) 16.dp else 12.dp)
+                        .then(glowModifier)
+                        .padding(vertical = animatedVerticalPadding)
                 ) {
                     // Main lyric text
                     Text(
                         text = line.text,
                         style = if (isCurrent) {
                             MaterialTheme.typography.headlineSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp,
-                                lineHeight = 28.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 22.sp,
+                                lineHeight = 30.sp,
                                 shadow = lyricShadow
                             )
                         } else {

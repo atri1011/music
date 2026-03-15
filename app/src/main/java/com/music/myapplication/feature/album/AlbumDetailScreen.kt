@@ -58,6 +58,7 @@ import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.components.ShimmerMediaListItem
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.ui.theme.AppShapes
 
 @Composable
 fun AlbumDetailScreen(
@@ -362,7 +363,7 @@ private fun AlbumCoverWithVinyl(
             modifier = Modifier
                 .fillMaxSize(0.85f)
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(AppShapes.ExtraSmall))
                 .align(Alignment.CenterStart)
         )
     }
@@ -387,7 +388,7 @@ private fun AlbumTagsRow(tags: List<String>) {
                     .border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.outlineVariant,
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(AppShapes.Medium)
                     )
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             )
@@ -441,7 +442,7 @@ private fun AlbumActionButtons(
         Button(
             onClick = onPlayAll,
             modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(AppShapes.Large),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.onSurface,
                 contentColor = MaterialTheme.colorScheme.surface

@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.QQMusicGreen
 
 @Composable
@@ -97,7 +98,7 @@ fun MediaListItem(
             contentDescription = track.title,
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(AppShapes.ExtraSmall))
         )
 
         Spacer(modifier = Modifier.width(12.dp))

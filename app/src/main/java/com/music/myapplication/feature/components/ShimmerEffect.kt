@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
+import com.music.myapplication.ui.theme.AppShapes
 
 fun Modifier.shimmerEffect(): Modifier = composed {
     val transition = rememberInfiniteTransition(label = "shimmer")
@@ -65,7 +66,7 @@ fun ShimmerMediaListItem(modifier: Modifier = Modifier) {
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(AppShapes.ExtraSmall))
                 .shimmerEffect()
         )
         Spacer(modifier = Modifier.width(12.dp))
@@ -74,7 +75,7 @@ fun ShimmerMediaListItem(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxWidth(0.7f)
                     .height(14.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(AppShapes.Tiny))
                     .shimmerEffect()
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -82,7 +83,7 @@ fun ShimmerMediaListItem(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxWidth(0.4f)
                     .height(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(AppShapes.Tiny))
                     .shimmerEffect()
             )
         }
@@ -96,7 +97,7 @@ fun ShimmerGridCard(modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(120.dp)
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                .clip(RoundedCornerShape(topStart = AppShapes.Medium, topEnd = AppShapes.Medium))
                 .shimmerEffect()
         )
         Box(
@@ -104,7 +105,7 @@ fun ShimmerGridCard(modifier: Modifier = Modifier) {
                 .fillMaxWidth(0.6f)
                 .height(14.dp)
                 .padding(start = 12.dp, top = 8.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(AppShapes.Tiny))
                 .shimmerEffect()
         )
     }

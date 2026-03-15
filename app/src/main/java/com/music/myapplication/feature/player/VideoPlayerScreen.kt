@@ -72,6 +72,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.media.video.VideoPlayerManager
+import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.glassSurface
 
 @Composable
@@ -547,7 +548,7 @@ private fun VideoInfoCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .glassSurface(shape = RoundedCornerShape(28.dp))
+            .glassSurface(shape = RoundedCornerShape(AppShapes.XLarge))
             .padding(18.dp)
     ) {
         Surface(
@@ -600,7 +601,7 @@ private fun VideoHintCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .glassSurface(shape = RoundedCornerShape(24.dp))
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Large))
             .padding(18.dp)
     ) {
         Text(

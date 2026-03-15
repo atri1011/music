@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.music.myapplication.domain.model.NeteaseAccountSession
+import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.LocalGlassColors
 import java.time.Instant
 import java.time.ZoneId
@@ -66,7 +67,7 @@ fun NeteaseAccountHeaderCard(
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(AppShapes.Large),
         color = glassColors.surface,
         tonalElevation = 0.dp
     ) {

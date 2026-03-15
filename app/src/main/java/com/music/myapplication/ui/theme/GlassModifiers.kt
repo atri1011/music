@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
  * When [pressScale] is true, adds a press-to-shrink animation (0.97f scale with spring rebound).
  */
 fun Modifier.glassSurface(
-    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
+    shape: RoundedCornerShape = RoundedCornerShape(AppShapes.Medium),
     pressScale: Boolean = false
 ): Modifier = composed {
     val glassColors = LocalGlassColors.current

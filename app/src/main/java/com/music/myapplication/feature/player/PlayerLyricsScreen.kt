@@ -27,6 +27,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.music.myapplication.ui.theme.AppShapes
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -205,7 +206,7 @@ fun PlayerLyricsScreen(
                             contentDescription = currentTrack.title,
                             modifier = Modifier
                                 .size(36.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(RoundedCornerShape(AppShapes.ExtraSmall)),
                             contentScale = ContentScale.Crop
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -934,7 +935,7 @@ private fun SongInfoPage(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(AppShapes.Medium))
                     .background(Color.White.copy(alpha = if (canOpenAlbum) 0.14f else 0.08f))
                     .then(
                         if (canOpenAlbum) {
@@ -1062,7 +1063,7 @@ private fun SectionHeader(title: String) {
 private fun InfoChip(text: String) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(AppShapes.Medium))
             .background(Color.White.copy(alpha = 0.15f))
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
@@ -1082,7 +1083,7 @@ private fun SimilarTrackItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(AppShapes.Small))
             .background(Color.White.copy(alpha = 0.10f))
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1092,7 +1093,7 @@ private fun SimilarTrackItem(
             contentDescription = track.title,
             modifier = Modifier
                 .size(44.dp)
-                .clip(RoundedCornerShape(8.dp)),
+                .clip(RoundedCornerShape(AppShapes.ExtraSmall)),
             contentScale = ContentScale.Crop
         )
         Spacer(modifier = Modifier.width(10.dp))

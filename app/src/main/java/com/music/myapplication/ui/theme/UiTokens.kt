@@ -14,9 +14,11 @@ object AppSpacing {
 }
 
 object AppShapes {
+    val Tiny = 4.dp
+    val ExtraSmall = 8.dp
     val Small = 12.dp
     val Medium = 16.dp
-    val Large = 20.dp
+    val Large = 24.dp
     val XLarge = 28.dp
 }
 

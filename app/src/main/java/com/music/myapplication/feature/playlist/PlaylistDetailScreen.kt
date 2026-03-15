@@ -66,6 +66,7 @@ import com.music.myapplication.feature.components.ShimmerMediaListItem
 import com.music.myapplication.feature.player.AddTrackToPlaylistSheet
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.feature.player.TrackMoreMenu
+import com.music.myapplication.ui.theme.AppShapes
 
 @Composable
 fun PlaylistDetailScreen(
@@ -434,14 +435,14 @@ private fun PlaylistHeader(
                         contentDescription = title,
                         modifier = Modifier
                             .size(120.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(AppShapes.Medium))
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                 } else if (isFavoritesCollection) {
                     Box(
                         modifier = Modifier
                             .size(120.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(AppShapes.Medium))
                             .background(Color.White.copy(alpha = 0.14f)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -488,7 +489,7 @@ private fun PlaylistHeader(
                 ) {
                     Button(
                         onClick = onPlayAll,
-                        shape = RoundedCornerShape(24.dp),
+                        shape = RoundedCornerShape(AppShapes.Large),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
@@ -625,7 +626,7 @@ private fun SelectableFavoriteItem(
             contentDescription = track.title,
             modifier = Modifier
                 .size(48.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(AppShapes.Small))
         )
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -672,7 +673,7 @@ private fun EditablePlaylistItem(
             .padding(horizontal = 12.dp, vertical = 2.dp)
             .zIndex(if (isDragging) 1f else 0f)
             .graphicsLayer { translationY = dragOffsetY }
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(AppShapes.Medium))
             .background(backgroundColor)
             .onSizeChanged { onMeasured(it.height) }
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -712,13 +713,13 @@ private fun EditablePlaylistItem(
                 contentDescription = track.title,
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(AppShapes.Small))
             )
         } else {
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(AppShapes.Small))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {

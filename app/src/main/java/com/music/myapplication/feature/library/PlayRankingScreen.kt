@@ -44,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.QQMusicGreen
 
 private val RankGold = Color(0xFFFFD700)
@@ -196,7 +197,7 @@ private fun RankedTrackItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(AppShapes.Small))
             .then(
                 if (isTopThree) Modifier.background(rankColor.copy(alpha = 0.06f))
                 else Modifier
@@ -213,7 +214,7 @@ private fun RankedTrackItem(
                 .size(28.dp)
                 .then(
                     if (isTopThree) Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(AppShapes.ExtraSmall))
                         .background(rankColor.copy(alpha = 0.15f))
                     else Modifier
                 ),
@@ -242,7 +243,7 @@ private fun RankedTrackItem(
             contentDescription = track.title,
             modifier = Modifier
                 .size(if (isTopThree) 52.dp else 48.dp)
-                .clip(RoundedCornerShape(if (isTopThree) 10.dp else 8.dp))
+                .clip(RoundedCornerShape(if (isTopThree) 10.dp else AppShapes.ExtraSmall))
         )
 
         Spacer(modifier = Modifier.width(12.dp))

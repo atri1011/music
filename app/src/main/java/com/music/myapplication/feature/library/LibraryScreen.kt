@@ -72,6 +72,7 @@ import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
+import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.LocalGlassColors
 import com.music.myapplication.ui.theme.QQMusicGreen
 import kotlin.math.abs
@@ -352,7 +353,7 @@ private fun TopCoversHeader(topTracks: List<Pair<Track, Int>>) {
                         else Modifier
                     )
                     .size(coverSize)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(AppShapes.Small))
             )
         }
     }
@@ -400,9 +401,9 @@ private fun StatCapsule(
 
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(AppShapes.Medium))
             .background(glassColors.surface)
-            .border(0.5.dp, glassColors.border, RoundedCornerShape(16.dp))
+            .border(0.5.dp, glassColors.border, RoundedCornerShape(AppShapes.Medium))
             .then(
                 if (onClick != null) Modifier.clickable(onClick = onClick)
                 else Modifier
@@ -487,9 +488,9 @@ private fun QuickAccessTile(
 
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(AppShapes.Medium))
             .background(glassColors.surface)
-            .border(0.5.dp, glassColors.border, RoundedCornerShape(16.dp))
+            .border(0.5.dp, glassColors.border, RoundedCornerShape(AppShapes.Medium))
             .clickable(onClick = onClick)
             .padding(vertical = 16.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -732,7 +733,7 @@ private fun ImportSourceItem(name: String, selected: Boolean, onClick: () -> Uni
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(AppShapes.ExtraSmall))
             .background(
                 if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)

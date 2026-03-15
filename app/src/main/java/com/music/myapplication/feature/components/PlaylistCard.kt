@@ -19,6 +19,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.verticalGradientScrim
 
 @Composable
@@ -33,7 +34,7 @@ fun PlaylistCard(
         modifier = modifier
             .width(140.dp)
             .height(140.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(AppShapes.Small))
             .clickable(onClick = onClick)
     ) {
         CoverImage(

@@ -46,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.glassSurface
 
 @Composable
@@ -174,7 +175,7 @@ private fun HeroPanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .glassSurface(shape = RoundedCornerShape(28.dp))
+            .glassSurface(shape = RoundedCornerShape(AppShapes.XLarge))
             .padding(20.dp)
     ) {
         Text(
@@ -315,7 +316,7 @@ private fun FeaturePanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .glassSurface(shape = RoundedCornerShape(24.dp))
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Large))
             .padding(18.dp)
     ) {
         Row(

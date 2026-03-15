@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.feature.components.CoverImage
+import com.music.myapplication.ui.theme.AppShapes
 
 @Composable
 fun RotatingCover(
@@ -26,7 +27,7 @@ fun RotatingCover(
     glowColor: Color = Color.Transparent,
     modifier: Modifier = Modifier
 ) {
-    val coverShape = RoundedCornerShape(24.dp)
+    val coverShape = RoundedCornerShape(AppShapes.Large)
 
     // Breathing scale animation
     val infiniteTransition = rememberInfiniteTransition(label = "breathing")
