@@ -1,5 +1,6 @@
 package com.music.myapplication.feature.player
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,7 +30,6 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,6 +45,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -70,6 +73,10 @@ fun PlayerControlsSection(
     val track = staticState.currentTrack ?: return
     var sliderDragging by remember { mutableStateOf(false) }
     var sliderPosition by remember { mutableFloatStateOf(0f) }
+    var playPulseTrigger by remember { mutableStateOf(0) }
+    val trackKey = "${track.platform.id}:${track.id}"
+    val favoritePopTrigger = rememberRisingEdgeTrigger(value = track.isFavorite, resetKey = trackKey)
+    val modeRotation = rememberDelightSpinRotation(key = staticState.playbackMode)
 
     val progressFraction = if (progress.durationMs > 0) {
         if (sliderDragging) sliderPosition else progress.positionMs.toFloat() / progress.durationMs
@@ -118,7 +125,9 @@ fun PlayerControlsSection(
                             PlaybackMode.REPEAT_ONE -> Icons.Default.RepeatOne
                         },
                         contentDescription = "播放模式",
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .graphicsLayer { rotationZ = modeRotation },
                         tint = subtleColor
                     )
                 }
@@ -126,14 +135,31 @@ fun PlayerControlsSection(
                 PlayerUtilityButton(
                     onClick = onToggleFavorite,
                     backgroundColor = toolBackground,
-                    borderColor = toolBorder
+                    borderColor = toolBorder,
+                    hapticFeedbackType = HapticFeedbackType.LongPress
                 ) {
-                    Icon(
-                        imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "收藏",
-                        modifier = Modifier.size(22.dp),
-                        tint = if (track.isFavorite) activeAccent else subtleColor
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        DelightIconPopOverlay(
+                            trigger = favoritePopTrigger,
+                            imageVector = Icons.Default.Favorite,
+                            tint = activeAccent,
+                            size = 22.dp
+                        )
+                        Crossfade(
+                            targetState = track.isFavorite,
+                            label = "favoriteCrossfade"
+                        ) { isFavorite ->
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "收藏",
+                                modifier = Modifier.size(22.dp),
+                                tint = if (isFavorite) activeAccent else subtleColor
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -258,17 +284,37 @@ fun PlayerControlsSection(
                 }
 
                 PlayerTransportButton(
-                    onClick = onPlayPause,
+                    onClick = {
+                        playPulseTrigger += 1
+                        onPlayPause()
+                    },
                     size = 72.dp,
                     backgroundColor = activeAccent,
-                    borderColor = Color.Transparent
+                    borderColor = Color.Transparent,
+                    hapticFeedbackType = HapticFeedbackType.LongPress,
+                    pressedScale = 0.92f
                 ) {
-                    Icon(
-                        imageVector = if (staticState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (staticState.isPlaying) "暂停" else "播放",
-                        modifier = Modifier.size(34.dp),
-                        tint = Color.White
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        DelightPulseOverlay(
+                            trigger = playPulseTrigger,
+                            color = Color.White,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Crossfade(
+                            targetState = staticState.isPlaying,
+                            label = "playPauseCrossfade"
+                        ) { isPlaying ->
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "暂停" else "播放",
+                                modifier = Modifier.size(34.dp),
+                                tint = Color.White
+                            )
+                        }
+                    }
                 }
 
                 PlayerTransportButton(
@@ -294,10 +340,14 @@ private fun PlayerUtilityButton(
     onClick: () -> Unit,
     backgroundColor: Color,
     borderColor: Color,
+    hapticFeedbackType: HapticFeedbackType? = HapticFeedbackType.TextHandleMove,
+    pressedScale: Float = 0.94f,
     content: @Composable () -> Unit
 ) {
-    IconButton(
+    DelightIconButton(
         onClick = onClick,
+        pressedScale = pressedScale,
+        hapticFeedbackType = hapticFeedbackType,
         modifier = Modifier
             .size(44.dp)
             .clip(CircleShape)
@@ -314,10 +364,14 @@ private fun PlayerTransportButton(
     size: androidx.compose.ui.unit.Dp,
     backgroundColor: Color,
     borderColor: Color,
+    hapticFeedbackType: HapticFeedbackType? = HapticFeedbackType.TextHandleMove,
+    pressedScale: Float = 0.94f,
     content: @Composable () -> Unit
 ) {
-    IconButton(
+    DelightIconButton(
         onClick = onClick,
+        pressedScale = pressedScale,
+        hapticFeedbackType = hapticFeedbackType,
         modifier = Modifier
             .size(size)
             .clip(CircleShape)

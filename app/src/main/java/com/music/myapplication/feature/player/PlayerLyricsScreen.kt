@@ -68,6 +68,8 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -279,6 +281,7 @@ fun PlayerLyricsScreen(
             )
 
             SecondaryActionRow(
+                trackKey = "${currentTrack.platform.id}:${currentTrack.id}",
                 isFavorite = currentTrack.isFavorite,
                 onOpenVideo = onNavigateToVideoPlayer?.let { { it(currentTrack) } },
                 onToggleFavorite = playerViewModel::toggleFavorite,
@@ -485,12 +488,14 @@ private fun CoverPage(
 
 @Composable
 private fun SecondaryActionRow(
+    trackKey: String,
     isFavorite: Boolean,
     onOpenVideo: (() -> Unit)?,
     onToggleFavorite: () -> Unit,
     onShowComments: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val favoritePopTrigger = rememberRisingEdgeTrigger(value = isFavorite, resetKey = trackKey)
     val buttonSize = 36.dp
     val iconSize = 16.dp
     val buttonSpacing = 14.dp
@@ -516,6 +521,15 @@ private fun SecondaryActionRow(
             icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             contentDescription = "收藏",
             tint = if (isFavorite) Color(0xFFE53935) else Color.White.copy(alpha = 0.72f),
+            hapticFeedbackType = HapticFeedbackType.LongPress,
+            overlay = {
+                DelightIconPopOverlay(
+                    trigger = favoritePopTrigger,
+                    imageVector = Icons.Default.Favorite,
+                    tint = Color(0xFFE53935),
+                    size = iconSize
+                )
+            },
             buttonSize = buttonSize,
             iconSize = iconSize
         )
@@ -540,26 +554,35 @@ private fun SecondaryActionButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     tint: Color = Color.White.copy(alpha = 0.72f),
+    hapticFeedbackType: HapticFeedbackType? = HapticFeedbackType.TextHandleMove,
+    overlay: @Composable (() -> Unit)? = null,
     buttonSize: androidx.compose.ui.unit.Dp = 36.dp,
     iconSize: androidx.compose.ui.unit.Dp = 16.dp
 ) {
     val backgroundAlpha = if (enabled) 0.12f else 0.08f
     val iconTint = if (enabled) tint else tint.copy(alpha = 0.42f)
 
-    IconButton(
+    DelightIconButton(
         onClick = onClick,
         enabled = enabled,
+        hapticFeedbackType = hapticFeedbackType,
         modifier = modifier
             .size(buttonSize)
             .clip(CircleShape)
             .background(Color.White.copy(alpha = backgroundAlpha))
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = iconTint,
-            modifier = Modifier.size(iconSize)
-        )
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = iconTint,
+                modifier = Modifier.size(iconSize)
+            )
+            overlay?.invoke()
+        }
     }
 }
 
@@ -1225,6 +1248,9 @@ private fun TransportControlRow(
     onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var playPulseTrigger by remember { mutableStateOf(0) }
+    val modeRotation = rememberDelightSpinRotation(key = playbackMode)
+
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1233,9 +1259,10 @@ private fun TransportControlRow(
         TransportEdgeControl(
             icon = playbackMode.icon(),
             contentDescription = "播放模式",
-            onClick = onToggleMode
+            onClick = onToggleMode,
+            rotationZ = modeRotation
         )
-        IconButton(onClick = onPrevious, modifier = Modifier.size(56.dp)) {
+        DelightIconButton(onClick = onPrevious, modifier = Modifier.size(56.dp)) {
             Icon(
                 imageVector = Icons.Default.SkipPrevious,
                 contentDescription = "上一首",
@@ -1243,21 +1270,41 @@ private fun TransportControlRow(
                 tint = Color.White
             )
         }
-        IconButton(
-            onClick = onPlayPause,
+        DelightIconButton(
+            onClick = {
+                playPulseTrigger += 1
+                onPlayPause()
+            },
+            pressedScale = 0.92f,
+            hapticFeedbackType = HapticFeedbackType.LongPress,
             modifier = Modifier
                 .size(64.dp)
                 .clip(CircleShape)
                 .background(Color.White.copy(alpha = 0.2f))
         ) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (isPlaying) "暂停" else "播放",
-                modifier = Modifier.size(36.dp),
-                tint = Color.White
-            )
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                DelightPulseOverlay(
+                    trigger = playPulseTrigger,
+                    color = Color.White,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Crossfade(
+                    targetState = isPlaying,
+                    label = "lyricsPlayPauseCrossfade"
+                ) { playing ->
+                    Icon(
+                        imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (playing) "暂停" else "播放",
+                        modifier = Modifier.size(36.dp),
+                        tint = Color.White
+                    )
+                }
+            }
         }
-        IconButton(onClick = onNext, modifier = Modifier.size(56.dp)) {
+        DelightIconButton(onClick = onNext, modifier = Modifier.size(56.dp)) {
             Icon(
                 imageVector = Icons.Default.SkipNext,
                 contentDescription = "下一首",
@@ -1278,16 +1325,21 @@ private fun TransportEdgeControl(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    rotationZ: Float = 0f,
+    hapticFeedbackType: HapticFeedbackType? = HapticFeedbackType.TextHandleMove
 ) {
-    IconButton(
+    DelightIconButton(
         onClick = onClick,
+        hapticFeedbackType = hapticFeedbackType,
         modifier = modifier.size(56.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer { this.rotationZ = rotationZ },
             tint = Color.White.copy(alpha = 0.9f)
         )
     }

@@ -1,14 +1,17 @@
 package com.music.myapplication.feature.player
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,15 +26,19 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,6 +62,9 @@ fun MiniPlayerBar(
     modifier: Modifier = Modifier
 ) {
     val currentTrack = track ?: return
+    var playPulseTrigger by remember { mutableStateOf(0) }
+    val trackKey = "${currentTrack.platform.id}:${currentTrack.id}"
+    val favoritePopTrigger = rememberRisingEdgeTrigger(value = currentTrack.isFavorite, resetKey = trackKey)
     val shape = RoundedCornerShape(AppShapes.Large)
     val glassColors = LocalGlassColors.current
 
@@ -138,34 +148,71 @@ fun MiniPlayerBar(
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
+                DelightIconButton(
                     onClick = onToggleFavorite,
+                    hapticFeedbackType = HapticFeedbackType.LongPress,
                     modifier = Modifier.size(44.dp)
                 ) {
-                    Icon(
-                        imageVector = if (currentTrack.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = if (currentTrack.isFavorite) "取消收藏" else "收藏",
-                        tint = if (currentTrack.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        DelightIconPopOverlay(
+                            trigger = favoritePopTrigger,
+                            imageVector = Icons.Default.Favorite,
+                            tint = MaterialTheme.colorScheme.primary,
+                            size = 20.dp
+                        )
+                        Crossfade(
+                            targetState = currentTrack.isFavorite,
+                            label = "miniFavoriteCrossfade"
+                        ) { isFavorite ->
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = if (isFavorite) "取消收藏" else "收藏",
+                                tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
 
-                IconButton(
-                    onClick = onPlayPause,
+                DelightIconButton(
+                    onClick = {
+                        playPulseTrigger += 1
+                        onPlayPause()
+                    },
+                    pressedScale = 0.92f,
+                    hapticFeedbackType = HapticFeedbackType.LongPress,
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
                 ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "暂停" else "播放",
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        DelightPulseOverlay(
+                            trigger = playPulseTrigger,
+                            color = Color.White,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Crossfade(
+                            targetState = isPlaying,
+                            label = "miniPlayPauseCrossfade"
+                        ) { playing ->
+                            Icon(
+                                imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (playing) "暂停" else "播放",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
                 }
 
-                IconButton(
+                DelightIconButton(
                     onClick = onNext,
                     modifier = Modifier.size(44.dp)
                 ) {

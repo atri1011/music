@@ -71,6 +71,7 @@ import com.music.myapplication.feature.components.SegmentedChoiceRow
 import com.music.myapplication.feature.components.ShimmerGridCard
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.QQMusicGreen
+import com.music.myapplication.ui.theme.appPremiumBackground
 import com.music.myapplication.ui.theme.glassSurface
 import java.util.Calendar
 import kotlinx.coroutines.launch
@@ -83,23 +84,12 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val gradientColor = MaterialTheme.colorScheme.primary.copy(
-        alpha = if (isDark) 0.15f else 0.08f
-    )
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // Top gradient scrim
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(gradientColor, Color.Transparent)
-                    )
-                )
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .appPremiumBackground()
+    ) {
 
         Column(
             modifier = Modifier
@@ -118,15 +108,23 @@ fun HomeScreen(
                     style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold)
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = { /* scan */ }) {
-                    Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                IconButton(onClick = onNavigateToSearch) {
-                    Icon(Icons.Default.Search, contentDescription = "搜索", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                IconButton(onClick = { viewModel.loadToplists(); viewModel.loadRecommendations() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "刷新", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                HomeTopActionButton(
+                    onClick = { /* scan */ },
+                    icon = Icons.Default.QrCodeScanner,
+                    contentDescription = "扫码"
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                HomeTopActionButton(
+                    onClick = onNavigateToSearch,
+                    icon = Icons.Default.Search,
+                    contentDescription = "搜索"
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                HomeTopActionButton(
+                    onClick = { viewModel.loadToplists(); viewModel.loadRecommendations() },
+                    icon = Icons.Default.Refresh,
+                    contentDescription = "刷新"
+                )
             }
 
             // Top section switcher
@@ -289,9 +287,8 @@ private fun DailyRecommendCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AppShapes.Medium))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-            .padding(16.dp)
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Large))
+            .padding(horizontal = 18.dp, vertical = 16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -373,10 +370,9 @@ private fun PersonalFmCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AppShapes.Medium))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Large), pressScale = true)
             .clickable(onClick = onPlay)
-            .padding(12.dp),
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CoverImage(
@@ -414,7 +410,7 @@ private fun PersonalFmCard(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(QQMusicGreen.copy(alpha = 0.15f))
+                .background(QQMusicGreen.copy(alpha = 0.14f))
         ) {
             Icon(
                 imageVector = Icons.Default.PlayArrow,
@@ -442,33 +438,13 @@ private fun RecommendedPlaylistRow(
             contentPadding = PaddingValues(horizontal = 20.dp)
         ) {
             items(playlists, key = { it.id }) { playlist ->
-                Column(
-                    modifier = Modifier
-                        .width(120.dp)
-                        .clickable {
-                            onNavigateToPlaylist(playlist.id, Platform.NETEASE.id, playlist.name, "playlist")
-                        }
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(RoundedCornerShape(AppShapes.Small))
-                    ) {
-                        CoverImage(
-                            url = playlist.coverUrl,
-                            contentDescription = playlist.name,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                PlaylistCard(
+                    name = playlist.name,
+                    coverUrl = playlist.coverUrl,
+                    onClick = {
+                        onNavigateToPlaylist(playlist.id, Platform.NETEASE.id, playlist.name, "playlist")
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = playlist.name,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                )
             }
         }
     }
@@ -526,7 +502,7 @@ private fun GuessYouLikeSection(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(AppShapes.Medium))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                    .glassSurface(shape = RoundedCornerShape(999.dp), pressScale = true)
                     .clickable(onClick = onPlayAll)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center
@@ -712,7 +688,7 @@ private fun ToplistPreviewCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .glassSurface()
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Large), pressScale = true)
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
@@ -762,7 +738,8 @@ private fun ToplistPreviewCard(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.4f)),
+                        .background(Color.Black.copy(alpha = 0.32f))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.20f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -793,6 +770,27 @@ private fun ToplistPreviewCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HomeTopActionButton(
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .glassSurface(shape = RoundedCornerShape(999.dp), pressScale = true)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 
