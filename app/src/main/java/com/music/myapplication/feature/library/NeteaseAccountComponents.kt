@@ -1,6 +1,7 @@
 package com.music.myapplication.feature.library
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,8 +17,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
@@ -28,7 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -41,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -48,7 +49,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.music.myapplication.domain.model.NeteaseAccountSession
 import com.music.myapplication.ui.theme.AppShapes
-import com.music.myapplication.ui.theme.LocalGlassColors
+import com.music.myapplication.ui.theme.glassSurface
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -60,52 +61,55 @@ fun NeteaseAccountHeaderCard(
     onSyncClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val glassColors = LocalGlassColors.current
     val account = state.account
-    Surface(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(AppShapes.Large),
-        color = glassColors.surface,
-        tonalElevation = 0.dp
+            .glassSurface(shape = RoundedCornerShape(AppShapes.XLarge), pressScale = true)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 18.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AccountAvatar(avatarUrl = account?.avatarUrl.orEmpty())
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = account?.nickname ?: "网易云音乐",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = when {
-                                !state.isNeteaseConfigured -> "先去“更多”里填增强版接口地址，再点我登录"
-                                account == null -> "点击头像登录，支持密码、验证码、扫码"
-                                else -> "UID ${account.userId} · ${formatSyncTime(account)}"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                AccountAvatar(avatarUrl = account?.avatarUrl.orEmpty())
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = account?.nickname ?: "网易云音乐",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = when {
+                            !state.isNeteaseConfigured -> "先去“更多”里填增强版接口地址，再点我登录"
+                            account == null -> "点击头像登录，支持密码、验证码、扫码"
+                            else -> "UID ${account.userId} · ${formatSyncTime(account)}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+            }
 
-                if (account != null) {
-                    TextButton(
-                        onClick = onSyncClick,
-                        enabled = !state.isSyncingNeteaseData
-                    ) {
+            if (account != null) {
+                Box(
+                    modifier = Modifier
+                        .glassSurface(
+                            shape = RoundedCornerShape(999.dp),
+                            pressScale = !state.isSyncingNeteaseData
+                        )
+                        .clickable(enabled = !state.isSyncingNeteaseData, onClick = onSyncClick)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         if (state.isSyncingNeteaseData) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(8.dp))
@@ -113,19 +117,19 @@ fun NeteaseAccountHeaderCard(
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                         }
-                        Text("同步")
+                        Text("同步", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
+        }
 
-            state.syncMessage?.takeIf { it.isNotBlank() }?.let { message ->
-                Spacer(modifier = Modifier.height(12.dp))
-                InfoBadge(text = message, color = Color(0xFF1B8F4C))
-            }
-            state.syncError?.takeIf { it.isNotBlank() }?.let { error ->
-                Spacer(modifier = Modifier.height(12.dp))
-                InfoBadge(text = error, color = MaterialTheme.colorScheme.error)
-            }
+        state.syncMessage?.takeIf { it.isNotBlank() }?.let { message ->
+            Spacer(modifier = Modifier.height(12.dp))
+            InfoBadge(text = message, color = Color(0xFF1B8F4C))
+        }
+        state.syncError?.takeIf { it.isNotBlank() }?.let { error ->
+            Spacer(modifier = Modifier.height(12.dp))
+            InfoBadge(text = error, color = MaterialTheme.colorScheme.error)
         }
     }
 }
@@ -276,14 +280,14 @@ private fun LoggedInSheetContent(
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(8.dp))
             }
-            Text("立即同步")
-        }
-        TextButton(onClick = onLogout, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("退出登录")
-        }
+        Text("立即同步")
     }
+    TextButton(onClick = onLogout, modifier = Modifier.weight(1f)) {
+        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text("退出登录")
+    }
+}
 }
 
 @Composable
@@ -441,10 +445,17 @@ private fun AccountAvatar(
     avatarUrl: String,
     size: androidx.compose.ui.unit.Dp = 64.dp
 ) {
+    val shape = RoundedCornerShape(999.dp)
     Box(
         modifier = Modifier
             .size(size)
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), CircleShape),
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), shape)
+            .border(
+                width = 0.5.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                shape = shape
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (avatarUrl.isNotBlank()) {
@@ -453,7 +464,7 @@ private fun AccountAvatar(
                 contentDescription = "头像",
                 modifier = Modifier
                     .size(size)
-                    .background(Color.Transparent, CircleShape)
+                    .clip(CircleShape)
             )
         } else {
             Icon(

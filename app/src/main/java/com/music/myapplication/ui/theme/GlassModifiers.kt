@@ -9,6 +9,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -28,10 +31,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.input.pointer.awaitEachGesture
-import androidx.compose.ui.input.pointer.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.waitForUpOrCancellation
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -116,17 +116,22 @@ fun Modifier.playerGradientBackground(
  * Designed for "质感/现代/优美" without heavy blur, neon, or noisy patterns.
  */
 fun Modifier.appPremiumBackground(
-    primary: Color = MaterialTheme.colorScheme.primary,
-    secondary: Color = MaterialTheme.colorScheme.secondary,
-    base: Color = MaterialTheme.colorScheme.background,
+    primary: Color? = null,
+    secondary: Color? = null,
+    base: Color? = null,
     grainAlpha: Float = 0.035f
 ): Modifier = composed {
-    val isDark = base.luminance() < 0.5f
+    val colorScheme = MaterialTheme.colorScheme
+    val resolvedBase = base ?: colorScheme.background
+    val resolvedPrimary = primary ?: colorScheme.primary
+    val resolvedSecondary = secondary ?: colorScheme.secondary
+
+    val isDark = resolvedBase.luminance() < 0.5f
     val tunedGrainAlpha = (if (isDark) grainAlpha * 0.55f else grainAlpha).coerceIn(0f, 0.12f)
 
-    val topLeft = primary.copy(alpha = if (isDark) 0.40f else 0.18f)
-    val topRight = secondary.copy(alpha = if (isDark) 0.22f else 0.12f)
-    val bottomFade = base.copy(alpha = if (isDark) 0.96f else 0.92f)
+    val topLeft = resolvedPrimary.copy(alpha = if (isDark) 0.40f else 0.18f)
+    val topRight = resolvedSecondary.copy(alpha = if (isDark) 0.22f else 0.12f)
+    val bottomFade = resolvedBase.copy(alpha = if (isDark) 0.96f else 0.92f)
 
     this.drawWithCache {
         val grainPaint = if (tunedGrainAlpha > 0f) {
@@ -140,7 +145,7 @@ fun Modifier.appPremiumBackground(
         }
 
         onDrawBehind {
-            drawRect(color = base)
+            drawRect(color = resolvedBase)
 
             drawRect(
                 brush = Brush.radialGradient(
@@ -160,7 +165,7 @@ fun Modifier.appPremiumBackground(
 
             drawRect(
                 brush = Brush.verticalGradient(
-                    colors = listOf(Color.Transparent, bottomFade, base),
+                    colors = listOf(Color.Transparent, bottomFade, resolvedBase),
                     startY = 0f,
                     endY = size.height
                 )

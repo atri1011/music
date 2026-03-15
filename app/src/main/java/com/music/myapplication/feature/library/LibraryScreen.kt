@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -73,8 +74,9 @@ import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.ui.theme.AppShapes
-import com.music.myapplication.ui.theme.LocalGlassColors
 import com.music.myapplication.ui.theme.QQMusicGreen
+import com.music.myapplication.ui.theme.appPremiumBackground
+import com.music.myapplication.ui.theme.glassSurface
 import kotlin.math.abs
 
 // Accent colors for quick-access tiles
@@ -112,7 +114,7 @@ fun LibraryScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .appPremiumBackground()
     ) {
         // Layer 1: Blurred cover background (top portion, fades downward)
         val topCoverUrl = state.topPlayedTracks.firstOrNull()?.first?.coverUrl.orEmpty()
@@ -225,6 +227,8 @@ private fun LibraryBlurredBackground(coverUrl: String) {
     val normalizedUrl = remember(coverUrl) { normalizeCoverUrl(coverUrl) }
     val useNativeBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val bgColor = MaterialTheme.colorScheme.background
+    val primary = MaterialTheme.colorScheme.primary
+    val isDark = bgColor.luminance() < 0.5f
 
     Box(
         modifier = Modifier
@@ -260,9 +264,9 @@ private fun LibraryBlurredBackground(coverUrl: String) {
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            bgColor.copy(alpha = 0.25f),
-                            bgColor.copy(alpha = 0.6f),
-                            bgColor
+                            primary.copy(alpha = if (isDark) 0.14f else 0.08f),
+                            bgColor.copy(alpha = 0.62f),
+                            bgColor.copy(alpha = 0.94f)
                         )
                     )
                 )
@@ -397,13 +401,12 @@ private fun StatCapsule(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val glassColors = LocalGlassColors.current
-
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(AppShapes.Medium))
-            .background(glassColors.surface)
-            .border(0.5.dp, glassColors.border, RoundedCornerShape(AppShapes.Medium))
+            .glassSurface(
+                shape = RoundedCornerShape(AppShapes.Medium),
+                pressScale = onClick != null
+            )
             .then(
                 if (onClick != null) Modifier.clickable(onClick = onClick)
                 else Modifier
@@ -414,7 +417,7 @@ private fun StatCapsule(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = QQMusicGreen,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(22.dp)
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -461,7 +464,7 @@ private fun QuickAccessGrid(
             title = "下载",
             count = downloadedCount,
             onClick = onDownloadedClick,
-            accentColor = QQMusicGreen,
+            accentColor = MaterialTheme.colorScheme.primary,
             modifier = Modifier.weight(1f)
         )
         QuickAccessTile(
@@ -484,13 +487,9 @@ private fun QuickAccessTile(
     accentColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val glassColors = LocalGlassColors.current
-
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(AppShapes.Medium))
-            .background(glassColors.surface)
-            .border(0.5.dp, glassColors.border, RoundedCornerShape(AppShapes.Medium))
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Medium), pressScale = true)
             .clickable(onClick = onClick)
             .padding(vertical = 16.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -541,7 +540,7 @@ private fun PlaylistSectionHeader(
                 .width(3.dp)
                 .height(16.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(QQMusicGreen)
+                .background(MaterialTheme.colorScheme.primary)
         )
         Spacer(modifier = Modifier.width(10.dp))
         Text(
@@ -549,22 +548,40 @@ private fun PlaylistSectionHeader(
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             modifier = Modifier.weight(1f)
         )
-        IconButton(onClick = onImportClick, modifier = Modifier.size(36.dp)) {
-            Icon(
-                Icons.Outlined.CloudDownload,
-                contentDescription = "导入歌单",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-        IconButton(onClick = onCreateClick, modifier = Modifier.size(36.dp)) {
-            Icon(
-                Icons.Filled.AddCircle,
-                contentDescription = "新建歌单",
-                tint = QQMusicGreen,
-                modifier = Modifier.size(18.dp)
-            )
-        }
+        SectionHeaderActionButton(
+            onClick = onImportClick,
+            icon = Icons.Outlined.CloudDownload,
+            contentDescription = "导入歌单",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        SectionHeaderActionButton(
+            onClick = onCreateClick,
+            icon = Icons.Filled.AddCircle,
+            contentDescription = "新建歌单",
+            tint = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+private fun SectionHeaderActionButton(
+    onClick: () -> Unit,
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(38.dp)
+            .glassSurface(shape = RoundedCornerShape(999.dp), pressScale = true)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
