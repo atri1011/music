@@ -81,6 +81,7 @@ import com.music.myapplication.feature.player.AddTrackToPlaylistSheet
 import com.music.myapplication.feature.player.TrackMoreMenu
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.AppShapes
+import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.glassSurface
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -175,7 +176,7 @@ fun SearchScreen(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall)
         )
 
         PlatformFilterChips(
@@ -184,7 +185,7 @@ fun SearchScreen(
                 focusManager.clearFocus(force = true)
                 searchViewModel.onPlatformChange(platform)
             },
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XXSmall)
         )
 
         SearchTypeTabRow(
@@ -212,7 +213,7 @@ fun SearchScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall)
                     ) {
                         // Search History
                         if (state.searchHistory.isNotEmpty()) {
@@ -230,10 +231,10 @@ fun SearchScreen(
                                     Text("清空", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(AppSpacing.XSmall))
                             FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
+                                verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)
                             ) {
                                 state.searchHistory.forEach { keyword ->
                                     AssistChip(
@@ -258,7 +259,7 @@ fun SearchScreen(
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(20.dp))
+                            Spacer(modifier = Modifier.height(AppSpacing.Large))
                         }
 
                         // Hot Search
@@ -268,7 +269,7 @@ fun SearchScreen(
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(AppSpacing.Small))
                             state.hotKeywords.take(20).forEachIndexed { index, keyword ->
                                 Row(
                                     modifier = Modifier
@@ -365,7 +366,7 @@ fun SearchScreen(
                             }
                             if (state.isLoading) {
                                 item(contentType = "loading") {
-                                    ShimmerMediaListItem(modifier = Modifier.padding(16.dp))
+                                    ShimmerMediaListItem(modifier = Modifier.padding(AppSpacing.Medium))
                                 }
                             }
                         }
@@ -397,7 +398,7 @@ fun SearchScreen(
                             }
                             if (state.isLoading) {
                                 item(contentType = "loading") {
-                                    ShimmerMediaListItem(modifier = Modifier.padding(16.dp))
+                                    ShimmerMediaListItem(modifier = Modifier.padding(AppSpacing.Medium))
                                 }
                             }
                         }
@@ -423,7 +424,7 @@ fun SearchScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .zIndex(10f)
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = AppSpacing.Medium)
                         .glassSurface(RoundedCornerShape(AppShapes.Small))
                         .padding(8.dp)
                 ) {
@@ -445,7 +446,7 @@ fun SearchScreen(
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(AppSpacing.Small))
                             Text(
                                 text = suggestion.text,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -491,7 +492,7 @@ private fun SearchTypeTabRow(
         items = types,
         selectedItem = selectedType,
         onItemSelected = onTypeSelected,
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        modifier = modifier.padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XXSmall)
     ) { type, selected ->
         Text(
             text = type.displayName,
@@ -514,7 +515,7 @@ private fun SearchResultListItem(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = AppSpacing.Medium, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CoverImage(
@@ -525,7 +526,7 @@ private fun SearchResultListItem(
                 .clip(coverShape)
         )
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(

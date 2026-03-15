@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 object AppSpacing {
+    val XXSmall = 4.dp
     val XSmall = 8.dp
     val Small = 12.dp
     val Medium = 16.dp
@@ -20,6 +21,19 @@ object AppShapes {
     val Medium = 16.dp
     val Large = 24.dp
     val XLarge = 28.dp
+}
+
+object AppElevation {
+    val None = 0.dp
+    val Subtle = 1.dp
+    val Low = 4.dp
+    val Medium = 8.dp
+}
+
+object AppIconSize {
+    val Small = 16.dp
+    val Medium = 20.dp
+    val Large = 24.dp
 }
 
 enum class AppSurfaceTone {

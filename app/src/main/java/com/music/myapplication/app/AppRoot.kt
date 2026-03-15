@@ -50,6 +50,7 @@ import com.music.myapplication.feature.player.MiniPlayerUiState
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.feature.update.AppUpdateDialog
 import com.music.myapplication.feature.update.AppUpdateViewModel
+import com.music.myapplication.ui.theme.AppElevation
 import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.AppSurfaceTone
@@ -149,8 +150,8 @@ fun AppRoot(
                     )
                     Surface(
                         color = appSurfaceColor(AppSurfaceTone.Plain).copy(alpha = 0.97f),
-                        tonalElevation = 1.dp,
-                        shadowElevation = 12.dp,
+                        tonalElevation = AppElevation.Subtle,
+                        shadowElevation = AppElevation.Low,
                         shape = navShape,
                         modifier = Modifier
                             .border(
@@ -202,7 +203,7 @@ fun AppRoot(
                 hostState = snackbarHostState,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = AppSpacing.Medium)
                     .padding(bottom = chromeState.snackbarBottomPadding)
             )
 

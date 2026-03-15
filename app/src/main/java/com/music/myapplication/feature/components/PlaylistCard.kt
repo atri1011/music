@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.ui.theme.AppShapes
+import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.verticalGradientScrim
 
 @Composable
@@ -103,7 +104,7 @@ fun PlaylistCard(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .padding(horizontal = AppSpacing.Small, vertical = AppSpacing.XSmall)
         ) {
             Text(
                 text = name,

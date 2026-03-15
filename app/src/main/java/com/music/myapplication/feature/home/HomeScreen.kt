@@ -29,6 +29,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.music.myapplication.ui.theme.AppShapes
+import com.music.myapplication.ui.theme.AppSpacing
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -99,7 +100,7 @@ fun HomeScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                    .padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Small),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -112,13 +113,13 @@ fun HomeScreen(
                     icon = Icons.Default.QrCodeScanner,
                     contentDescription = "扫码"
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(AppSpacing.XSmall))
                 HomeTopActionButton(
                     onClick = onNavigateToSearch,
                     icon = Icons.Default.Search,
                     contentDescription = "搜索"
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(AppSpacing.XSmall))
                 HomeTopActionButton(
                     onClick = { viewModel.loadToplists(); viewModel.loadRecommendations() },
                     icon = Icons.Default.Refresh,
@@ -132,7 +133,7 @@ fun HomeScreen(
                 items = tabs.indices.toList(),
                 selectedItem = state.selectedTab,
                 onItemSelected = viewModel::onTabChange,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.XXSmall)
             ) { index, selected ->
                 Text(
                     text = tabs[index],
@@ -191,22 +192,22 @@ private fun ForYouContent(
             .fillMaxSize()
             .verticalScroll(scrollState)
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.Medium))
 
         // Greeting
         Text(
             text = greeting,
             style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(horizontal = 20.dp)
+            modifier = Modifier.padding(horizontal = AppSpacing.Large)
         )
         Text(
             text = "今天想听点什么？",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp, start = 20.dp, end = 20.dp)
+            modifier = Modifier.padding(top = AppSpacing.XXSmall, start = AppSpacing.Large, end = AppSpacing.Large)
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.Large))
 
         // Daily Recommendation Card
         if (state.dailyTracks.isNotEmpty()) {
@@ -216,9 +217,9 @@ private fun ForYouContent(
                     val track = state.dailyTracks.firstOrNull() ?: return@DailyRecommendCard
                     playerViewModel.playTrack(track, state.dailyTracks, 0)
                 },
-                modifier = Modifier.padding(horizontal = 20.dp)
+                modifier = Modifier.padding(horizontal = AppSpacing.Large)
             )
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(AppSpacing.Large))
         }
 
         // Personal FM
@@ -228,9 +229,9 @@ private fun ForYouContent(
                 onPlay = {
                     playerViewModel.playTrack(fmTrack, listOf(fmTrack), 0)
                 },
-                modifier = Modifier.padding(horizontal = 20.dp)
+                modifier = Modifier.padding(horizontal = AppSpacing.Large)
             )
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(AppSpacing.XLarge))
         }
 
         // Recommended Playlists - horizontal scroll
@@ -239,7 +240,7 @@ private fun ForYouContent(
                 playlists = state.recommendedPlaylists,
                 onNavigateToPlaylist = onNavigateToPlaylist
             )
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(AppSpacing.XLarge))
         }
 
         // Guess You Like
@@ -268,7 +269,7 @@ private fun ForYouContent(
             )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.XLarge))
     }
 }
 
@@ -287,7 +288,7 @@ private fun DailyRecommendCard(
         modifier = modifier
             .fillMaxWidth()
             .glassSurface(shape = RoundedCornerShape(AppShapes.Large))
-            .padding(horizontal = 18.dp, vertical = 16.dp)
+            .padding(horizontal = 18.dp, vertical = AppSpacing.Medium)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -310,9 +311,7 @@ private fun DailyRecommendCard(
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
-
-            // Middle: description + thumbnails
+            Spacer(modifier = Modifier.width(AppSpacing.Medium))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "每日推荐",
@@ -322,10 +321,10 @@ private fun DailyRecommendCard(
                     text = "优先根据最近播放和收藏生成",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                    modifier = Modifier.padding(top = 2.dp, bottom = AppSpacing.XSmall)
                 )
                 // 3 small cover thumbnails
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.XXSmall)) {
                     tracks.take(3).forEach { track ->
                         CoverImage(
                             url = track.coverUrl,
@@ -430,11 +429,11 @@ private fun RecommendedPlaylistRow(
         Text(
             text = "推荐歌单",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(start = 20.dp, bottom = 12.dp)
+            modifier = Modifier.padding(start = AppSpacing.Large, bottom = AppSpacing.Small)
         )
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = 20.dp)
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small),
+            contentPadding = PaddingValues(horizontal = AppSpacing.Large)
         ) {
             items(playlists, key = { it.id }) { playlist ->
                 PlaylistCard(
@@ -461,12 +460,12 @@ private fun GuessYouLikeSection(
     val refreshRotation = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
 
-    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.Large)) {
         // Section header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .padding(bottom = AppSpacing.Small),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
@@ -492,7 +491,7 @@ private fun GuessYouLikeSection(
                         .graphicsLayer { rotationZ = refreshRotation.value }
                 )
             }
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(AppSpacing.XXSmall))
             Text(
                 text = if (label.isNotBlank()) "猜你喜欢 · $label" else "猜你喜欢",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -561,7 +560,7 @@ private fun GuessYouLikeItem(
                 .clip(RoundedCornerShape(AppShapes.ExtraSmall)),
             contentScale = ContentScale.Crop
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.title,
@@ -579,7 +578,7 @@ private fun GuessYouLikeItem(
         }
         Icon(
             imageVector = Icons.Default.PlayArrow,
-            contentDescription = null,
+            contentDescription = "播放",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(22.dp)
         )
@@ -598,7 +597,7 @@ private fun GuessYouLikeItemPlaceholder() {
                 .clip(RoundedCornerShape(AppShapes.ExtraSmall))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
         Column(modifier = Modifier.weight(1f)) {
             Box(
                 modifier = Modifier
@@ -607,7 +606,7 @@ private fun GuessYouLikeItemPlaceholder() {
                     .clip(RoundedCornerShape(AppShapes.Tiny))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(AppSpacing.XXSmall))
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.4f)
@@ -630,7 +629,7 @@ private fun ChartContent(
         PlatformFilterChips(
             selectedPlatform = state.platform,
             onPlatformSelected = onPlatformChange,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XXSmall)
         )
 
         when {
@@ -639,8 +638,8 @@ private fun ChartContent(
             }
             state.isLoading -> {
                 LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Small),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(4) {
@@ -655,8 +654,8 @@ private fun ChartContent(
             }
             else -> {
                 LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Small),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(
@@ -689,7 +688,7 @@ private fun ToplistPreviewCard(
             .fillMaxWidth()
             .glassSurface(shape = RoundedCornerShape(AppShapes.Large), pressScale = true)
             .clickable(onClick = onClick)
-            .padding(16.dp)
+            .padding(AppSpacing.Medium)
     ) {
         // Header: title + update frequency
         Row(
@@ -704,7 +703,7 @@ private fun ToplistPreviewCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(AppSpacing.XSmall))
             Text(
                 text = "每天更新",
                 style = MaterialTheme.typography.labelMedium,
@@ -712,7 +711,7 @@ private fun ToplistPreviewCard(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.Small))
 
         // Body: cover image + song list
         Row(
@@ -738,7 +737,7 @@ private fun ToplistPreviewCard(
                         .size(36.dp)
                         .clip(CircleShape)
                         .background(Color.Black.copy(alpha = 0.32f))
-                        .border(0.5.dp, Color.White.copy(alpha = 0.20f), CircleShape),
+                        .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -750,12 +749,12 @@ private fun ToplistPreviewCard(
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(AppSpacing.Small))
 
             // Song preview list
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)
             ) {
                 if (previewTracks != null) {
                     previewTracks.forEachIndexed { index, track ->
@@ -805,7 +804,7 @@ private fun ChartSongRow(rank: Int, track: Track) {
             color = if (rank <= 3) QQMusicGreen else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(24.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(AppSpacing.XSmall))
         Text(
             text = track.title,
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
@@ -836,7 +835,7 @@ private fun ChartSongRowPlaceholder(rank: Int) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(24.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(AppSpacing.XSmall))
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -880,15 +879,15 @@ private fun PlaylistSquareContent(
             selectedPlatform = state.playlistSquarePlatform,
             onPlatformSelected = onPlatformChange,
             platforms = listOf(Platform.NETEASE, Platform.QQ),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XXSmall)
         )
 
         // Category pills
         if (state.playlistCategories.isNotEmpty()) {
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                contentPadding = PaddingValues(horizontal = AppSpacing.Medium, vertical = AppSpacing.XXSmall),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)
             ) {
                 items(
                     items = state.playlistCategories,
@@ -920,9 +919,9 @@ private fun PlaylistSquareContent(
             state.isPlaylistSquareLoading && state.playlistItems.isEmpty() -> {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 110.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    contentPadding = PaddingValues(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)
                 ) {
                     items(9) {
                         ShimmerGridCard(
@@ -938,9 +937,9 @@ private fun PlaylistSquareContent(
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 110.dp),
                     state = gridState,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(

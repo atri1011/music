@@ -3,7 +3,6 @@ package com.music.myapplication.feature.player
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,7 +45,7 @@ import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.AppSpacing
-import com.music.myapplication.ui.theme.LocalGlassColors
+import com.music.myapplication.ui.theme.glassSurface
 
 @Composable
 fun MiniPlayerBar(
@@ -66,14 +65,11 @@ fun MiniPlayerBar(
     val trackKey = "${currentTrack.platform.id}:${currentTrack.id}"
     val favoritePopTrigger = rememberRisingEdgeTrigger(value = currentTrack.isFavorite, resetKey = trackKey)
     val shape = RoundedCornerShape(AppShapes.Large)
-    val glassColors = LocalGlassColors.current
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(glassColors.surface, shape)
-            .border(0.5.dp, glassColors.border, shape)
+            .glassSurface(shape = shape)
     ) {
         if (showResolvingIndicator) {
             LinearProgressIndicator(
@@ -124,9 +120,9 @@ fun MiniPlayerBar(
                         maxLines = 1,
                         modifier = Modifier.basicMarquee()
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(AppSpacing.XXSmall))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.XXSmall),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -258,7 +254,7 @@ private fun MiniQualityBadge(
         modifier = modifier
             .clip(RoundedCornerShape(AppShapes.Small))
             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .padding(horizontal = AppSpacing.XXSmall, vertical = AppSpacing.XXSmall)
     )
 }
 
