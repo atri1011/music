@@ -51,7 +51,16 @@ You can put it in `gradle.properties` or `local.properties`.
 APP_UPDATE_REPO=owner/repository
 ```
 
-4. Build and run.
+4. (Recommended) Configure release signing for installable APK output:
+
+```properties
+RELEASE_STORE_FILE=C:/path/to/your/release-keystore.jks
+RELEASE_STORE_PASSWORD=your_store_password
+RELEASE_KEY_ALIAS=your_key_alias
+RELEASE_KEY_PASSWORD=your_key_password
+```
+
+5. Build and run.
 
 ### Build Commands
 
@@ -61,6 +70,17 @@ Windows (PowerShell):
 .\gradlew.bat assembleDebug
 .\gradlew.bat installDebug
 .\gradlew.bat testDebugUnitTest
+```
+
+Build signed release APK (PowerShell):
+
+```powershell
+.\gradlew.bat ':app:assembleRelease' `
+  '-PRELEASE_STORE_FILE=C:/path/to/your/release-keystore.jks' `
+  '-PRELEASE_STORE_PASSWORD=your_store_password' `
+  '-PRELEASE_KEY_ALIAS=your_key_alias' `
+  '-PRELEASE_KEY_PASSWORD=your_key_password' `
+  '-PRELEASE_SIGNING_REQUIRED=true'
 ```
 
 macOS/Linux:
@@ -75,6 +95,29 @@ macOS/Linux:
 
 - API key can also be updated in-app from the **More** screen.
 - The project includes update-related configuration through `APP_UPDATE_REPO`.
+
+## CI Release Secrets
+
+For `.github/workflows/release-update-manifest.yml`, configure these repository secrets:
+
+- `RELEASE_TOKEN` -- create GitHub Release and upload APK asset
+- `CHECK_UPDATE_PAT` -- write access token for `owner/check-update` repository
+- `RELEASE_KEYSTORE_BASE64` -- Base64 of your release keystore file
+- `RELEASE_STORE_PASSWORD` -- keystore password
+- `RELEASE_KEY_ALIAS` -- signing key alias
+- `RELEASE_KEY_PASSWORD` -- signing key password
+
+Generate `RELEASE_KEYSTORE_BASE64` locally (PowerShell):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\path\to\release-keystore.jks')) | Set-Clipboard
+```
+
+## Auto Update Guide
+
+Detailed local guide:
+
+- `docs/auto-update-2.0-local-guide.md`
 
 ## Architecture Overview
 

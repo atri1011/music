@@ -11,6 +11,24 @@ val tuneHubApiKey = ((project.findProperty("TUNEHUB_API_KEY") as String?) ?: "")
     .replace("\"", "\\\"")
 val appUpdateRepo = ((project.findProperty("APP_UPDATE_REPO") as String?) ?: "")
     .replace("\"", "\\\"")
+val releaseStoreFile = ((project.findProperty("RELEASE_STORE_FILE") as String?) ?: "").trim()
+val releaseStorePassword = ((project.findProperty("RELEASE_STORE_PASSWORD") as String?) ?: "").trim()
+val releaseKeyAlias = ((project.findProperty("RELEASE_KEY_ALIAS") as String?) ?: "").trim()
+val releaseKeyPassword = ((project.findProperty("RELEASE_KEY_PASSWORD") as String?) ?: "").trim()
+val releaseSigningRequired = (((project.findProperty("RELEASE_SIGNING_REQUIRED") as String?) ?: "false")
+    .trim()
+    .equals("true", ignoreCase = true))
+val hasCustomReleaseSigning = releaseStoreFile.isNotBlank() &&
+    releaseStorePassword.isNotBlank() &&
+    releaseKeyAlias.isNotBlank() &&
+    releaseKeyPassword.isNotBlank()
+
+if (releaseSigningRequired && !hasCustomReleaseSigning) {
+    throw GradleException(
+        "Missing release signing properties. " +
+            "Please provide RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD."
+    )
+}
 
 android {
     namespace = "com.music.myapplication"
@@ -28,6 +46,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (hasCustomReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -35,6 +64,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = if (hasCustomReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                // Fallback for local testing when release keystore is not configured.
+                signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {

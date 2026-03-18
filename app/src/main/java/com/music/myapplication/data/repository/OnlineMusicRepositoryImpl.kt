@@ -212,6 +212,9 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         if (platform == Platform.NETEASE) {
             return fetchNeteasePlaylistDetailDirect(id)
         }
+        if (platform == Platform.QQ) {
+            return fetchQqPlaylistDetailWithFallback(id)
+        }
         val result = dispatchExecutor.executeByMethod(
             platform = platform,
             function = "playlist",
@@ -355,6 +358,71 @@ class OnlineMusicRepositoryImpl @Inject constructor(
             }
 
             Result.Success(coverEnricher.enrich(Platform.NETEASE, tracks))
+        } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun fetchQqPlaylistDetailWithFallback(id: String): Result<List<Track>> {
+        val templateResult = dispatchExecutor.executeByMethod(
+            platform = Platform.QQ,
+            function = "playlist",
+            args = mapOf("id" to id)
+        )
+        val templateTracks = (templateResult as? Result.Success)?.data.orEmpty()
+        if (templateTracks.isNotEmpty()) {
+            return coverEnricher.enrich(Platform.QQ, templateResult)
+        }
+
+        return when (val directResult = fetchQqPlaylistDetailDirect(id)) {
+            is Result.Success -> {
+                if (directResult.data.isNotEmpty()) {
+                    coverEnricher.enrich(Platform.QQ, directResult)
+                } else {
+                    coverEnricher.enrich(Platform.QQ, templateResult)
+                }
+            }
+
+            is Result.Error -> {
+                if (templateResult is Result.Success) {
+                    Result.Error(directResult.error)
+                } else {
+                    templateResult
+                }
+            }
+
+            is Result.Loading -> coverEnricher.enrich(Platform.QQ, templateResult)
+        }
+    }
+
+    private suspend fun fetchQqPlaylistDetailDirect(id: String): Result<List<Track>> {
+        return try {
+            val response = api.postQqMusicu(
+                buildQqPlaylistDetailBody(
+                    playlistId = id,
+                    songNum = QQ_PLAYLIST_DETAIL_BATCH_SIZE
+                )
+            )
+            val playlistResponse = (response as? JsonObject)?.getIgnoreCase("playlist")
+            val playlistData = (playlistResponse as? JsonObject)?.getIgnoreCase("data")
+            val code = extractApiCode(playlistResponse) ?: extractApiCode(playlistData)
+            if (code != null && code != 0) {
+                val message = extractApiMessage(playlistResponse)
+                    .ifBlank { extractApiMessage(playlistData) }
+                    .ifBlank { "获取 QQ 音乐歌单详情失败" }
+                return Result.Error(
+                    AppError.Api(
+                        message = message,
+                        code = code
+                    )
+                )
+            }
+
+            val tracks = extractQqPlaylistTracks(response)
+            if (tracks.isEmpty()) {
+                return Result.Error(AppError.Parse(message = "解析 QQ 音乐歌单详情失败"))
+            }
+            Result.Success(tracks)
         } catch (e: Exception) {
             Result.Error(AppError.Network(cause = e))
         }
@@ -1076,6 +1144,7 @@ class OnlineMusicRepositoryImpl @Inject constructor(
         const val NETEASE_DETAIL_BATCH_SIZE = 50
         const val NETEASE_ALBUM_FALLBACK_MAX_PAGES = 4
         const val QQ_DETAIL_BATCH_SIZE = 20
+        const val QQ_PLAYLIST_DETAIL_BATCH_SIZE = 500
         const val KUWO_DETAIL_BATCH_SIZE = 50
         const val OFFICIAL_SEARCH_PAGE_SIZE_LIMIT = 50
     }
@@ -2349,6 +2418,33 @@ private fun buildQqPlaylistByCategoryBody(category: String, page: Int, pageSize:
     })
 }
 
+internal fun buildQqPlaylistDetailBody(playlistId: String, songNum: Int): JsonElement = buildJsonObject {
+    val safeSongNum = songNum.coerceIn(1, 500)
+    val numericPlaylistId = playlistId.toLongOrNull()
+    put("comm", buildJsonObject {
+        put("cv", 4747474)
+        put("ct", 24)
+        put("format", "json")
+        put("inCharset", "utf-8")
+        put("outCharset", "utf-8")
+        put("uin", 0)
+    })
+    put("playlist", buildJsonObject {
+        put("module", "music.srfDissInfo.aiDissInfo")
+        put("method", "uniform_get_Dissinfo")
+        put("param", buildJsonObject {
+            if (numericPlaylistId != null) {
+                put("disstid", numericPlaylistId)
+            } else {
+                put("disstid", playlistId)
+            }
+            put("tag", 1)
+            put("song_begin", 0)
+            put("song_num", safeSongNum)
+        })
+    })
+}
+
 private fun extractNeteaseArtistAlbums(data: JsonElement?): List<ArtistAlbum> {
     val root = data as? JsonObject ?: return emptyList()
     val hotAlbums = root.getIgnoreCase("hotAlbums") as? JsonArray ?: return emptyList()
@@ -2475,6 +2571,15 @@ private fun extractQqAlbumTracks(data: JsonElement?): List<Track> {
     val songs = ((((data as? JsonObject)?.get("songs") as? JsonObject)
         ?.get("data") as? JsonObject)
         ?.get("songList") as? JsonArray) ?: return emptyList()
+    return songs.mapNotNull { extractQqArtistSong(it as? JsonObject) }
+}
+
+private fun extractQqPlaylistTracks(data: JsonElement?): List<Track> {
+    val playlistData = (((data as? JsonObject)?.getIgnoreCase("playlist") as? JsonObject)
+        ?.getIgnoreCase("data") as? JsonObject) ?: return emptyList()
+    val songs = (playlistData.getIgnoreCase("songlist")
+        ?: playlistData.getIgnoreCase("songList")
+        ?: playlistData.getIgnoreCase("list")) as? JsonArray ?: return emptyList()
     return songs.mapNotNull { extractQqArtistSong(it as? JsonObject) }
 }
 

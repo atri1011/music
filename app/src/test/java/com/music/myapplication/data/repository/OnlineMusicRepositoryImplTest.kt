@@ -2255,6 +2255,125 @@ class OnlineMusicRepositoryImplTest {
     }
 
     @Test
+    fun getPlaylistDetail_forQq_fallsBackToOfficialApiWhenTemplateReturnsEmpty() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val requestBody = slot<JsonElement>()
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "playlist": {
+                "code": 0,
+                "data": {
+                  "songlist": [
+                    {
+                      "mid": "001WsiXr4FYlao",
+                      "name": "我想我不会爱你",
+                      "interval": 255,
+                      "singer": [
+                        { "name": "田馥甄" }
+                      ],
+                      "album": {
+                        "id": 2254544,
+                        "mid": "0021s3aX36BCI1",
+                        "name": "To Hebe"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        coEvery {
+            dispatchExecutor.executeByMethod(
+                platform = Platform.QQ,
+                function = "playlist",
+                args = mapOf("id" to "9678270813")
+            )
+        } returns Result.Success(emptyList<Track>())
+        coEvery { api.postQqMusicu(any(), any()) } answers {
+            requestBody.captured = firstArg()
+            payload
+        }
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getPlaylistDetail(Platform.QQ, "9678270813")
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("001WsiXr4FYlao", data.first().id)
+        assertEquals("我想我不会爱你", data.first().title)
+        assertEquals("田馥甄", data.first().artist)
+        assertEquals("To Hebe", data.first().album)
+        assertEquals("2254544", data.first().albumId)
+        assertEquals(
+            "https://y.qq.com/music/photo_new/T002R300x300M0000021s3aX36BCI1.jpg",
+            data.first().coverUrl
+        )
+        assertEquals(255000L, data.first().durationMs)
+
+        val root = requestBody.captured as JsonObject
+        val playlist = root["playlist"] as JsonObject
+        val params = playlist["param"] as JsonObject
+        assertEquals("music.srfDissInfo.aiDissInfo", (playlist["module"] as JsonPrimitive).content)
+        assertEquals("uniform_get_Dissinfo", (playlist["method"] as JsonPrimitive).content)
+        assertEquals(9678270813L, (params["disstid"] as JsonPrimitive).content.toLong())
+        assertEquals(0, (params["song_begin"] as JsonPrimitive).content.toInt())
+        assertEquals(500, (params["song_num"] as JsonPrimitive).content.toInt())
+        coVerify(exactly = 1) {
+            dispatchExecutor.executeByMethod(
+                platform = Platform.QQ,
+                function = "playlist",
+                args = mapOf("id" to "9678270813")
+            )
+        }
+        coVerify(exactly = 1) { api.postQqMusicu(any(), any()) }
+    }
+
+    @Test
+    fun getPlaylistDetail_forQq_skipsOfficialFallbackWhenTemplateHasTracks() = runTest {
+        val api = mockk<TuneHubApi>(relaxed = true)
+        val dispatchExecutor = mockk<DispatchExecutor>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        val templateTracks = listOf(
+            Track(
+                id = "0039MnYb0qxYhV",
+                platform = Platform.QQ,
+                title = "晴天",
+                artist = "周杰伦"
+            )
+        )
+        coEvery {
+            dispatchExecutor.executeByMethod(
+                platform = Platform.QQ,
+                function = "playlist",
+                args = mapOf("id" to "9209322004")
+            )
+        } returns Result.Success(templateTracks)
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getPlaylistDetail(Platform.QQ, "9209322004")
+
+        val data = (result as Result.Success).data
+        assertEquals(1, data.size)
+        assertEquals("0039MnYb0qxYhV", data.first().id)
+        coVerify(exactly = 1) {
+            dispatchExecutor.executeByMethod(
+                platform = Platform.QQ,
+                function = "playlist",
+                args = mapOf("id" to "9209322004")
+            )
+        }
+        coVerify(exactly = 0) { api.postQqMusicu(any(), any()) }
+    }
+
+    @Test
     fun getAlbumDetail_forQq_usesOfficialApiInsteadOfDispatchTemplate() = runTest {
         val api = mockk<TuneHubApi>()
         val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)

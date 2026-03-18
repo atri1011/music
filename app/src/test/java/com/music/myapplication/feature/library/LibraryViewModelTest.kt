@@ -395,6 +395,13 @@ class LibraryViewModelTest {
         assertEquals(Platform.QQ, qqResolved?.platform)
         assertEquals("9601259329", qqResolved?.playlistId)
 
+        val qqN3Resolved = resolveImportedPlaylistInput(
+            selectedPlatform = Platform.QQ,
+            rawInput = "https://2.y.9q.com/n3/other/pages/details/playlist.html?platform=11&appshare=android-qq&appversion=14100008&hosteuin=own5NecsNeSz&id=9678270813&ADTAG=qfshare"
+        )
+        assertEquals(Platform.QQ, qqN3Resolved?.platform)
+        assertEquals("9678270813", qqN3Resolved?.playlistId)
+
         val neteaseResolved = resolveImportedPlaylistInput(
             selectedPlatform = Platform.QQ,
             rawInput = "网易云音乐分享 https://y.music.163.com/m/playlist?id=19723756&uct2=foo。"
