@@ -112,9 +112,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK_PATH='app/build/outputs/apk/release/app-release.apk'
+          APK_DIR='app/build/outputs/apk/release'
+          if [[ ! -d "${APK_DIR}" ]]; then
+            echo "APK output directory not found: ${APK_DIR}"
+            exit 1
+          fi
+
+          APK_PATH="${APK_DIR}/app-release.apk"
           if [[ ! -f "${APK_PATH}" ]]; then
-            echo 'Signed app-release.apk not found'
+            # Prefer signed output when both signed/unsigned APKs exist.
+            APK_PATH=$(find "${APK_DIR}" -type f -name '*.apk' ! -name '*-unsigned.apk' | sort | head -n 1)
+          fi
+          if [[ -z "${APK_PATH}" ]]; then
+            APK_PATH=$(find "${APK_DIR}" -type f -name '*.apk' | sort | head -n 1)
+          fi
+          if [[ -z "${APK_PATH}" || ! -f "${APK_PATH}" ]]; then
+            echo 'Release APK not found under app/build/outputs/apk/release'
+            ls -al "${APK_DIR}" || true
             exit 1
           fi
 
