@@ -74,6 +74,36 @@ class AppUpdateRepositoryImplTest {
     }
 
     @Test
+    fun invalidSha256FromVersionedSource_fallbackToOtherSource_success() = runTest {
+        assumeUpdateRepoConfigured()
+        coEvery { api.fetchJsonElement(any()) } returns Json.parseToJsonElement("""{"version":"v1.5.0"}""")
+        coEvery { api.fetchAppUpdateManifest(match { it.contains("@") }) } returns validManifest(
+            sha256 = "sha256-invalid"
+        )
+        coEvery { api.fetchAppUpdateManifest(match { !it.contains("@") }) } returns validManifest()
+
+        val result = repository.fetchLatest()
+
+        assertTrue(result is Result.Success)
+        val update = (result as Result.Success).data
+        assertNotNull(update)
+        assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", update!!.sha256)
+    }
+
+    @Test
+    fun resolveLatestFails_usesUnpinnedJsdelivrFallbackFirst() = runTest {
+        assumeUpdateRepoConfigured()
+        coEvery { api.fetchJsonElement(any()) } throws IllegalStateException("resolve failed")
+        val expectedUrl = "https://cdn.jsdelivr.net/gh/${BuildConfig.APP_UPDATE_REPO}/update.json"
+        coEvery { api.fetchAppUpdateManifest(expectedUrl) } returns validManifest()
+        coEvery { api.fetchAppUpdateManifest(match { it != expectedUrl }) } throws IllegalStateException("unexpected source")
+
+        val result = repository.fetchLatest()
+
+        assertTrue(result is Result.Success)
+    }
+
+    @Test
     fun invalidVersionCode_returnsParseError() = runTest {
         assumeUpdateRepoConfigured()
         coEvery { api.fetchJsonElement(any()) } returns Json.parseToJsonElement("""{"version":"main"}""")
