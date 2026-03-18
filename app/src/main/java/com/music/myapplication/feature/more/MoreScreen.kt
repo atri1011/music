@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -63,7 +62,6 @@ import com.music.myapplication.feature.update.AppUpdateViewModel
 
 @Composable
 fun MoreScreen(
-    onNavigateToEcosystem: () -> Unit = {},
     viewModel: MoreViewModel = hiltViewModel(),
     modifier: Modifier = Modifier
 ) {
@@ -253,18 +251,6 @@ fun MoreScreen(
                     onClick = { viewModel.showNeteaseCloudApiBaseUrlDialog(true) }
                 )
             }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // ── 生态扩展 ──
-        SettingsGroup(title = "生态扩展") {
-            SettingsItem(
-                icon = Icons.Default.OndemandVideo,
-                title = "MV / Android Auto",
-                subtitle = "沉浸式视频页、车机媒体树与后续社区入口",
-                onClick = onNavigateToEcosystem
-            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))

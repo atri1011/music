@@ -98,11 +98,7 @@ fun AppNavGraph(
             )
         }
         composable<Routes.More> {
-            MoreScreen(
-                onNavigateToEcosystem = {
-                    navController.navigate(Routes.EcosystemExpansion)
-                }
-            )
+            MoreScreen()
         }
 
         // Downloaded: slide in from right

@@ -126,7 +126,7 @@ class PlayerPreferences @Inject constructor(
     }
 
     val crossfadeEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[Keys.CROSSFADE_ENABLED] ?: false
+        prefs[Keys.CROSSFADE_ENABLED] ?: true
     }
 
     val crossfadeDurationMs: Flow<Int> = context.dataStore.data.map { prefs ->
