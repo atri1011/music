@@ -1,4 +1,4 @@
-﻿name: Release And Publish Update Manifest
+name: Release And Publish Update Manifest
 
 on:
   workflow_dispatch:
@@ -58,10 +58,7 @@ jobs:
             echo 'Missing required secret: RELEASE_STORE_PASSWORD'
             exit 1
           fi
-          if [[ -z "${RELEASE_KEY_ALIAS}" ]]; then
-            echo 'Missing required secret: RELEASE_KEY_ALIAS'
-            exit 1
-          fi
+
           if [[ -z "${RELEASE_KEY_PASSWORD}" ]]; then
             echo 'Missing required secret: RELEASE_KEY_PASSWORD'
             exit 1
@@ -73,7 +70,40 @@ jobs:
             echo 'Decoded keystore is empty'
             exit 1
           fi
+          mapfile -t KEY_ALIASES < <(
+            keytool -list -keystore "${KEYSTORE_PATH}" -storepass "${RELEASE_STORE_PASSWORD}" 2>/dev/null |
+              awk -F',' '/,( )*(PrivateKeyEntry|trustedCertEntry)/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); if ($1 != "") print $1}'
+          )
+          if [[ ${#KEY_ALIASES[@]} -eq 0 ]]; then
+            echo 'Unable to read key alias from keystore. Check RELEASE_STORE_PASSWORD and keystore content.'
+            exit 1
+          fi
+
+          RESOLVED_KEY_ALIAS="${RELEASE_KEY_ALIAS}"
+          if [[ -n "${RESOLVED_KEY_ALIAS}" ]]; then
+            if ! printf '%s\n' "${KEY_ALIASES[@]}" | grep -Fxq "${RESOLVED_KEY_ALIAS}"; then
+              if [[ ${#KEY_ALIASES[@]} -eq 1 ]]; then
+                RESOLVED_KEY_ALIAS="${KEY_ALIASES[0]}"
+                echo 'Configured RELEASE_KEY_ALIAS is not found in keystore, fallback to the only alias in keystore.'
+              else
+                echo "Configured RELEASE_KEY_ALIAS is not found in keystore, and keystore contains ${#KEY_ALIASES[@]} aliases."
+                echo 'Please update secret RELEASE_KEY_ALIAS to a valid alias.'
+                exit 1
+              fi
+            fi
+          else
+            if [[ ${#KEY_ALIASES[@]} -eq 1 ]]; then
+              RESOLVED_KEY_ALIAS="${KEY_ALIASES[0]}"
+              echo 'RELEASE_KEY_ALIAS is empty, fallback to the only alias in keystore.'
+            else
+              echo "Missing RELEASE_KEY_ALIAS, and keystore contains ${#KEY_ALIASES[@]} aliases."
+              echo 'Please set secret RELEASE_KEY_ALIAS explicitly.'
+              exit 1
+            fi
+          fi
+
           echo "store_file=${KEYSTORE_PATH}" >> "${GITHUB_OUTPUT}"
+          echo "resolved_key_alias=${RESOLVED_KEY_ALIAS}" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve release version
         id: version
@@ -103,7 +133,7 @@ jobs:
           ./gradlew ':app:assembleRelease' \
             "-PRELEASE_STORE_FILE=${{ steps.signing.outputs.store_file }}" \
             "-PRELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" \
-            "-PRELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" \
+            "-PRELEASE_KEY_ALIAS=${{ steps.signing.outputs.resolved_key_alias }}" \
             "-PRELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" \
             '-PRELEASE_SIGNING_REQUIRED=true'
 
