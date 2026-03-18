@@ -1,9 +1,5 @@
 package com.music.myapplication.app
 
-import android.app.Activity
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -32,7 +28,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -71,7 +66,6 @@ fun AppRoot(
     val navController = rememberNavController()
     val updateViewModel: AppUpdateViewModel = hiltViewModel()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val miniPlayerState by playerViewModel.miniPlayerState.collectAsStateWithLifecycle()
     val trackActionState by playerViewModel.trackActionState.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -211,30 +205,16 @@ fun AppRoot(
             if (updateState.showDialog && update != null) {
                 AppUpdateDialog(
                     update = update,
-                    onUpdateNow = {
-                        openExternalUrl(context, update.downloadUrl)
-                        updateViewModel.dismiss(update.latestVersionCode)
-                    },
-                    onLater = {
-                        updateViewModel.dismiss(update.latestVersionCode)
-                    }
+                    actionState = updateState.actionState,
+                    canSkipUpdate = updateState.canSkipUpdate,
+                    downloadProgressPercent = updateState.downloadProgressPercent,
+                    stageMessage = updateState.stageMessage,
+                    onPrimaryAction = updateViewModel::onPrimaryAction,
+                    onLater = updateViewModel::dismissCurrentUpdate
                 )
             }
         }
     }
-}
-
-private fun openExternalUrl(context: Context, url: String) {
-    val normalized = url.trim()
-    if (normalized.isBlank()) return
-
-    val uri = runCatching { Uri.parse(normalized) }.getOrNull() ?: return
-    val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-        if (context !is Activity) {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-    }
-    runCatching { context.startActivity(intent) }
 }
 
 @Composable

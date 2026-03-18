@@ -3,4 +3,7 @@
     <cache-path
         name="shared_images"
         path="shared_images/" />
+    <external-files-path
+        name="app_updates"
+        path="updates/" />
 </paths>

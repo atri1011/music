@@ -1,0 +1,188 @@
+﻿name: Release And Publish Update Manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Whether this release is force update'
+        required: false
+        default: 'false'
+      min_supported_version_code:
+        description: 'Minimum supported versionCode'
+        required: false
+        default: '0'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-and-sync:
+    runs-on: ubuntu-latest
+    env:
+      CHECK_UPDATE_REPO: atri1011/check-update
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K\d+' app/build.gradle.kts | head -n 1)
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -n 1)
+          if [[ -z "${VERSION_CODE}" || -z "${VERSION_NAME}" ]]; then
+            echo 'Failed to parse versionCode/versionName from app/build.gradle.kts'
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE:-}" == 'tag' ]]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+          else
+            RELEASE_TAG="v${VERSION_NAME}"
+          fi
+
+          echo "version_code=${VERSION_CODE}" >> "${GITHUB_OUTPUT}"
+          echo "version_name=${VERSION_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "release_tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build release APK
+        shell: bash
+        run: ./gradlew ':app:assembleRelease'
+
+      - name: Collect APK metadata
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH=$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          if [[ -z "${APK_PATH}" ]]; then
+            echo 'Release APK not found'
+            exit 1
+          fi
+
+          APK_NAME=$(basename "${APK_PATH}")
+          SHA256=$(sha256sum "${APK_PATH}" | awk '{print $1}')
+          FILE_SIZE_BYTES=$(stat -c%s "${APK_PATH}")
+          PUBLISHED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+          echo "apk_path=${APK_PATH}" >> "${GITHUB_OUTPUT}"
+          echo "apk_name=${APK_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
+          echo "file_size_bytes=${FILE_SIZE_BYTES}" >> "${GITHUB_OUTPUT}"
+          echo "published_at=${PUBLISHED_AT}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.release_tag }}
+          name: ${{ steps.version.outputs.release_tag }}
+          generate_release_notes: true
+          files: ${{ steps.apk.outputs.apk_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Resolve APK download URL
+        id: asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          RELEASE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${{ steps.version.outputs.release_tag }}")
+          APK_URL=$(echo "${RELEASE_JSON}" | jq -r '.assets[] | select(.name == "${{ steps.apk.outputs.apk_name }}") | .browser_download_url' | head -n 1)
+          if [[ -z "${APK_URL}" || "${APK_URL}" == 'null' ]]; then
+            echo 'Release asset direct download URL not found'
+            exit 1
+          fi
+          echo "apk_url=${APK_URL}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate update manifest
+        id: manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          FORCE_UPDATE="${{ github.event.inputs.force_update || 'false' }}"
+          MIN_SUPPORTED="${{ github.event.inputs.min_supported_version_code || '0' }}"
+          if ! [[ "${MIN_SUPPORTED}" =~ ^[0-9]+$ ]]; then
+            echo 'min_supported_version_code must be a non-negative integer'
+            exit 1
+          fi
+          if [[ "${FORCE_UPDATE}" != 'true' && "${FORCE_UPDATE}" != 'false' ]]; then
+            echo 'force_update must be true or false'
+            exit 1
+          fi
+
+          cat > update.json <<EOF
+          {
+            "latestVersionCode": ${{ steps.version.outputs.version_code }},
+            "latestVersionName": "${{ steps.version.outputs.version_name }}",
+            "apkUrl": "${{ steps.asset.outputs.apk_url }}",
+            "sha256": "${{ steps.apk.outputs.sha256 }}",
+            "fileSizeBytes": ${{ steps.apk.outputs.file_size_bytes }},
+            "changelog": "自动构建发布：${{ steps.version.outputs.release_tag }}",
+            "isForceUpdate": ${FORCE_UPDATE},
+            "minSupportedVersionCode": ${MIN_SUPPORTED},
+            "publishedAt": "${{ steps.apk.outputs.published_at }}"
+          }
+          EOF
+
+      - name: Validate generated manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '.latestVersionCode > 0' update.json > /dev/null
+          jq -e '.latestVersionName | length > 0' update.json > /dev/null
+          jq -e '.apkUrl | (startswith("https://") or startswith("http://"))' update.json > /dev/null
+          jq -e '.sha256 | test("^[A-Fa-f0-9]{64}$")' update.json > /dev/null
+          jq -e '.fileSizeBytes > 0' update.json > /dev/null
+          jq -e '.isForceUpdate | type == "boolean"' update.json > /dev/null
+          jq -e '.minSupportedVersionCode >= 0' update.json > /dev/null
+          jq -e '.publishedAt | length > 0' update.json > /dev/null
+
+      - name: Sync manifest to check-update repository
+        shell: bash
+        env:
+          CHECK_UPDATE_PAT: ${{ secrets.CHECK_UPDATE_PAT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CHECK_UPDATE_PAT}" ]]; then
+            echo 'Missing required secret: CHECK_UPDATE_PAT'
+            exit 1
+          fi
+          NEW_VERSION=$(jq -r '.latestVersionCode' update.json)
+          CURRENT_RELEASE_VERSION='${{ steps.version.outputs.version_code }}'
+          if [[ "${NEW_VERSION}" != "${CURRENT_RELEASE_VERSION}" ]]; then
+            echo "Manifest version (${NEW_VERSION}) must equal current release version (${CURRENT_RELEASE_VERSION})"
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${CHECK_UPDATE_PAT}@github.com/${CHECK_UPDATE_REPO}.git" check-update-repo
+          OLD_VERSION=0
+          if [[ -f 'check-update-repo/update.json' ]]; then
+            OLD_VERSION=$(jq -r '.latestVersionCode // 0' check-update-repo/update.json)
+          fi
+          if (( NEW_VERSION <= OLD_VERSION )); then
+            echo "Manifest version must be greater than existing version. new=${NEW_VERSION}, old=${OLD_VERSION}"
+            exit 1
+          fi
+
+          cp update.json check-update-repo/update.json
+          cd check-update-repo
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add update.json
+          git commit -m "chore: publish update manifest v${NEW_VERSION}"
+          git push origin HEAD:main

@@ -57,6 +57,7 @@ import com.music.myapplication.core.datastore.DarkModeOption
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
+import com.music.myapplication.feature.update.AppUpdateActionState
 import com.music.myapplication.feature.update.AppUpdateUiState
 import com.music.myapplication.feature.update.AppUpdateViewModel
 
@@ -671,6 +672,24 @@ private fun baseUrlSubtitle(baseUrl: String): String = baseUrl.ifBlank { "未设
 
 private fun updateCheckSubtitle(state: AppUpdateUiState): String = when {
     state.isChecking -> "检查中..."
+    state.actionState == AppUpdateActionState.DOWNLOADING -> {
+        state.downloadProgressPercent?.let { "下载中：$it%" } ?: "下载中..."
+    }
+    state.actionState == AppUpdateActionState.DOWNLOAD_FAILED -> {
+        state.stageMessage ?: "更新下载失败"
+    }
+    state.actionState == AppUpdateActionState.VERIFY_FAILED -> {
+        state.stageMessage ?: "安装包校验失败"
+    }
+    state.actionState == AppUpdateActionState.INSTALL_READY -> {
+        state.stageMessage ?: "安装包已就绪"
+    }
+    state.actionState == AppUpdateActionState.INSTALL_PERMISSION_REQUIRED -> {
+        state.stageMessage ?: "请先完成未知来源安装授权"
+    }
+    state.actionState == AppUpdateActionState.INSTALLING -> {
+        state.stageMessage ?: "已拉起安装器"
+    }
     state.showDialog && state.availableUpdate != null -> "发现新版本：${state.availableUpdate.latestVersionName}"
     !state.lastCheckMessage.isNullOrBlank() -> state.lastCheckMessage!!
     else -> "点击检查"
