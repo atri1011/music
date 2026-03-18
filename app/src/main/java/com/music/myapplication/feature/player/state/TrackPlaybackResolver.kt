@@ -1,6 +1,7 @@
 package com.music.myapplication.feature.player.state
 
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.data.repository.PlaybackSourceRouter
 import com.music.myapplication.domain.model.Platform
@@ -23,27 +24,10 @@ class TrackPlaybackResolver @Inject constructor(
                 return Result.Success(track.copy(playableUrl = result.data, quality = quality))
             }
             is Result.Error -> {
-                if (track.platform != Platform.QQ || !track.id.isDigitsOnly()) {
+                if (!shouldTryQqFallback(track)) {
                     return Result.Error(result.error)
                 }
-
-                val candidate = findQqMidCandidate(track) ?: return Result.Error(result.error)
-                return when (val retry = onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, quality)) {
-                    is Result.Success -> Result.Success(
-                        track.copy(
-                            id = candidate.id,
-                            title = if (track.title.isBlank()) candidate.title else track.title,
-                            artist = if (track.artist.isBlank()) candidate.artist else track.artist,
-                            album = if (track.album.isBlank()) candidate.album else track.album,
-                            coverUrl = if (track.coverUrl.isBlank()) candidate.coverUrl else track.coverUrl,
-                            durationMs = if (track.durationMs <= 0L) candidate.durationMs else track.durationMs,
-                            playableUrl = retry.data,
-                            quality = quality
-                        )
-                    )
-                    is Result.Error -> Result.Error(retry.error)
-                    Result.Loading -> Result.Error(result.error)
-                }
+                return tryQqFallback(track, quality, result.error)
             }
             Result.Loading -> return Result.Loading
         }
@@ -82,6 +66,40 @@ class TrackPlaybackResolver @Inject constructor(
         } ?: candidates.firstOrNull { candidate ->
             candidate.title.equals(track.title, ignoreCase = true)
         } ?: candidates.firstOrNull()
+    }
+
+    private suspend fun tryQqFallback(
+        track: Track,
+        quality: String,
+        originalError: AppError
+    ): Result<Track> {
+        val candidate = findQqMidCandidate(track) ?: return Result.Error(originalError)
+        return when (val retry = onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, quality)) {
+            is Result.Success -> Result.Success(
+                track.copy(
+                    platform = Platform.QQ,
+                    id = candidate.id,
+                    title = if (track.title.isBlank()) candidate.title else track.title,
+                    artist = if (track.artist.isBlank()) candidate.artist else track.artist,
+                    album = if (track.album.isBlank()) candidate.album else track.album,
+                    coverUrl = if (track.coverUrl.isBlank()) candidate.coverUrl else track.coverUrl,
+                    durationMs = if (track.durationMs <= 0L) candidate.durationMs else track.durationMs,
+                    playableUrl = retry.data,
+                    quality = quality
+                )
+            )
+            is Result.Error -> Result.Error(retry.error)
+            Result.Loading -> Result.Error(originalError)
+        }
+    }
+
+    private fun shouldTryQqFallback(track: Track): Boolean {
+        if (!track.id.isDigitsOnly()) return false
+        return when (track.platform) {
+            Platform.QQ -> true
+            Platform.NETEASE -> track.title.isNotBlank() && track.artist.isNotBlank()
+            else -> false
+        }
     }
 }
 
