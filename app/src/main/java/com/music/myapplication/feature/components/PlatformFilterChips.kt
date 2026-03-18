@@ -3,6 +3,7 @@ package com.music.myapplication.feature.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.Platform
 
@@ -87,6 +89,8 @@ fun ChoicePill(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    minHeight: Dp = 44.dp,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
     label: @Composable () -> Unit
 ) {
     val palette = rememberChoiceTogglePalette()
@@ -98,12 +102,12 @@ fun ChoicePill(
     CompositionLocalProvider(LocalContentColor provides contentColor) {
         androidx.compose.foundation.layout.Box(
             modifier = modifier
-                .defaultMinSize(minHeight = 44.dp)
+                .defaultMinSize(minHeight = minHeight)
                 .clip(shape)
                 .background(containerColor)
                 .border(width = 1.dp, color = borderColor, shape = shape)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .padding(contentPadding)
         ) {
             label()
         }

@@ -896,12 +896,18 @@ private fun PlaylistSquareContent(
                     val selected = category.name == state.selectedPlaylistCategory
                     ChoicePill(
                         selected = selected,
-                        onClick = { onCategoryChange(category.name) }
+                        onClick = { onCategoryChange(category.name) },
+                        minHeight = 40.dp,
+                        contentPadding = PaddingValues(
+                            horizontal = AppSpacing.Small,
+                            vertical = AppSpacing.XSmall
+                        )
                     ) {
                         Text(
                             text = category.name,
                             maxLines = 1,
-                            style = MaterialTheme.typography.labelMedium,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
                         )
                     }
