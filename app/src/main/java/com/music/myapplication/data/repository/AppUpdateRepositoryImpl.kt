@@ -26,6 +26,7 @@ class AppUpdateRepositoryImpl @Inject constructor(
         if (repo.isBlank()) return@withContext Result.Success(null)
 
         val feedUrls = resolveFeedUrls(repo)
+        var bestUpdate: AppUpdateInfo? = null
         var lastParseError: AppError.Parse? = null
         var lastNetworkError: Exception? = null
 
@@ -38,7 +39,13 @@ class AppUpdateRepositoryImpl @Inject constructor(
             }
 
             when (val result = toUpdateInfo(manifest)) {
-                is Result.Success -> return@withContext result
+                is Result.Success -> {
+                    val update = result.data ?: continue
+                    val currentBest = bestUpdate
+                    if (currentBest == null || update.latestVersionCode > currentBest.latestVersionCode) {
+                        bestUpdate = update
+                    }
+                }
                 is Result.Error -> {
                     val parseError = result.error as? AppError.Parse
                     if (parseError != null) {
@@ -49,6 +56,9 @@ class AppUpdateRepositoryImpl @Inject constructor(
             }
         }
 
+        bestUpdate?.let { update ->
+            return@withContext Result.Success(update)
+        }
         lastParseError?.let { parseError ->
             return@withContext Result.Error(parseError)
         }

@@ -39,8 +39,8 @@ android {
         applicationId = "com.music.myapplication"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "1.6.1"
+        versionCode = 18
+        versionName = "1.6.2"
         buildConfigField("String", "TUNEHUB_API_KEY", "\"$tuneHubApiKey\"")
         buildConfigField("String", "APP_UPDATE_REPO", "\"$appUpdateRepo\"")
 
