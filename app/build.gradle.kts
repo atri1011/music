@@ -31,6 +31,7 @@ if (releaseSigningRequired && !hasCustomReleaseSigning) {
 }
 
 
+android {
     namespace = "com.music.myapplication"
     compileSdk = 36
 
@@ -38,8 +39,8 @@ if (releaseSigningRequired && !hasCustomReleaseSigning) {
         applicationId = "com.music.myapplication"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.6.0"
+        versionCode = 1 7
+        versionName = "1.6.1"
         buildConfigField("String", "TUNEHUB_API_KEY", "\"$tuneHubApiKey\"")
         buildConfigField("String", "APP_UPDATE_REPO", "\"$appUpdateRepo\"")
 
