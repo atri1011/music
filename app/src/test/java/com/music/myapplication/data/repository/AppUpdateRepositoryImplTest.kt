@@ -91,6 +91,28 @@ class AppUpdateRepositoryImplTest {
     }
 
     @Test
+    fun staleVersionedManifest_prefersHigherVersionFromFallbackSource() = runTest {
+        assumeUpdateRepoConfigured()
+        coEvery { api.fetchJsonElement(any()) } returns Json.parseToJsonElement("""{"version":"v1.6.1"}""")
+        coEvery { api.fetchAppUpdateManifest(match { it.contains("@") }) } returns validManifest(
+            latestVersionCode = BuildConfig.VERSION_CODE,
+            latestVersionName = BuildConfig.VERSION_NAME
+        )
+        coEvery { api.fetchAppUpdateManifest(match { !it.contains("@") }) } returns validManifest(
+            latestVersionCode = BuildConfig.VERSION_CODE + 1,
+            latestVersionName = "next-version"
+        )
+
+        val result = repository.fetchLatest()
+
+        assertTrue(result is Result.Success)
+        val update = (result as Result.Success).data
+        assertNotNull(update)
+        assertEquals(BuildConfig.VERSION_CODE + 1, update!!.latestVersionCode)
+        assertEquals("next-version", update.latestVersionName)
+    }
+
+    @Test
     fun resolveLatestFails_usesUnpinnedJsdelivrFallbackFirst() = runTest {
         assumeUpdateRepoConfigured()
         coEvery { api.fetchJsonElement(any()) } throws IllegalStateException("resolve failed")
