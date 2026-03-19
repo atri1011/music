@@ -19,13 +19,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Cached
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
@@ -59,6 +66,7 @@ import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.feature.update.AppUpdateActionState
 import com.music.myapplication.feature.update.AppUpdateUiState
 import com.music.myapplication.feature.update.AppUpdateViewModel
+import com.music.myapplication.ui.theme.AppSpacing
 
 @Composable
 fun MoreScreen(
@@ -87,7 +95,7 @@ fun MoreScreen(
         Text(
             text = "设置",
             style = MaterialTheme.typography.headlineLarge,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+            modifier = Modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.Medium)
         )
 
         // ── 播放 ──
@@ -129,7 +137,7 @@ fun MoreScreen(
                 onCheckedChange = viewModel::setCrossfadeEnabled
             )
             SettingsItem(
-                icon = Icons.Default.Cached,
+                icon = Icons.Default.Timer,
                 title = "Crossfade 时长",
                 subtitle = crossfadeDurationLabel(state.crossfadeDurationMs),
                 onClick = {},
@@ -142,7 +150,7 @@ fun MoreScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.Small))
 
         // ── 外观 ──
         SettingsGroup(title = "外观") {
@@ -159,7 +167,7 @@ fun MoreScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.Small))
 
         // ── 网络 ──
         SettingsGroup(title = "网络") {
@@ -172,7 +180,7 @@ fun MoreScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.Small))
 
         // ── 存储 ──
         SettingsGroup(title = "存储") {
@@ -188,19 +196,19 @@ fun MoreScreen(
                 )
             }
             SettingsItem(
-                icon = Icons.Default.Cached,
+                icon = Icons.Default.Image,
                 title = "图片缓存",
                 subtitle = cacheItemSubtitle(state.imageCacheBytes, state.isCacheLoading),
                 onClick = {}
             )
             SettingsItem(
-                icon = Icons.Default.MusicNote,
+                icon = Icons.Default.Subtitles,
                 title = "歌词缓存",
                 subtitle = cacheItemSubtitle(state.lyricsCacheBytes, state.isCacheLoading),
                 onClick = {}
             )
             SettingsItem(
-                icon = Icons.Default.Info,
+                icon = Icons.Default.Code,
                 title = "模板缓存",
                 subtitle = cacheItemSubtitle(state.templateCacheBytes, state.isCacheLoading),
                 onClick = {}
@@ -214,7 +222,7 @@ fun MoreScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.Small))
 
         // ── 音源与账户 ──
         SettingsGroup(title = "音源与账户") {
@@ -237,7 +245,7 @@ fun MoreScreen(
             )
             if (state.audioSource == AudioSource.JKAPI) {
                 SettingsItem(
-                    icon = Icons.Default.VpnKey,
+                    icon = Icons.Default.Key,
                     title = "JKAPI 密钥",
                     subtitle = maskApiKey(state.jkapiKey),
                     onClick = { viewModel.showJkapiKeyDialog(true) }
@@ -245,7 +253,7 @@ fun MoreScreen(
             }
             if (state.audioSource == AudioSource.NETEASE_CLOUD_API_ENHANCED) {
                 SettingsItem(
-                    icon = Icons.Default.MusicNote,
+                    icon = Icons.Default.Link,
                     title = "增强版接口地址",
                     subtitle = baseUrlSubtitle(state.neteaseCloudApiBaseUrl),
                     onClick = { viewModel.showNeteaseCloudApiBaseUrlDialog(true) }
@@ -253,7 +261,7 @@ fun MoreScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.Small))
 
         // ── 关于 ──
         SettingsGroup(title = "关于") {
@@ -264,7 +272,7 @@ fun MoreScreen(
                 onClick = {}
             )
             SettingsItem(
-                icon = Icons.Default.Cached,
+                icon = Icons.Default.NewReleases,
                 title = "检查更新",
                 subtitle = updateCheckSubtitle(updateState),
                 onClick = updateViewModel::checkNow,
@@ -272,13 +280,13 @@ fun MoreScreen(
             )
             SettingsItem(
                 icon = Icons.Default.MusicNote,
-                title = "My Application",
+                title = "Music Player",
                 subtitle = "基于 Kotlin + Jetpack Compose",
                 onClick = {}
             )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(AppSpacing.XLarge))
     }
 
     if (state.showApiKeyDialog) {
@@ -326,12 +334,12 @@ private fun SettingsGroup(
         text = title,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+        modifier = Modifier.padding(horizontal = AppSpacing.Large, vertical = 6.dp)
     )
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = AppSpacing.Medium),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
         )
@@ -368,7 +376,7 @@ private fun SettingsItem(
                 tint = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
                 modifier = Modifier.size(22.dp)
             )
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(AppSpacing.Small))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -419,7 +427,7 @@ private fun SwitchSettingsItem(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(22.dp)
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -454,7 +462,7 @@ private fun PlaybackModePicker(current: PlaybackMode, onSelect: (PlaybackMode) -
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         options.forEach { (mode, label) ->
@@ -481,7 +489,7 @@ private fun DarkModePicker(current: DarkModeOption, onSelect: (DarkModeOption) -
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         options.forEach { (option, label) ->
@@ -530,7 +538,7 @@ private fun AudioSourcePicker(current: AudioSource, onSelect: (AudioSource) -> U
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         options.forEach { (source, label) ->
@@ -552,7 +560,7 @@ private fun PickerRow(options: List<Pair<String, String>>, current: String, onSe
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         options.forEach { (value, label) ->

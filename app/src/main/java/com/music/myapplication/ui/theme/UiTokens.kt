@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.dp
 object AppSpacing {
     val XXSmall = 4.dp
     val XSmall = 8.dp
+    val SmallMedium = 10.dp
     val Small = 12.dp
     val Medium = 16.dp
     val Large = 20.dp

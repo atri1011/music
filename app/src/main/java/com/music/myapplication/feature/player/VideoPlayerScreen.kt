@@ -227,8 +227,8 @@ private fun PortraitVideoLayout(
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         VideoTopBar(
-            title = "MV / 视频页",
-            subtitle = "沉浸式封面 + 独立视频播放器",
+            title = title.ifBlank { "MV" },
+            subtitle = artist.ifBlank { "视频播放" },
             onBack = onBack,
             actionIcon = Icons.Default.Fullscreen,
             actionDescription = "全屏横屏播放",
@@ -252,12 +252,6 @@ private fun PortraitVideoLayout(
             title = title,
             artist = artist,
             platformLabel = platformLabel,
-            hasPlayableVideo = hasPlayableVideo,
-            isLoading = isLoading,
-            errorMessage = errorMessage
-        )
-        Spacer(modifier = Modifier.height(14.dp))
-        VideoHintCard(
             hasPlayableVideo = hasPlayableVideo,
             isLoading = isLoading,
             errorMessage = errorMessage
@@ -588,88 +582,6 @@ private fun VideoInfoCard(
             },
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.72f)
-        )
-    }
-}
-
-@Composable
-private fun VideoHintCard(
-    hasPlayableVideo: Boolean,
-    isLoading: Boolean,
-    errorMessage: String?
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .glassSurface(shape = RoundedCornerShape(AppShapes.Large))
-            .padding(18.dp)
-    ) {
-        Text(
-            text = "这版先收口的点",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = Color.White
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        VideoHintLine("布局", "竖屏保留信息卡片，点全屏后直接切横屏纯视频。")
-        Spacer(modifier = Modifier.height(8.dp))
-        VideoHintLine("体验", "横屏时隐藏系统栏和底部导航，别让全屏像半屏凑活。")
-        Spacer(modifier = Modifier.height(8.dp))
-        VideoHintLine(
-            "状态",
-            when {
-                hasPlayableVideo -> "MV 地址已就绪，直接走独立 ExoPlayer。"
-                isLoading -> "正在拉取 MV 地址，回来就自动准备播放。"
-                errorMessage != null -> "这首歌的 MV 没解析出来，支持手动重试。"
-                else -> "当前歌曲还没有可播视频地址。"
-            }
-        )
-        Spacer(modifier = Modifier.height(14.dp))
-        Surface(
-            shape = CircleShape,
-            color = Color.White.copy(alpha = 0.1f)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = when {
-                        hasPlayableVideo -> "支持横屏全屏播放"
-                        isLoading -> "MV 地址解析中"
-                        errorMessage != null -> "解析失败，可重试"
-                        else -> "当前歌曲暂无 MV"
-                    },
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun VideoHintLine(label: String, content: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = Color.White,
-            modifier = Modifier.width(44.dp)
-        )
-        Text(
-            text = content,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.72f),
-            modifier = Modifier.weight(1f)
         )
     }
 }

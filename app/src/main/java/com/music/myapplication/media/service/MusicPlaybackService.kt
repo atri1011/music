@@ -337,7 +337,7 @@ class MusicPlaybackService : MediaLibraryService() {
             .setMediaId(ROOT_ID)
             .setMediaMetadata(
                 MediaMetadata.Builder()
-                    .setTitle("My Application")
+                    .setTitle("Music Player")
                     .setSubtitle("Android Auto")
                     .setIsBrowsable(true)
                     .setIsPlayable(false)

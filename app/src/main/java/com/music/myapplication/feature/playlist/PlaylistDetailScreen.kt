@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
+import com.music.myapplication.feature.components.EmptyStateView
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.components.ShimmerMediaListItem
@@ -188,8 +189,17 @@ fun PlaylistDetailScreen(
 
                     if (displayTracks.isEmpty() && !state.isEditMode) {
                         item(key = "empty_state", contentType = "empty") {
-                            EmptyPlaylistState(
-                                isFavoritesCollection = state.isFavoritesCollection
+                            EmptyStateView(
+                                icon = if (state.isFavoritesCollection) Icons.Default.Favorite else Icons.Default.PlayArrow,
+                                title = if (state.isFavoritesCollection) "你还没收藏歌曲" else "这个歌单还是空的",
+                                subtitle = if (state.isFavoritesCollection) {
+                                    "看到喜欢的歌就点心心，回这儿就能慢慢盘。"
+                                } else {
+                                    "先加几首歌进来，这里才热闹。"
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 40.dp)
                             )
                         }
                     }
@@ -508,42 +518,6 @@ private fun PlaylistHeader(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun EmptyPlaylistState(
-    isFavoritesCollection: Boolean
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 40.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = if (isFavoritesCollection) Icons.Default.Favorite else Icons.Default.PlayArrow,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(42.dp)
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = if (isFavoritesCollection) "你还没收藏歌曲" else "这个歌单还是空的",
-            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = if (isFavoritesCollection) {
-                "看到喜欢的歌就点心心，回这儿就能慢慢盘。"
-            } else {
-                "先加几首歌进来，这里才热闹。"
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
     }
 }
 

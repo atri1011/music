@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.myapplication.feature.components.EmptyStateView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.player.PlayerViewModel
 
@@ -133,12 +134,21 @@ fun LocalMusicScreen(
             }
 
             state.tracks.isEmpty() -> {
-                EmptyLocalMusicPlaceholder(
+                EmptyStateView(
+                    icon = Icons.Filled.LibraryMusic,
+                    title = if (state.isSyncing) "正在扫描本地音乐…" else "还没扫到本地歌曲",
+                    subtitle = "只会收录 `MediaStore` 识别为音乐、时长超过 30 秒的音频文件。",
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
-                    isSyncing = state.isSyncing,
-                    onSync = viewModel::syncLocalTracks
+                    action = {
+                        Button(
+                            onClick = viewModel::syncLocalTracks,
+                            enabled = !state.isSyncing
+                        ) {
+                            Text(if (state.isSyncing) "扫描中…" else "立即扫描")
+                        }
+                    }
                 )
             }
 
@@ -215,42 +225,3 @@ private fun PermissionPlaceholder(
     }
 }
 
-@Composable
-private fun EmptyLocalMusicPlaceholder(
-    modifier: Modifier = Modifier,
-    isSyncing: Boolean,
-    onSync: () -> Unit
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = Icons.Filled.LibraryMusic,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-        )
-        Text(
-            text = if (isSyncing) "正在扫描本地音乐…" else "还没扫到本地歌曲",
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(top = 12.dp)
-        )
-        Text(
-            text = "只会收录 `MediaStore` 识别为音乐、时长超过 30 秒的音频文件。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .padding(horizontal = 32.dp)
-                .padding(top = 8.dp, bottom = 20.dp)
-        )
-        Button(
-            onClick = onSync,
-            enabled = !isSyncing
-        ) {
-            Text(if (isSyncing) "扫描中…" else "立即扫描")
-        }
-    }
-}

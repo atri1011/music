@@ -30,7 +30,7 @@ if (releaseSigningRequired && !hasCustomReleaseSigning) {
     )
 }
 
-android {
+
     namespace = "com.music.myapplication"
     compileSdk = 36
 

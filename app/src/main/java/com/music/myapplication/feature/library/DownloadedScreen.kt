@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.myapplication.feature.components.EmptyStateView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.player.PlayerViewModel
 
@@ -59,27 +60,13 @@ fun DownloadedScreen(
         }
     ) { padding ->
         if (state.tracks.isEmpty()) {
-            Column(
+            EmptyStateView(
+                icon = Icons.Outlined.DownloadDone,
+                title = "暂无已下载的歌曲",
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(
-                    Icons.Outlined.DownloadDone,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                )
-                Text(
-                    text = "暂无已下载的歌曲",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.padding(top = 12.dp),
-                    textAlign = TextAlign.Center
-                )
-            }
+                    .padding(padding)
+            )
         } else {
             LazyColumn(
                 modifier = Modifier

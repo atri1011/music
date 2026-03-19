@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.ui.theme.AppShapes
+import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.QQMusicGreen
 
 @Composable
@@ -75,7 +76,7 @@ fun MediaListItem(
                 indication = androidx.compose.material3.ripple(),
                 onClick = onClick
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.SmallMedium),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (index != null) {

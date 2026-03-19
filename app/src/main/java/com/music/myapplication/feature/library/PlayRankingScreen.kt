@@ -43,6 +43,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.components.CoverImage
+import com.music.myapplication.feature.components.EmptyStateView
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.QQMusicGreen
@@ -77,7 +78,10 @@ fun PlayRankingScreen(
         }
     ) { padding ->
         if (rankedTracks.isEmpty()) {
-            EmptyPlayRankingPlaceholder(
+            EmptyStateView(
+                icon = Icons.Filled.PlayArrow,
+                title = "还没有播放记录",
+                subtitle = "等你多放几首歌，这里就会按播放次数给你排得明明白白。",
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
@@ -110,36 +114,6 @@ fun PlayRankingScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun EmptyPlayRankingPlaceholder(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = Icons.Filled.PlayArrow,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-        )
-        Text(
-            text = "还没有播放记录",
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(top = 12.dp)
-        )
-        Text(
-            text = "等你多放几首歌，这里就会按播放次数给你排得明明白白。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .padding(horizontal = 32.dp)
-                .padding(top = 8.dp)
-        )
     }
 }
 

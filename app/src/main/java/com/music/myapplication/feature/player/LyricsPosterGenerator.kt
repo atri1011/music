@@ -170,7 +170,7 @@ object LyricsPosterGenerator {
 
         drawStaticText(
             canvas = canvas,
-            text = "${track.platform.displayName} · My Application",
+            text = "${track.platform.displayName} · Music Player",
             paint = footerPaint,
             left = (width * 0.12f).toInt(),
             top = (height * 0.82f).toInt(),
@@ -302,7 +302,7 @@ object LyricsPosterGenerator {
         }
         drawStaticText(
             canvas = canvas,
-            text = "${track.platform.displayName} · My Application",
+            text = "${track.platform.displayName} · Music Player",
             paint = footerPaint,
             left = (width * 0.17f).toInt(),
             top = (height * 0.79f).toInt(),
