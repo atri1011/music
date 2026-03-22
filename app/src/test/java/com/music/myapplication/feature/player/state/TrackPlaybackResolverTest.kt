@@ -60,6 +60,33 @@ class TrackPlaybackResolverTest {
     }
 
     @Test
+    fun `downloaded content uri is preferred for remote track`() = runTest {
+        val contentUri = "content://media/external/audio/media/42"
+        val track = testTrack(playableUrl = contentUri)
+        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns contentUri
+
+        val result = resolver.resolve(track, "128k")
+
+        assertTrue(result is Result.Success)
+        assertEquals(contentUri, (result as Result.Success).data.playableUrl)
+        coVerify(exactly = 0) { sourceRouter.resolve(any(), any()) }
+    }
+
+    @Test
+    fun `stale downloaded content uri falls back to remote resolving`() = runTest {
+        val staleContentUri = "content://media/external/audio/media/404"
+        val track = testTrack(playableUrl = staleContentUri)
+        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
+        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success("https://example.com/play.mp3")
+
+        val result = resolver.resolve(track, "128k")
+
+        assertTrue(result is Result.Success)
+        assertEquals("https://example.com/play.mp3", (result as Result.Success).data.playableUrl)
+        coVerify(exactly = 1) { sourceRouter.resolve(track, "128k") }
+    }
+
+    @Test
     fun `remote resolving still works when no local copy exists`() = runTest {
         val track = testTrack()
         coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null

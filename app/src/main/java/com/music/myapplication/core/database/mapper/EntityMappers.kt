@@ -80,6 +80,9 @@ fun DownloadedTrackEntity.toTrack(): Track = Track(
 fun Track.toDownloadedTrackEntity(
     filePath: String = "",
     fileSizeBytes: Long = 0L,
+    progressPercent: Int = 0,
+    failureReason: String = "",
+    requestId: String = "",
     status: String = DownloadedTrackEntity.DownloadStatus.DOWNLOADING
 ): DownloadedTrackEntity = DownloadedTrackEntity(
     songId = id,
@@ -92,6 +95,9 @@ fun Track.toDownloadedTrackEntity(
     filePath = filePath,
     fileSizeBytes = fileSizeBytes,
     quality = quality,
+    progressPercent = progressPercent,
+    failureReason = failureReason,
+    requestId = requestId,
     downloadStatus = status
 )
 

@@ -24,3 +24,4 @@ docs/
 .gradle-user-home/
 .gradle-local/
 release-keystore.jks
+.codex-tasks/

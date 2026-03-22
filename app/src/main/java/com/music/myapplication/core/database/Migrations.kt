@@ -26,6 +26,8 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
                 `file_path` TEXT NOT NULL DEFAULT '',
                 `file_size_bytes` INTEGER NOT NULL DEFAULT 0,
                 `quality` TEXT NOT NULL DEFAULT '128k',
+                `progress_percent` INTEGER NOT NULL DEFAULT 0,
+                `failure_reason` TEXT NOT NULL DEFAULT '',
                 `download_status` TEXT NOT NULL DEFAULT 'downloading',
                 `downloaded_at` INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY(`song_id`, `platform`)
@@ -103,6 +105,34 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
             """
             ALTER TABLE `playlist_remote_map`
             ADD COLUMN `remote_order` INTEGER
+            """.trimIndent()
+        )
+    }
+}
+
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            ALTER TABLE `downloaded_tracks`
+            ADD COLUMN `progress_percent` INTEGER NOT NULL DEFAULT 0
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            ALTER TABLE `downloaded_tracks`
+            ADD COLUMN `failure_reason` TEXT NOT NULL DEFAULT ''
+            """.trimIndent()
+        )
+    }
+}
+
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            ALTER TABLE `downloaded_tracks`
+            ADD COLUMN `request_id` TEXT NOT NULL DEFAULT ''
             """.trimIndent()
         )
     }

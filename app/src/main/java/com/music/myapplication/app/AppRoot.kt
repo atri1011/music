@@ -1,5 +1,9 @@
 package com.music.myapplication.app
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -27,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,6 +46,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.music.myapplication.app.navigation.AppNavGraph
 import com.music.myapplication.app.navigation.Routes
+import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.player.MiniPlayerBar
 import com.music.myapplication.feature.player.MiniPlayerUiState
 import com.music.myapplication.feature.player.PlayerViewModel
@@ -70,6 +77,23 @@ fun AppRoot(
     val trackActionState by playerViewModel.trackActionState.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val downloadPermission = remember {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        } else {
+            null
+        }
+    }
+    var pendingPermissionTrack by remember { mutableStateOf<Track?>(null) }
+    val downloadPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val track = pendingPermissionTrack
+        pendingPermissionTrack = null
+        if (track != null) {
+            playerViewModel.onDownloadPermissionResult(track, granted)
+        }
+    }
 
     val hasCurrentTrack = miniPlayerState.currentTrack != null
     val isSearchRoute = navBackStackEntry?.destination?.hasRoute(Routes.Search::class) == true
@@ -97,6 +121,14 @@ fun AppRoot(
             duration = SnackbarDuration.Short
         )
         playerViewModel.clearTrackActionError()
+    }
+
+    LaunchedEffect(trackActionState.downloadPermissionRequestId) {
+        val permission = downloadPermission ?: return@LaunchedEffect
+        val track = trackActionState.downloadPermissionTrack ?: return@LaunchedEffect
+        pendingPermissionTrack = track
+        playerViewModel.consumeDownloadPermissionRequest()
+        downloadPermissionLauncher.launch(permission)
     }
 
     val bottomNavItems = remember {

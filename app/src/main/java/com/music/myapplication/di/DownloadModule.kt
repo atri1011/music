@@ -4,6 +4,7 @@ import com.music.myapplication.core.database.dao.DownloadedTracksDao
 import com.music.myapplication.core.download.DownloadManager
 import android.content.Context
 import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.core.database.dao.LocalTracksDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,7 +22,14 @@ object DownloadModule {
     fun provideDownloadManager(
         @ApplicationContext context: Context,
         downloadedTracksDao: DownloadedTracksDao,
+        localTracksDao: LocalTracksDao,
         preferences: PlayerPreferences,
         networkMonitor: NetworkMonitor
-    ): DownloadManager = DownloadManager(context, downloadedTracksDao, preferences, networkMonitor)
+    ): DownloadManager = DownloadManager(
+        context,
+        downloadedTracksDao,
+        localTracksDao,
+        preferences,
+        networkMonitor
+    )
 }

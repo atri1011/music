@@ -57,6 +57,7 @@ fun MediaListItem(
     moreIcon: ImageVector = Icons.Default.MoreVert,
     moreContentDescription: String = "更多",
     isPlaying: Boolean = false,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -72,6 +73,7 @@ fun MediaListItem(
             .fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clickable(
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = androidx.compose.material3.ripple(),
                 onClick = onClick

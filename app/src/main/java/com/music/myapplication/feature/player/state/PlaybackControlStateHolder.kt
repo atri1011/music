@@ -50,6 +50,7 @@ class PlaybackControlStateHolder @Inject constructor(
     private val _trackActionState = MutableStateFlow(TrackActionUiState())
     val trackActionState: StateFlow<TrackActionUiState> = _trackActionState.asStateFlow()
     private var nextTrackActionErrorId = 0L
+    private var nextDownloadPermissionRequestId = 0L
 
     @Volatile
     private var currentQuality: String = "128k"
@@ -297,6 +298,10 @@ class PlaybackControlStateHolder @Inject constructor(
                 publishTrackActionError("仅 Wi‑Fi 模式已开启，请连接 Wi‑Fi 后再下载")
                 return@launch
             }
+            if (!downloadManager.hasRequiredDownloadPermission()) {
+                publishDownloadPermissionRequest(track)
+                return@launch
+            }
 
             resolveTrackAction(track) { playable ->
                 if (!playable.playableUrl.isRemoteHttpUrl()) {
@@ -325,6 +330,28 @@ class PlaybackControlStateHolder @Inject constructor(
         val clamped = speed.coerceIn(0.5f, 2.0f)
         scope.launch {
             preferences.setPlaybackSpeed(clamped)
+        }
+    }
+
+    fun consumeDownloadPermissionRequest() {
+        _trackActionState.update { current ->
+            if (current.downloadPermissionTrack == null && current.downloadPermissionRequestId == 0L) {
+                current
+            } else {
+                current.copy(
+                    downloadPermissionTrack = null,
+                    downloadPermissionRequestId = 0L
+                )
+            }
+        }
+    }
+
+    fun onDownloadPermissionResult(track: Track, granted: Boolean) {
+        consumeDownloadPermissionRequest()
+        if (granted) {
+            downloadTrack(track)
+        } else {
+            publishTrackActionError("未授予公共存储写入权限，请在系统设置里允许存储权限后再下载")
         }
     }
 
@@ -416,6 +443,16 @@ class PlaybackControlStateHolder @Inject constructor(
             it.copy(
                 errorMessage = message,
                 errorId = nextTrackActionErrorId
+            )
+        }
+    }
+
+    private fun publishDownloadPermissionRequest(track: Track) {
+        nextDownloadPermissionRequestId += 1L
+        _trackActionState.update {
+            it.copy(
+                downloadPermissionTrack = track,
+                downloadPermissionRequestId = nextDownloadPermissionRequestId
             )
         }
     }

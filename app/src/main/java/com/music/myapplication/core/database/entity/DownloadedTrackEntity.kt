@@ -23,6 +23,9 @@ data class DownloadedTrackEntity(
     @ColumnInfo(name = "file_path") val filePath: String = "",
     @ColumnInfo(name = "file_size_bytes") val fileSizeBytes: Long = 0L,
     @ColumnInfo(name = "quality") val quality: String = "128k",
+    @ColumnInfo(name = "progress_percent") val progressPercent: Int = 0,
+    @ColumnInfo(name = "failure_reason") val failureReason: String = "",
+    @ColumnInfo(name = "request_id") val requestId: String = "",
     @ColumnInfo(name = "download_status") val downloadStatus: String = DownloadStatus.DOWNLOADING,
     @ColumnInfo(name = "downloaded_at") val downloadedAt: Long = System.currentTimeMillis()
 ) {

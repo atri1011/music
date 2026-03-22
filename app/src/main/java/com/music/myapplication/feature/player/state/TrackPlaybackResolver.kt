@@ -34,6 +34,11 @@ class TrackPlaybackResolver @Inject constructor(
     }
 
     private suspend fun resolveLocalPlayableTrack(track: Track): Track? {
+        if (track.platform != Platform.LOCAL && track.playableUrl.startsWith("content://", ignoreCase = true)) {
+            val downloadedUri = downloadManager.getDownloadedFilePath(track.id, track.platform.id)
+            return downloadedUri?.let { track.copy(playableUrl = it) }
+        }
+
         track.playableUrl.toLocalPlayableUriOrNull()?.let { localUri ->
             return track.copy(playableUrl = localUri)
         }

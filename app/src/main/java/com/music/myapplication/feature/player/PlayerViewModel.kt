@@ -49,7 +49,9 @@ data class TrackActionUiState(
     val isResolving: Boolean = false,
     val resolvingTrackKey: String? = null,
     val errorMessage: String? = null,
-    val errorId: Long = 0L
+    val errorId: Long = 0L,
+    val downloadPermissionTrack: Track? = null,
+    val downloadPermissionRequestId: Long = 0L
 )
 
 data class TrackInfoUiState(
@@ -141,6 +143,9 @@ class PlayerViewModel @Inject constructor(
     fun togglePlaybackMode() = playback.togglePlaybackMode()
     fun toggleFavorite() = playback.toggleFavorite()
     fun downloadTrack(track: Track) = playback.downloadTrack(track)
+    fun consumeDownloadPermissionRequest() = playback.consumeDownloadPermissionRequest()
+    fun onDownloadPermissionResult(track: Track, granted: Boolean) =
+        playback.onDownloadPermissionResult(track, granted)
     fun setQuality(quality: String) = playback.setQuality(quality)
     fun setSpeed(speed: Float) = playback.setSpeed(speed)
 

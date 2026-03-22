@@ -173,8 +173,8 @@ fun MoreScreen(
         SettingsGroup(title = "网络") {
             SwitchSettingsItem(
                 icon = Icons.Default.Wifi,
-                title = "仅 WiFi 播放",
-                subtitle = "移动网络下不自动播放",
+                title = "仅 WiFi 播放与下载",
+                subtitle = "移动网络下不自动播放，也不发起歌曲下载",
                 checked = state.wifiOnly,
                 onCheckedChange = viewModel::setWifiOnly
             )

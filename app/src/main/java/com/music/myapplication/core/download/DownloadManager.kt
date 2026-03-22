@@ -10,6 +10,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.database.dao.DownloadedTracksDao
+import com.music.myapplication.core.database.dao.LocalTracksDao
 import com.music.myapplication.core.database.entity.DownloadedTrackEntity
 import com.music.myapplication.core.database.mapper.toDownloadedTrackEntity
 import com.music.myapplication.core.network.NetworkMonitor
@@ -27,10 +28,13 @@ import javax.inject.Singleton
 class DownloadManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val downloadedTracksDao: DownloadedTracksDao,
+    private val localTracksDao: LocalTracksDao,
     private val preferences: PlayerPreferences,
     private val networkMonitor: NetworkMonitor
 ) {
     private val workManager = WorkManager.getInstance(context)
+
+    fun hasRequiredDownloadPermission(): Boolean = hasLegacyPublicWritePermission(context)
 
     suspend fun shouldWaitForUnmeteredNetwork(): Boolean =
         preferences.wifiOnly.first() && !networkMonitor.isUnmeteredConnection()
@@ -38,24 +42,22 @@ class DownloadManager @Inject constructor(
     suspend fun enqueueDownload(track: Track, playableUrl: String, quality: String): Boolean = withContext(Dispatchers.IO) {
         val existing = downloadedTracksDao.get(track.id, track.platform.id)
         if (existing?.downloadStatus == DownloadedTrackEntity.DownloadStatus.SUCCESS) {
-            return@withContext false
+            if (reconcileSuccessfulTrack(existing) != null) {
+                return@withContext false
+            }
         }
         if (existing?.downloadStatus == DownloadedTrackEntity.DownloadStatus.DOWNLOADING) {
             if (isWorkInProgress(track.id, track.platform.id)) {
                 return@withContext false
             }
-            downloadedTracksDao.updateStatus(
+            downloadedTracksDao.markFailed(
                 track.id,
                 track.platform.id,
-                DownloadedTrackEntity.DownloadStatus.FAILED
+                existing.requestId,
+                "下载任务异常中断",
+                existing.progressPercent.coerceAtLeast(0)
             )
         }
-
-        downloadedTracksDao.insert(
-            track.copy(quality = quality).toDownloadedTrackEntity(
-                status = DownloadedTrackEntity.DownloadStatus.DOWNLOADING
-            )
-        )
 
         val workData = Data.Builder()
             .putString(DownloadWorker.KEY_SONG_ID, track.id)
@@ -84,23 +86,37 @@ class DownloadManager @Inject constructor(
             .addTag(TAG_DOWNLOAD)
             .addTag(workTag(track.id, track.platform.id))
             .build()
+        val requestId = workRequest.id.toString()
+
+        downloadedTracksDao.insert(
+            track.copy(quality = quality).toDownloadedTrackEntity(
+                progressPercent = 0,
+                failureReason = "",
+                requestId = requestId,
+                status = DownloadedTrackEntity.DownloadStatus.DOWNLOADING
+            )
+        )
 
         val uniqueWorkName = workName(track.id, track.platform.id)
-        workManager.enqueueUniqueWork(uniqueWorkName, ExistingWorkPolicy.KEEP, workRequest)
+        workManager.enqueueUniqueWork(uniqueWorkName, ExistingWorkPolicy.REPLACE, workRequest)
         return@withContext true
     }
 
-    fun cancelDownload(songId: String, platform: String) {
+    suspend fun cancelDownload(songId: String, platform: String) = withContext(Dispatchers.IO) {
+        val entity = downloadedTracksDao.get(songId, platform)
         workManager.cancelUniqueWork(workName(songId, platform))
+        if (entity == null) return@withContext
+        downloadedTracksDao.markFailed(
+            songId = songId,
+            platform = platform,
+            requestId = entity.requestId,
+            failureReason = "已取消",
+            progressPercent = entity.progressPercent.coerceIn(0, 99)
+        )
     }
 
-    suspend fun removeDownloaded(songId: String, platform: String) {
-        val entity = downloadedTracksDao.get(songId, platform)
-        if (entity != null && entity.filePath.isNotBlank()) {
-            val file = java.io.File(entity.filePath)
-            if (file.exists()) file.delete()
-        }
-        downloadedTracksDao.delete(songId, platform)
+    suspend fun removeDownloaded(songId: String, platform: String) = withContext(Dispatchers.IO) {
+        deleteDownloadRecord(songId, platform)
     }
 
     suspend fun isDownloaded(songId: String, platform: String): Boolean =
@@ -115,16 +131,29 @@ class DownloadManager @Inject constructor(
     fun getDownloadingTracks(): Flow<List<DownloadedTrackEntity>> =
         downloadedTracksDao.getDownloading()
 
-    suspend fun reconcileStaleDownloadingTracks() = withContext(Dispatchers.IO) {
+    suspend fun reconcileTrackedDownloads() = withContext(Dispatchers.IO) {
+        reconcileStaleDownloadingTracks()
+        reconcileMissingSuccessfulTracks()
+    }
+
+    private suspend fun reconcileStaleDownloadingTracks() {
         val downloadingTracks = downloadedTracksDao.getDownloadingNow()
         downloadingTracks.forEach { track ->
             if (!isWorkInProgress(track.songId, track.platform)) {
-                downloadedTracksDao.updateStatus(
+                downloadedTracksDao.markFailed(
                     track.songId,
                     track.platform,
-                    DownloadedTrackEntity.DownloadStatus.FAILED
+                    track.requestId,
+                    "下载任务异常中断",
+                    progressPercent = track.progressPercent.coerceAtLeast(0)
                 )
             }
+        }
+    }
+
+    private suspend fun reconcileMissingSuccessfulTracks() {
+        downloadedTracksDao.getDownloadedNow().forEach { track ->
+            reconcileSuccessfulTrack(track)
         }
     }
 
@@ -134,7 +163,7 @@ class DownloadManager @Inject constructor(
     suspend fun getDownloadedFilePath(songId: String, platform: String): String? {
         val entity = downloadedTracksDao.get(songId, platform)
         return if (entity?.downloadStatus == DownloadedTrackEntity.DownloadStatus.SUCCESS) {
-            entity.filePath
+            reconcileSuccessfulTrack(entity)
         } else null
     }
 
@@ -154,6 +183,36 @@ class DownloadManager @Inject constructor(
         return state == WorkInfo.State.RUNNING ||
             state == WorkInfo.State.ENQUEUED ||
             state == WorkInfo.State.BLOCKED
+    }
+
+    private suspend fun reconcileSuccessfulTrack(entity: DownloadedTrackEntity): String? {
+        val localUri = entity.filePath.trim()
+        if (localUri.isNotBlank() && isLocalPlayableUriAvailable(context, localUri)) {
+            return localUri
+        }
+
+        removeLocalTrackRecord(localUri)
+        downloadedTracksDao.markFailed(
+            songId = entity.songId,
+            platform = entity.platform,
+            requestId = entity.requestId,
+            failureReason = "本地文件已丢失，请重新下载"
+        )
+        return null
+    }
+
+    private suspend fun deleteDownloadRecord(songId: String, platform: String) {
+        val entity = downloadedTracksDao.get(songId, platform)
+        entity?.filePath?.takeIf { it.isNotBlank() }?.let { filePath ->
+            removeLocalTrackRecord(filePath)
+            deleteLocalPlayableUri(context, filePath)
+        }
+        downloadedTracksDao.deleteBySongIdAndPlatform(songId, platform)
+    }
+
+    private suspend fun removeLocalTrackRecord(filePath: String) {
+        val mediaStoreId = mediaStoreIdFromPlayableUri(filePath) ?: return
+        localTracksDao.deleteByIds(listOf(mediaStoreId))
     }
 
     private fun workName(songId: String, platform: String) = "download_${platform}_${songId}"
