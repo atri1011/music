@@ -35,6 +35,7 @@ import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.core.datastore.EqualizerPreferences
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.PlaybackMode
+import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.feature.player.state.ResolvedTrackPlayback
@@ -65,6 +66,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -89,6 +91,12 @@ class MusicPlaybackService : MediaLibraryService() {
     private var playerSettingsJob: Job? = null
     private var transitionJob: Job? = null
     private val libraryTrackCache = LinkedHashMap<String, Track>()
+    private val searchResultCache =
+        object : LinkedHashMap<String, List<AndroidAutoSearchEntry>>(16, 0.75f, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<String, List<AndroidAutoSearchEntry>>?
+            ): Boolean = size > SEARCH_CACHE_LIMIT
+        }
     private var lastPlaybackFailureRecoveryKey: String? = null
 
     private var cachedEqEnabled = false
@@ -105,6 +113,7 @@ class MusicPlaybackService : MediaLibraryService() {
         const val PLAYLISTS_ID = "playlists"
         const val PLAYLIST_PREFIX = "playlist:"
         const val TRACK_PREFIX = "track:"
+        const val SEARCH_CACHE_LIMIT = 8
     }
 
     @OptIn(UnstableApi::class)
@@ -281,6 +290,31 @@ class MusicPlaybackService : MediaLibraryService() {
             )
         }
 
+        override fun onSearch(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: MediaLibraryService.LibraryParams?
+        ): ListenableFuture<LibraryResult<Void>> {
+            val searchPage = buildSearchResultPage(query = query, page = 0, pageSize = Int.MAX_VALUE)
+            session.notifySearchResultChanged(browser, query, searchPage.totalCount, params)
+            return Futures.immediateFuture(LibraryResult.ofVoid())
+        }
+
+        override fun onGetSearchResult(
+            session: MediaLibraryService.MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: MediaLibraryService.LibraryParams?
+        ): ListenableFuture<LibraryResult<com.google.common.collect.ImmutableList<MediaItem>>> {
+            val searchPage = buildSearchResultPage(query = query, page = page, pageSize = pageSize)
+            return Futures.immediateFuture(
+                LibraryResult.ofItemList(buildSearchResultItems(searchPage.entries), params)
+            )
+        }
+
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -441,19 +475,79 @@ class MusicPlaybackService : MediaLibraryService() {
 
     private fun buildPlaylistChildren(): List<MediaItem> = runBlocking {
         val playlists = localLibraryRepository.getPlaylists().first()
-        playlists.map { playlist ->
-            buildFolderItem(
-                mediaId = "$PLAYLIST_PREFIX${playlist.id}",
-                title = playlist.name,
-                subtitle = "${playlist.trackCount} 首",
-                mediaType = MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                artworkUrl = playlist.coverUrl
-            )
-        }
+        playlists.map(::buildPlaylistFolderItem)
     }
 
     private fun buildPlaylistTrackChildren(playlistId: String): List<MediaItem> = runBlocking {
         localLibraryRepository.getPlaylistSongs(playlistId).first().map(::buildTrackItem)
+    }
+
+    private fun buildPlaylistFolderItem(playlist: Playlist): MediaItem = buildFolderItem(
+        mediaId = "$PLAYLIST_PREFIX${playlist.id}",
+        title = playlist.name,
+        subtitle = "${playlist.trackCount} 首",
+        mediaType = MediaMetadata.MEDIA_TYPE_PLAYLIST,
+        artworkUrl = playlist.coverUrl
+    )
+
+    private fun buildSearchResultPage(
+        query: String,
+        page: Int,
+        pageSize: Int
+    ): AndroidAutoSearchPage {
+        val cacheKey = query.searchCacheKey()
+        val cachedEntries = searchResultCache[cacheKey]
+        if (cachedEntries != null) {
+            return AndroidAutoSearchPage(
+                entries = sliceSearchEntries(cachedEntries, page, pageSize),
+                totalCount = cachedEntries.size
+            )
+        }
+
+        val snapshot = buildSearchSnapshot()
+        val fullPage = buildAndroidAutoSearchPage(
+            query = query,
+            snapshot = snapshot,
+            page = 0,
+            pageSize = Int.MAX_VALUE
+        )
+        searchResultCache[cacheKey] = fullPage.entries
+        return AndroidAutoSearchPage(
+            entries = sliceSearchEntries(fullPage.entries, page, pageSize),
+            totalCount = fullPage.totalCount
+        )
+    }
+
+    private fun buildSearchSnapshot(): AndroidAutoSearchSnapshot = runBlocking(Dispatchers.IO) {
+        val playlists = localLibraryRepository.getPlaylists().first()
+        AndroidAutoSearchSnapshot(
+            playlists = playlists,
+            favorites = localLibraryRepository.getFavorites().first(),
+            recents = localLibraryRepository.getRecentPlays(limit = 30).first(),
+            localTracks = localLibraryRepository.getLocalTracks().first(),
+            playlistTracks = playlists.associate { playlist ->
+                playlist.id to localLibraryRepository.getPlaylistSongs(playlist.id).first()
+            }
+        )
+    }
+
+    private fun buildSearchResultItems(entries: List<AndroidAutoSearchEntry>): List<MediaItem> =
+        entries.map { entry ->
+            when (entry) {
+                is AndroidAutoSearchEntry.PlaylistEntry -> buildPlaylistFolderItem(entry.playlist)
+                is AndroidAutoSearchEntry.TrackEntry -> buildTrackItem(entry.track)
+            }
+        }
+
+    private fun sliceSearchEntries(
+        entries: List<AndroidAutoSearchEntry>,
+        page: Int,
+        pageSize: Int
+    ): List<AndroidAutoSearchEntry> {
+        if (page < 0 || pageSize <= 0) return emptyList()
+        val fromIndex = (page * pageSize).coerceAtMost(entries.size)
+        val toIndex = (fromIndex + pageSize).coerceAtMost(entries.size)
+        return entries.subList(fromIndex, toIndex)
     }
 
     private fun buildFolderItem(
@@ -510,6 +604,9 @@ class MusicPlaybackService : MediaLibraryService() {
     }
 
     private fun trackMediaId(track: Track): String = "$TRACK_PREFIX${track.platform.id}:${track.id}"
+
+    private fun String.searchCacheKey(): String =
+        trim().lowercase(Locale.ROOT)
 
     private fun handleLoadTrackRequest(request: PlaybackLoadRequest) {
         queueManager.setQueue(request.queue, request.index)
