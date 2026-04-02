@@ -50,6 +50,25 @@ class PlaybackCacheRoutingTest {
         verify(exactly = 1) { directFactory.createMediaSource(mediaItem) }
     }
 
+    @Test
+    fun `invalid http uri without host stays on direct media source factory`() {
+        val cachedFactory = mockk<MediaSource.Factory>()
+        val directFactory = mockk<MediaSource.Factory>()
+        val directMediaSource = mockk<MediaSource>()
+        val mediaItem = mockk<MediaItem>()
+        val track = remoteTrack("https://")
+
+        every { directFactory.createMediaSource(mediaItem) } returns directMediaSource
+
+        val factory = CacheAwarePlaybackMediaSourceFactory(cachedFactory, directFactory)
+
+        val result = factory.create(track, mediaItem)
+
+        assertSame(directMediaSource, result)
+        verify(exactly = 0) { cachedFactory.createMediaSource(any()) }
+        verify(exactly = 1) { directFactory.createMediaSource(mediaItem) }
+    }
+
     private fun remoteTrack(playableUrl: String) = Track(
         id = "song-1",
         platform = Platform.QQ,

@@ -28,6 +28,15 @@ class PlaybackRequestHeadersTest {
     }
 
     @Test
+    fun `buildPlaybackRequestHeaders ignores known hosts that only appear in query parameters`() {
+        val headers = buildPlaybackRequestHeaders(
+            "https://cdn.example.com/song.mp3?next=https://y.qq.com/"
+        )
+
+        assertFalse(headers.containsKey("Referer"))
+    }
+
+    @Test
     fun `buildPlaybackRequestHeaders keeps existing user agent header even when key casing differs`() {
         val headers = buildPlaybackRequestHeaders(
             playableUrl = "https://cdn.example.com/song.mp3",
