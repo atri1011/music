@@ -609,6 +609,7 @@ class MusicPlaybackService : MediaLibraryService() {
         trim().lowercase(Locale.ROOT)
 
     private fun handleLoadTrackRequest(request: PlaybackLoadRequest) {
+        clearPlaybackFailureRecoveryState()
         queueManager.setQueue(request.queue, request.index)
         if (queueManager.currentIndex >= 0) {
             queueManager.updateTrack(queueManager.currentIndex, request.track)
@@ -708,31 +709,45 @@ class MusicPlaybackService : MediaLibraryService() {
 
         lastPlaybackFailureRecoveryKey = recoveryRequest.retryKey
         launchTransition {
-            when (val result = withContext(Dispatchers.IO) {
-                trackPlaybackResolver.resolve(currentTrack, cachedQuality)
-            }) {
-                is Result.Success -> {
-                    val recoveredTrack = result.data.track
-                    if (recoveredTrack.playableUrl.isNotBlank() &&
-                        recoveredTrack.playableUrl != currentTrack.playableUrl
-                    ) {
-                        if (queueManager.currentIndex >= 0) {
-                            queueManager.updateTrack(queueManager.currentIndex, recoveredTrack)
+            when (recoveryRequest.strategy) {
+                PlaybackFailureRecoveryStrategy.RELOAD_CURRENT_URL -> {
+                    stateStore.updatePosition(recoveryRequest.startPositionMs)
+                    stateStore.updateDuration(currentTrack.durationMs.coerceAtLeast(0L))
+                    loadTrackOnPlayer(
+                        track = currentTrack,
+                        autoPlay = true,
+                        startPositionMs = recoveryRequest.startPositionMs,
+                        transitionMode = CrossfadeTransitionMode.DIRECT
+                    )
+                }
+                PlaybackFailureRecoveryStrategy.RE_RESOLVE_TRACK -> {
+                    when (val result = withContext(Dispatchers.IO) {
+                        trackPlaybackResolver.resolve(currentTrack, cachedQuality)
+                    }) {
+                        is Result.Success -> {
+                            val recoveredTrack = result.data.track
+                            if (recoveredTrack.playableUrl.isNotBlank() &&
+                                recoveredTrack.playableUrl != currentTrack.playableUrl
+                            ) {
+                                if (queueManager.currentIndex >= 0) {
+                                    queueManager.updateTrack(queueManager.currentIndex, recoveredTrack)
+                                }
+                                stateStore.updateTrack(recoveredTrack)
+                                stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+                                stateStore.updatePosition(recoveryRequest.startPositionMs)
+                                stateStore.updateDuration(recoveredTrack.durationMs.coerceAtLeast(0L))
+                                loadTrackOnPlayer(
+                                    track = recoveredTrack,
+                                    autoPlay = true,
+                                    startPositionMs = recoveryRequest.startPositionMs,
+                                    transitionMode = CrossfadeTransitionMode.DIRECT
+                                )
+                            }
                         }
-                        stateStore.updateTrack(recoveredTrack)
-                        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
-                        stateStore.updatePosition(recoveryRequest.startPositionMs)
-                        stateStore.updateDuration(recoveredTrack.durationMs.coerceAtLeast(0L))
-                        loadTrackOnPlayer(
-                            track = recoveredTrack,
-                            autoPlay = true,
-                            startPositionMs = recoveryRequest.startPositionMs,
-                            transitionMode = CrossfadeTransitionMode.DIRECT
-                        )
+                        is Result.Error,
+                        Result.Loading -> Unit
                     }
                 }
-                is Result.Error,
-                Result.Loading -> Unit
             }
         }
     }
@@ -752,6 +767,10 @@ class MusicPlaybackService : MediaLibraryService() {
         transitionJob?.cancel()
         transitionJob = null
         setPlayerVolume(1f)
+    }
+
+    private fun clearPlaybackFailureRecoveryState() {
+        lastPlaybackFailureRecoveryKey = null
     }
 
     private fun shouldUseCrossfade(autoPlay: Boolean): Boolean =
@@ -787,7 +806,6 @@ class MusicPlaybackService : MediaLibraryService() {
                 setPlayerVolume(1f)
             }
 
-            lastPlaybackFailureRecoveryKey = null
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
             if (startPositionMs > 0L) {
@@ -1026,6 +1044,7 @@ class MusicPlaybackService : MediaLibraryService() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_READY -> {
+                    clearPlaybackFailureRecoveryState()
                     stateStore.updateDuration(exoPlayer.duration.coerceAtLeast(0))
                     bindEqualizerToAudioSession(exoPlayer.audioSessionId)
                 }

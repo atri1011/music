@@ -7,6 +7,7 @@ import com.music.myapplication.domain.model.Track
 import io.mockk.every
 import io.mockk.mockk
 import java.io.IOException
+import java.net.SocketTimeoutException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -28,6 +29,7 @@ class PlaybackFailureRecoveryTest {
         assertNotNull(request)
         assertEquals(42_000L, request?.startPositionMs)
         assertEquals("qq:song-1:https://cdn.example.com/old.mp3:403", request?.retryKey)
+        assertEquals(PlaybackFailureRecoveryStrategy.RE_RESOLVE_TRACK, request?.strategy)
     }
 
     @Test
@@ -38,7 +40,7 @@ class PlaybackFailureRecoveryTest {
         assertNull(
             buildPlaybackFailureRecoveryRequest(
                 track = remoteTrack,
-                error = playbackExceptionForStatus(500),
+                error = playbackExceptionForStatus(400),
                 currentPositionMs = 1_000L,
                 lastRetryKey = null
             )
@@ -68,6 +70,29 @@ class PlaybackFailureRecoveryTest {
         assertNull(request)
     }
 
+    @Test
+    fun buildsReloadRecoveryForTransientHttpAndIoFailures() {
+        val track = remoteTrack(playableUrl = "https://cdn.example.com/old.mp3")
+
+        val httpRetry = buildPlaybackFailureRecoveryRequest(
+            track = track,
+            error = playbackExceptionForStatus(503),
+            currentPositionMs = 8_000L,
+            lastRetryKey = null
+        )
+        val ioRetry = buildPlaybackFailureRecoveryRequest(
+            track = track,
+            error = playbackExceptionForCause(SocketTimeoutException("timeout")),
+            currentPositionMs = 9_000L,
+            lastRetryKey = null
+        )
+
+        assertEquals(PlaybackFailureRecoveryStrategy.RELOAD_CURRENT_URL, httpRetry?.strategy)
+        assertEquals("qq:song-1:https://cdn.example.com/old.mp3:503", httpRetry?.retryKey)
+        assertEquals(PlaybackFailureRecoveryStrategy.RELOAD_CURRENT_URL, ioRetry?.strategy)
+        assertEquals("qq:song-1:https://cdn.example.com/old.mp3:SocketTimeoutException", ioRetry?.retryKey)
+    }
+
     private fun playbackExceptionForStatus(statusCode: Int): PlaybackException {
         val cause = HttpDataSource.InvalidResponseCodeException(
             statusCode,
@@ -81,6 +106,11 @@ class PlaybackFailureRecoveryTest {
             every { this@mockk.cause } returns cause
         }
     }
+
+    private fun playbackExceptionForCause(cause: Throwable): PlaybackException =
+        mockk {
+            every { this@mockk.cause } returns cause
+        }
 
     private fun remoteTrack(playableUrl: String) = Track(
         id = "song-1",
