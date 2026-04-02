@@ -37,6 +37,15 @@ class PlaybackRequestHeadersTest {
     }
 
     @Test
+    fun `buildPlaybackRequestHeaders strips surrounding quotes before matching playback host`() {
+        val headers = buildPlaybackRequestHeaders(
+            "  \"https://dl.stream.qqmusic.qq.com/song.mp3\"  "
+        )
+
+        assertEquals("https://y.qq.com/", headers["Referer"])
+    }
+
+    @Test
     fun `buildPlaybackRequestHeaders keeps existing user agent header even when key casing differs`() {
         val headers = buildPlaybackRequestHeaders(
             playableUrl = "https://cdn.example.com/song.mp3",

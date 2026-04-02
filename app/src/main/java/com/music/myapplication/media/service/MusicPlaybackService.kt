@@ -43,6 +43,7 @@ import com.music.myapplication.feature.player.state.SleepTimerStateHolder
 import com.music.myapplication.feature.player.state.TrackPlaybackResolver
 import com.music.myapplication.media.equalizer.EqualizerManager
 import com.music.myapplication.media.playback.CacheAwarePlaybackMediaSourceFactory
+import com.music.myapplication.media.playback.normalizePlaybackUrl
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.PlaybackLoadRequest
@@ -636,10 +637,11 @@ class MusicPlaybackService : MediaLibraryService() {
             }
         } ?: return mediaItem
 
-        libraryTrackCache[mediaItem.mediaId] = resolvedTrack
+        val playbackTrack = resolvedTrack.withNormalizedPlaybackUrl()
+        libraryTrackCache[mediaItem.mediaId] = playbackTrack
         return mediaItem.buildUpon()
-            .setUri(resolvedTrack.playableUrl)
-            .setMediaMetadata(buildTrackMetadata(resolvedTrack).build())
+            .setUri(playbackTrack.playableUrl)
+            .setMediaMetadata(buildTrackMetadata(playbackTrack).build())
             .build()
     }
 
@@ -825,10 +827,13 @@ class MusicPlaybackService : MediaLibraryService() {
         startPositionMs: Long,
         transitionMode: CrossfadeTransitionMode
     ) {
+        val playbackTrack = track.withNormalizedPlaybackUrl()
+        if (playbackTrack.playableUrl.isBlank()) return
+
         val mediaItem = MediaItem.Builder()
-            .setMediaId(trackMediaId(track))
-            .setUri(track.playableUrl)
-            .setMediaMetadata(buildTrackMetadata(track).build())
+            .setMediaId(trackMediaId(playbackTrack))
+            .setUri(playbackTrack.playableUrl)
+            .setMediaMetadata(buildTrackMetadata(playbackTrack).build())
             .build()
         try {
             when (transitionMode) {
@@ -846,7 +851,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 setPlayerVolume(1f)
             }
 
-            exoPlayer.setMediaSource(playbackMediaSourceFactory.create(track, mediaItem))
+            exoPlayer.setMediaSource(playbackMediaSourceFactory.create(playbackTrack, mediaItem))
             exoPlayer.prepare()
             if (startPositionMs > 0L) {
                 exoPlayer.seekTo(startPositionMs)
@@ -870,6 +875,15 @@ class MusicPlaybackService : MediaLibraryService() {
             throw cancelled
         } catch (_: IllegalStateException) {
             setPlayerVolume(1f)
+        }
+    }
+
+    private fun Track.withNormalizedPlaybackUrl(): Track {
+        val normalizedPlayableUrl = normalizePlaybackUrl(playableUrl)
+        return if (normalizedPlayableUrl == playableUrl) {
+            this
+        } else {
+            copy(playableUrl = normalizedPlayableUrl)
         }
     }
 

@@ -69,6 +69,25 @@ class PlaybackCacheRoutingTest {
         verify(exactly = 1) { directFactory.createMediaSource(mediaItem) }
     }
 
+    @Test
+    fun `quoted remote http playback still uses cached media source factory`() {
+        val cachedFactory = mockk<MediaSource.Factory>()
+        val directFactory = mockk<MediaSource.Factory>()
+        val cachedMediaSource = mockk<MediaSource>()
+        val mediaItem = mockk<MediaItem>()
+        val track = remoteTrack("  'https://cdn.example.com/song.mp3'  ")
+
+        every { cachedFactory.createMediaSource(mediaItem) } returns cachedMediaSource
+
+        val factory = CacheAwarePlaybackMediaSourceFactory(cachedFactory, directFactory)
+
+        val result = factory.create(track, mediaItem)
+
+        assertSame(cachedMediaSource, result)
+        verify(exactly = 1) { cachedFactory.createMediaSource(mediaItem) }
+        verify(exactly = 0) { directFactory.createMediaSource(any()) }
+    }
+
     private fun remoteTrack(playableUrl: String) = Track(
         id = "song-1",
         platform = Platform.QQ,

@@ -4,6 +4,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 const val PLAYBACK_USER_AGENT = "MusicPlayer/1.0 Android"
 
+internal fun normalizePlaybackUrl(playableUrl: String): String {
+    val candidate = normalizedPlaybackUrlCandidate(playableUrl)
+    if (candidate.isEmpty()) return ""
+
+    return parseNormalizedPlaybackHttpUrl(candidate)?.toString() ?: candidate
+}
+
 internal fun buildPlaybackRequestHeaders(
     playableUrl: String,
     existingHeaders: Map<String, String> = emptyMap()
@@ -38,8 +45,17 @@ private fun Map<String, String>.containsHeader(name: String): Boolean =
     keys.any { key -> key.equals(name, ignoreCase = true) }
 
 private fun parsePlaybackHttpUrl(playableUrl: String) =
+    parseNormalizedPlaybackHttpUrl(normalizedPlaybackUrlCandidate(playableUrl))
+
+private fun normalizedPlaybackUrlCandidate(playableUrl: String): String =
     playableUrl
         .trim()
+        .removeSurrounding("\"")
+        .removeSurrounding("'")
+        .trim()
+
+private fun parseNormalizedPlaybackHttpUrl(playableUrl: String) =
+    playableUrl
         .takeIf { it.isNotEmpty() }
         ?.toHttpUrlOrNull()
         ?.takeIf { httpUrl ->
