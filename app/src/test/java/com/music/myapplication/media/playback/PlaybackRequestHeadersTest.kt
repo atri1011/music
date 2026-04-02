@@ -26,4 +26,30 @@ class PlaybackRequestHeadersTest {
 
         assertFalse(headers.containsKey("Referer"))
     }
+
+    @Test
+    fun `buildPlaybackRequestHeaders keeps existing user agent header even when key casing differs`() {
+        val headers = buildPlaybackRequestHeaders(
+            playableUrl = "https://cdn.example.com/song.mp3",
+            existingHeaders = mapOf("user-agent" to "CustomPlayer/2.0")
+        )
+
+        assertEquals("CustomPlayer/2.0", headers["user-agent"])
+        assertFalse(headers.containsKey("User-Agent"))
+    }
+
+    @Test
+    fun `buildPlaybackRequestHeaders keeps existing referer and unrelated request headers`() {
+        val headers = buildPlaybackRequestHeaders(
+            playableUrl = "https://dl.stream.qqmusic.qq.com/song.mp3",
+            existingHeaders = mapOf(
+                "referer" to "https://partner.example/",
+                "Range" to "bytes=0-"
+            )
+        )
+
+        assertEquals("https://partner.example/", headers["referer"])
+        assertEquals("bytes=0-", headers["Range"])
+        assertFalse(headers.containsKey("Referer"))
+    }
 }

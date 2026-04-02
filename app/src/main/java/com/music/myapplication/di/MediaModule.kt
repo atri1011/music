@@ -52,8 +52,9 @@ object MediaModule {
         val resolvingHttpFactory = ResolvingDataSource.Factory(
             DefaultHttpDataSource.Factory().setUserAgent(PLAYBACK_USER_AGENT)
         ) { dataSpec ->
-            val resolvedHeaders = dataSpec.httpRequestHeaders + buildPlaybackRequestHeaders(
-                dataSpec.uri.toString()
+            val resolvedHeaders = buildPlaybackRequestHeaders(
+                playableUrl = dataSpec.uri.toString(),
+                existingHeaders = dataSpec.httpRequestHeaders
             )
             dataSpec.withRequestHeaders(resolvedHeaders)
         }

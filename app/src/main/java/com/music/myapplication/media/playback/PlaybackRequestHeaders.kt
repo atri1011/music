@@ -2,10 +2,18 @@ package com.music.myapplication.media.playback
 
 const val PLAYBACK_USER_AGENT = "MusicPlayer/1.0 Android"
 
-internal fun buildPlaybackRequestHeaders(playableUrl: String): Map<String, String> = buildMap {
-    put("User-Agent", PLAYBACK_USER_AGENT)
+internal fun buildPlaybackRequestHeaders(
+    playableUrl: String,
+    existingHeaders: Map<String, String> = emptyMap()
+): Map<String, String> = buildMap {
+    putAll(existingHeaders)
+    if (!existingHeaders.containsHeader("User-Agent")) {
+        put("User-Agent", PLAYBACK_USER_AGENT)
+    }
     playbackRefererFor(playableUrl)?.let { referer ->
-        put("Referer", referer)
+        if (!existingHeaders.containsHeader("Referer")) {
+            put("Referer", referer)
+        }
     }
 }
 
@@ -22,3 +30,6 @@ private fun playbackRefererFor(playableUrl: String): String? {
         else -> null
     }
 }
+
+private fun Map<String, String>.containsHeader(name: String): Boolean =
+    keys.any { key -> key.equals(name, ignoreCase = true) }
