@@ -91,7 +91,6 @@ class MediaControllerConnector @Inject constructor(
 
     fun seekTo(positionMs: Long) {
         withController { seekTo(positionMs) }
-        stateStore.updatePosition(positionMs)
     }
 
     fun setPlaybackSpeed(speed: Float) {

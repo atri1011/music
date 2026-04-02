@@ -211,6 +211,35 @@ class PlaybackControlStateHolderTest {
     }
 
     @Test
+    fun `seekTo does not persist snapshot before service publishes updated position`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val env = createEnvironment(
+                dispatcher = dispatcher,
+                permissionResults = listOf(true)
+            )
+            val actionScope = CoroutineScope(SupervisorJob() + dispatcher)
+
+            try {
+                attachScope(env.holder, actionScope)
+                env.stateStore.updatePosition(1_000L)
+
+                env.holder.seekTo(9_000L)
+                advanceUntilIdle()
+
+                verify(exactly = 1) { env.connector.seekTo(9_000L) }
+                coVerify(exactly = 0) { env.preferences.savePlaybackSnapshot(any()) }
+            } finally {
+                actionScope.cancel()
+                advanceUntilIdle()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun `source fallback info message is published once for consecutive duplicates`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -303,6 +332,7 @@ class PlaybackControlStateHolderTest {
             holder = holder,
             downloadManager = downloadManager,
             resolver = resolver,
+            preferences = preferences,
             connector = connector,
             queueManager = queueManager,
             stateStore = stateStore
@@ -335,6 +365,7 @@ class PlaybackControlStateHolderTest {
         val holder: PlaybackControlStateHolder,
         val downloadManager: DownloadManager,
         val resolver: TrackPlaybackResolver,
+        val preferences: PlayerPreferences,
         val connector: MediaControllerConnector,
         val queueManager: QueueManager,
         val stateStore: PlaybackStateStore

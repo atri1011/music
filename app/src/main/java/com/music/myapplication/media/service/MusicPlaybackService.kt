@@ -1039,6 +1039,16 @@ class MusicPlaybackService : MediaLibraryService() {
             if (isPlaying) startPositionUpdates() else stopPositionUpdates()
         }
 
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int
+        ) {
+            if (shouldPublishPositionFromDiscontinuity(reason)) {
+                stateStore.updatePosition(newPosition.positionMs.coerceAtLeast(0L))
+            }
+        }
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             stateStore.updateDuration(exoPlayer.duration.coerceAtLeast(0))
         }
@@ -1082,3 +1092,7 @@ class MusicPlaybackService : MediaLibraryService() {
         FADE_THROUGH
     }
 }
+
+internal fun shouldPublishPositionFromDiscontinuity(reason: Int): Boolean =
+    reason == Player.DISCONTINUITY_REASON_SEEK ||
+        reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
