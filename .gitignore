@@ -25,3 +25,5 @@ docs/
 .gradle-local/
 release-keystore.jks
 .codex-tasks/
+.superpowers/
+.codex

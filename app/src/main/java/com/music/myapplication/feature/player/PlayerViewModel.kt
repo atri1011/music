@@ -50,6 +50,8 @@ data class TrackActionUiState(
     val resolvingTrackKey: String? = null,
     val errorMessage: String? = null,
     val errorId: Long = 0L,
+    val infoMessage: String? = null,
+    val infoId: Long = 0L,
     val downloadPermissionTrack: Track? = null,
     val downloadPermissionRequestId: Long = 0L
 )
@@ -152,6 +154,7 @@ class PlayerViewModel @Inject constructor(
     fun setLyricsPanelMode(mode: LyricsPanelMode) = lyrics.setLyricsPanelMode(mode)
     fun showLyricsPanel() = lyrics.showLyricsPanel()
     fun clearTrackActionError() = playback.clearTrackActionError()
+    fun clearTrackActionInfo() = playback.clearTrackActionInfo()
 
     fun showComments() = comments.showComments()
     fun hideComments() = comments.hideComments()

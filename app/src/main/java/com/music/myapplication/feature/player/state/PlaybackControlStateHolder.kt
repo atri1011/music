@@ -52,7 +52,9 @@ class PlaybackControlStateHolder @Inject constructor(
     private val _trackActionState = MutableStateFlow(TrackActionUiState())
     val trackActionState: StateFlow<TrackActionUiState> = _trackActionState.asStateFlow()
     private var nextTrackActionErrorId = 0L
+    private var nextTrackActionInfoId = 0L
     private var nextDownloadPermissionRequestId = 0L
+    private var lastTrackActionInfoMessage: String? = null
 
     @Volatile
     private var currentQuality: String = "128k"
@@ -345,6 +347,12 @@ class PlaybackControlStateHolder @Inject constructor(
         }
     }
 
+    fun clearTrackActionInfo() {
+        _trackActionState.update { current ->
+            if (current.infoMessage.isNullOrBlank()) current else current.copy(infoMessage = null)
+        }
+    }
+
     fun refreshQueueState() {
         stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
     }
@@ -399,7 +407,11 @@ class PlaybackControlStateHolder @Inject constructor(
                 }) {
                     is Result.Success -> {
                         clearTrackActionError()
-                        onResolved(result.data)
+                        publishTrackActionInfo(result.data.sourceFallbackMessage)
+                        if (result.data.sourceFallbackMessage == null) {
+                            lastTrackActionInfoMessage = null
+                        }
+                        onResolved(result.data.track)
                     }
                     is Result.Error -> {
                         onFailure()
@@ -421,11 +433,27 @@ class PlaybackControlStateHolder @Inject constructor(
     }
 
     private fun publishTrackActionError(message: String) {
+        lastTrackActionInfoMessage = null
         nextTrackActionErrorId += 1L
         _trackActionState.update {
             it.copy(
                 errorMessage = message,
                 errorId = nextTrackActionErrorId
+            )
+        }
+    }
+
+    private fun publishTrackActionInfo(message: String?) {
+        val normalized = message?.trim().orEmpty()
+        if (normalized.isBlank()) return
+        if (lastTrackActionInfoMessage == normalized) return
+
+        lastTrackActionInfoMessage = normalized
+        nextTrackActionInfoId += 1L
+        _trackActionState.update {
+            it.copy(
+                infoMessage = normalized,
+                infoId = nextTrackActionInfoId
             )
         }
     }

@@ -4,8 +4,6 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +41,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -77,6 +76,7 @@ fun MoreScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val activity = LocalContext.current as? ComponentActivity
+    var showAudioSourceDialog by remember { mutableStateOf(false) }
     val updateViewModel: AppUpdateViewModel = if (activity != null) {
         hiltViewModel(viewModelStoreOwner = activity)
     } else {
@@ -231,36 +231,28 @@ fun MoreScreen(
             SettingsItem(
                 icon = Icons.Default.SwapHoriz,
                 title = "播放音源",
-                subtitle = audioSourceSubtitle(state.audioSource),
-                onClick = {}
-            ) {
-                AudioSourcePicker(
-                    current = state.audioSource,
-                    onSelect = viewModel::setAudioSource
-                )
-            }
+                subtitle = audioSourceSubtitle(state),
+                onClick = { showAudioSourceDialog = true },
+                showChevron = true
+            )
             SettingsItem(
                 icon = Icons.Default.VpnKey,
                 title = "TuneHub 密钥",
                 subtitle = maskApiKey(state.apiKey),
                 onClick = { viewModel.showApiKeyDialog(true) }
             )
-            if (state.audioSource == AudioSource.JKAPI) {
-                SettingsItem(
-                    icon = Icons.Default.Key,
-                    title = "JKAPI 密钥",
-                    subtitle = maskApiKey(state.jkapiKey),
-                    onClick = { viewModel.showJkapiKeyDialog(true) }
-                )
-            }
-            if (state.audioSource == AudioSource.NETEASE_CLOUD_API_ENHANCED) {
-                SettingsItem(
-                    icon = Icons.Default.Link,
-                    title = "增强版接口地址",
-                    subtitle = baseUrlSubtitle(state.neteaseCloudApiBaseUrl),
-                    onClick = { viewModel.showNeteaseCloudApiBaseUrlDialog(true) }
-                )
-            }
+            SettingsItem(
+                icon = Icons.Default.Key,
+                title = "JKAPI 密钥",
+                subtitle = maskApiKey(state.jkapiKey),
+                onClick = { viewModel.showJkapiKeyDialog(true) }
+            )
+            SettingsItem(
+                icon = Icons.Default.Link,
+                title = "增强版接口地址",
+                subtitle = baseUrlSubtitle(state.neteaseCloudApiBaseUrl),
+                onClick = { viewModel.showNeteaseCloudApiBaseUrlDialog(true) }
+            )
         }
 
         Spacer(modifier = Modifier.height(AppSpacing.Small))
@@ -289,6 +281,27 @@ fun MoreScreen(
         }
 
         Spacer(modifier = Modifier.height(AppSpacing.XLarge))
+    }
+
+    if (showAudioSourceDialog) {
+        AudioSourceSelectionDialog(
+            options = buildAudioSourceOptions(state),
+            onDismiss = { showAudioSourceDialog = false },
+            onSelect = { source ->
+                showAudioSourceDialog = false
+                viewModel.setAudioSource(source)
+            },
+            onConfigure = { source ->
+                showAudioSourceDialog = false
+                when (source) {
+                    AudioSource.JKAPI -> viewModel.showJkapiKeyDialog(true)
+                    AudioSource.NETEASE_CLOUD_API_ENHANCED -> {
+                        viewModel.showNeteaseCloudApiBaseUrlDialog(true)
+                    }
+                    else -> Unit
+                }
+            }
+        )
     }
 
     if (state.showApiKeyDialog) {
@@ -357,10 +370,12 @@ private fun SettingsItem(
     subtitle: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    showChevron: Boolean = false,
     trailing: @Composable (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     val alpha = if (enabled) 1f else 0.4f
+    val showIndicator = showChevron || trailing != null
 
     Column {
         Row(
@@ -392,7 +407,7 @@ private fun SettingsItem(
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
-            if (trailing != null) {
+            if (showIndicator) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
@@ -530,36 +545,6 @@ private fun CrossfadeDurationPicker(current: Int, onSelect: (Int) -> Unit) {
     )
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun AudioSourcePicker(current: AudioSource, onSelect: (AudioSource) -> Unit) {
-    val options = listOf(
-        AudioSource.TUNEHUB to "TuneHub",
-        AudioSource.METING_BAKA to "Meting (baka.plus)",
-        AudioSource.JKAPI to "JKAPI (无铭API)",
-        AudioSource.NETEASE_CLOUD_API_ENHANCED to "网易云增强版 API"
-    )
-    FlowRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        options.forEach { (source, label) ->
-            val selected = source == current
-            TextButton(onClick = { onSelect(source) }) {
-                Text(
-                    text = if (selected) "● $label" else label,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (selected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun PickerRow(options: List<Pair<String, String>>, current: String, onSelect: (String) -> Unit) {
     Row(
@@ -579,6 +564,115 @@ private fun PickerRow(options: List<Pair<String, String>>, current: String, onSe
                 )
             }
         }
+    }
+}
+
+internal data class AudioSourceOptionUi(
+    val source: AudioSource,
+    val title: String,
+    val supportText: String,
+    val configText: String,
+    val fallbackText: String,
+    val statusText: String,
+    val isSelected: Boolean,
+    val canSelect: Boolean,
+    val configureActionLabel: String? = null
+)
+
+@Composable
+internal fun AudioSourceSelectionDialog(
+    options: List<AudioSourceOptionUi>,
+    onDismiss: () -> Unit,
+    onSelect: (AudioSource) -> Unit,
+    onConfigure: (AudioSource) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择播放音源") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                options.forEach { option ->
+                    AudioSourceOptionItem(
+                        option = option,
+                        onSelect = onSelect,
+                        onConfigure = onConfigure
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
+}
+
+@Composable
+private fun AudioSourceOptionItem(
+    option: AudioSourceOptionUi,
+    onSelect: (AudioSource) -> Unit,
+    onConfigure: (AudioSource) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                if (option.canSelect) onSelect(option.source) else onConfigure(option.source)
+            }
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(
+                selected = option.isSelected,
+                onClick = if (option.canSelect) {
+                    { onSelect(option.source) }
+                } else {
+                    null
+                },
+                enabled = option.canSelect
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = option.title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium)
+                )
+                if (option.statusText.isNotBlank()) {
+                    Text(
+                        text = option.statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            option.configureActionLabel?.let { label ->
+                if (!option.canSelect) {
+                    TextButton(onClick = { onConfigure(option.source) }) {
+                        Text(label)
+                    }
+                }
+            }
+        }
+        Text(
+            text = option.supportText,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 52.dp, top = 2.dp)
+        )
+        Text(
+            text = option.configText,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 52.dp, top = 2.dp)
+        )
+        Text(
+            text = option.fallbackText,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 52.dp, top = 2.dp)
+        )
     }
 }
 
@@ -661,11 +755,80 @@ private fun crossfadeDurationLabel(durationMs: Int): String {
     }
 }
 
-private fun audioSourceSubtitle(source: AudioSource): String = when (source) {
-    AudioSource.TUNEHUB -> "默认音源，支持全平台"
-    AudioSource.METING_BAKA -> "支持网易云/QQ音乐，酷我自动回退 TuneHub"
-    AudioSource.JKAPI -> "支持网易云/QQ音乐（不支持酷我）"
-    AudioSource.NETEASE_CLOUD_API_ENHANCED -> "仅代理网易云歌曲，需填写自部署接口地址"
+internal fun buildAudioSourceOptions(state: MoreUiState): List<AudioSourceOptionUi> {
+    return AudioSource.entries.map { source ->
+        AudioSourceOptionUi(
+            source = source,
+            title = source.displayName,
+            supportText = "支持平台：${audioSourceSupportedPlatformsText(source)}",
+            configText = "额外配置：${audioSourceConfigText(source, state)}",
+            fallbackText = "失败行为：${audioSourceFallbackText(source)}",
+            statusText = audioSourceStatusText(source, state),
+            isSelected = source == state.audioSource,
+            canSelect = isAudioSourceSelectable(source, state),
+            configureActionLabel = audioSourceConfigureActionLabel(source)
+        )
+    }
+}
+
+internal fun audioSourceSubtitle(state: MoreUiState): String {
+    val source = state.audioSource
+    val currentLine = buildString {
+        append("当前：")
+        append(source.displayName)
+        audioSourceCurrentStatusSuffix(source, state)?.let { append(it) }
+    }
+    return listOf(
+        currentLine,
+        "支持：${audioSourceSupportedPlatformsText(source)}",
+        "失败行为：${audioSourceFallbackText(source)}"
+    ).joinToString("\n")
+}
+
+private fun audioSourceSupportedPlatformsText(source: AudioSource): String =
+    source.supportedPlatforms.joinToString("、") { it.displayName }
+
+private fun audioSourceConfigText(source: AudioSource, state: MoreUiState): String = when (source) {
+    AudioSource.TUNEHUB,
+    AudioSource.METING_BAKA -> "无需额外配置"
+    AudioSource.JKAPI -> {
+        if (state.jkapiKey.isBlank()) "需 JKAPI 密钥（未配置）" else "JKAPI 密钥已配置"
+    }
+    AudioSource.NETEASE_CLOUD_API_ENHANCED -> {
+        if (state.neteaseCloudApiBaseUrl.isBlank()) "需增强版接口地址（未配置）" else "增强版接口地址已配置"
+    }
+}
+
+private fun audioSourceFallbackText(source: AudioSource): String = when (source) {
+    AudioSource.TUNEHUB -> "当前即统一兜底音源"
+    else -> "不可用时自动回退 TuneHub"
+}
+
+private fun audioSourceStatusText(source: AudioSource, state: MoreUiState): String {
+    val labels = buildList {
+        if (source == AudioSource.TUNEHUB) add("推荐/默认")
+        if (source == state.audioSource) add("当前使用中")
+        if (!isAudioSourceSelectable(source, state)) add("先配置再使用")
+    }
+    return labels.joinToString(" · ")
+}
+
+private fun audioSourceCurrentStatusSuffix(source: AudioSource, state: MoreUiState): String? = when {
+    source == AudioSource.TUNEHUB -> "（推荐/默认）"
+    !isAudioSourceSelectable(source, state) -> "（先完成配置）"
+    else -> null
+}
+
+private fun isAudioSourceSelectable(source: AudioSource, state: MoreUiState): Boolean = when (source) {
+    AudioSource.JKAPI -> state.jkapiKey.isNotBlank()
+    AudioSource.NETEASE_CLOUD_API_ENHANCED -> state.neteaseCloudApiBaseUrl.isNotBlank()
+    else -> true
+}
+
+private fun audioSourceConfigureActionLabel(source: AudioSource): String? = when (source) {
+    AudioSource.JKAPI -> "配置密钥"
+    AudioSource.NETEASE_CLOUD_API_ENHANCED -> "配置接口"
+    else -> null
 }
 
 private fun baseUrlSubtitle(baseUrl: String): String = baseUrl.ifBlank { "未设置" }

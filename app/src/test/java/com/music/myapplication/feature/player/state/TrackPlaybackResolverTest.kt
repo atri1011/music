@@ -3,7 +3,9 @@ package com.music.myapplication.feature.player.state
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.download.DownloadManager
+import com.music.myapplication.data.repository.PlaybackSourceResolution
 import com.music.myapplication.data.repository.PlaybackSourceRouter
+import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -12,6 +14,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -35,9 +38,10 @@ class TrackPlaybackResolverTest {
         val result = resolver.resolve(track, "320k")
 
         assertTrue(result is Result.Success)
-        val resolvedTrack = (result as Result.Success).data
-        assertTrue(resolvedTrack.playableUrl.startsWith("file:"))
-        assertTrue(resolvedTrack.playableUrl.contains(file.name))
+        val resolved = (result as Result.Success).data
+        assertTrue(resolved.track.playableUrl.startsWith("file:"))
+        assertTrue(resolved.track.playableUrl.contains(file.name))
+        assertNull(resolved.sourceFallbackMessage)
         coVerify(exactly = 0) { sourceRouter.resolve(any(), any()) }
     }
 
@@ -53,9 +57,10 @@ class TrackPlaybackResolverTest {
         val result = resolver.resolve(track, "128k")
 
         assertTrue(result is Result.Success)
-        val resolvedTrack = (result as Result.Success).data
-        assertTrue(resolvedTrack.playableUrl.startsWith("file:"))
-        assertTrue(resolvedTrack.playableUrl.contains(file.name))
+        val resolved = (result as Result.Success).data
+        assertTrue(resolved.track.playableUrl.startsWith("file:"))
+        assertTrue(resolved.track.playableUrl.contains(file.name))
+        assertNull(resolved.sourceFallbackMessage)
         coVerify(exactly = 0) { sourceRouter.resolve(any(), any()) }
     }
 
@@ -68,7 +73,9 @@ class TrackPlaybackResolverTest {
         val result = resolver.resolve(track, "128k")
 
         assertTrue(result is Result.Success)
-        assertEquals(contentUri, (result as Result.Success).data.playableUrl)
+        val resolved = (result as Result.Success).data
+        assertEquals(contentUri, resolved.track.playableUrl)
+        assertNull(resolved.sourceFallbackMessage)
         coVerify(exactly = 0) { sourceRouter.resolve(any(), any()) }
     }
 
@@ -77,12 +84,16 @@ class TrackPlaybackResolverTest {
         val staleContentUri = "content://media/external/audio/media/404"
         val track = testTrack(playableUrl = staleContentUri)
         coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success("https://example.com/play.mp3")
+        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success(
+            sourceResolution("https://example.com/play.mp3")
+        )
 
         val result = resolver.resolve(track, "128k")
 
         assertTrue(result is Result.Success)
-        assertEquals("https://example.com/play.mp3", (result as Result.Success).data.playableUrl)
+        val resolved = (result as Result.Success).data
+        assertEquals("https://example.com/play.mp3", resolved.track.playableUrl)
+        assertNull(resolved.sourceFallbackMessage)
         coVerify(exactly = 1) { sourceRouter.resolve(track, "128k") }
     }
 
@@ -90,13 +101,39 @@ class TrackPlaybackResolverTest {
     fun `remote resolving still works when no local copy exists`() = runTest {
         val track = testTrack()
         coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success("https://example.com/play.mp3")
+        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success(
+            sourceResolution("https://example.com/play.mp3")
+        )
 
         val result = resolver.resolve(track, "128k")
 
         assertTrue(result is Result.Success)
-        assertEquals("https://example.com/play.mp3", (result as Result.Success).data.playableUrl)
+        val resolved = (result as Result.Success).data
+        assertEquals("https://example.com/play.mp3", resolved.track.playableUrl)
+        assertNull(resolved.sourceFallbackMessage)
         coVerify(exactly = 1) { sourceRouter.resolve(track, "128k") }
+    }
+
+    @Test
+    fun `source router fallback message is exposed to player layer`() = runTest {
+        val track = testTrack(platform = Platform.NETEASE)
+        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
+        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success(
+            sourceResolution(
+                url = "https://example.com/play.mp3",
+                requestedSource = AudioSource.JKAPI,
+                resolvedSource = AudioSource.TUNEHUB,
+                didFallback = true,
+                fallbackReason = "JKAPI 当前歌曲不可用，已自动切到 TuneHub"
+            )
+        )
+
+        val result = resolver.resolve(track, "128k")
+
+        assertTrue(result is Result.Success)
+        val resolved = (result as Result.Success).data
+        assertEquals("https://example.com/play.mp3", resolved.track.playableUrl)
+        assertEquals("JKAPI 当前歌曲不可用，已自动切到 TuneHub", resolved.sourceFallbackMessage)
     }
 
     @Test
@@ -118,7 +155,7 @@ class TrackPlaybackResolverTest {
         val result = resolver.resolve(track, "320k")
 
         assertTrue(result is Result.Success)
-        val resolvedTrack = (result as Result.Success).data
+        val resolvedTrack = (result as Result.Success).data.track
         assertEquals(Platform.QQ, resolvedTrack.platform)
         assertEquals(candidate.id, resolvedTrack.id)
         assertEquals(track.title, resolvedTrack.title)
@@ -209,11 +246,25 @@ class TrackPlaybackResolverTest {
         val result = resolver.resolve(track, "128k")
 
         assertTrue(result is Result.Success)
-        val resolvedTrack = (result as Result.Success).data
+        val resolvedTrack = (result as Result.Success).data.track
         assertEquals(Platform.QQ, resolvedTrack.platform)
         assertEquals(candidate.id, resolvedTrack.id)
         assertEquals("https://example.com/qq-128.mp3", resolvedTrack.playableUrl)
     }
+
+    private fun sourceResolution(
+        url: String,
+        requestedSource: AudioSource = AudioSource.TUNEHUB,
+        resolvedSource: AudioSource = requestedSource,
+        didFallback: Boolean = false,
+        fallbackReason: String? = null
+    ) = PlaybackSourceResolution(
+        playableUrl = url,
+        requestedSource = requestedSource,
+        resolvedSource = resolvedSource,
+        didFallback = didFallback,
+        fallbackReason = fallbackReason
+    )
 
     private fun testTrack(
         id: String = "song-1",

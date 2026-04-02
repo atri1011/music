@@ -37,6 +37,7 @@ import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
+import com.music.myapplication.feature.player.state.ResolvedTrackPlayback
 import com.music.myapplication.feature.player.state.SleepTimerStateHolder
 import com.music.myapplication.feature.player.state.TrackPlaybackResolver
 import com.music.myapplication.media.equalizer.EqualizerManager
@@ -358,7 +359,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 trackPlaybackResolver.resolve(restorePlan.track, cachedQuality)
             }) {
                 is Result.Success -> {
-                    val playable = result.data
+                    val playable = result.data.track
                     if (queueManager.currentIndex >= 0) {
                         queueManager.updateTrack(queueManager.currentIndex, playable)
                     }
@@ -495,7 +496,7 @@ class MusicPlaybackService : MediaLibraryService() {
 
         val resolvedTrack = runBlocking(Dispatchers.IO) {
             when (val result = trackPlaybackResolver.resolve(cachedTrack, cachedQuality)) {
-                is Result.Success -> result.data
+                is Result.Success -> result.data.track
                 is Result.Error,
                 Result.Loading -> null
             }
@@ -561,13 +562,13 @@ class MusicPlaybackService : MediaLibraryService() {
         launchTransition {
             when (val result = withContext(Dispatchers.IO) {
                 if (targetTrack.playableUrl.isNotBlank()) {
-                    Result.Success(targetTrack)
+                    Result.Success(ResolvedTrackPlayback(targetTrack))
                 } else {
                     trackPlaybackResolver.resolve(targetTrack, cachedQuality)
                 }
             }) {
                 is Result.Success -> {
-                    val playable = result.data
+                    val playable = result.data.track
                     queueManager.updateTrack(queueManager.currentIndex, playable)
                     stateStore.updateTrack(playable)
                     stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
@@ -614,7 +615,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 trackPlaybackResolver.resolve(currentTrack, cachedQuality)
             }) {
                 is Result.Success -> {
-                    val recoveredTrack = result.data
+                    val recoveredTrack = result.data.track
                     if (recoveredTrack.playableUrl.isNotBlank() &&
                         recoveredTrack.playableUrl != currentTrack.playableUrl
                     ) {
@@ -815,7 +816,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 trackPlaybackResolver.resolve(nextTrack, cachedQuality)
             }) {
                 is Result.Success -> {
-                    val playable = result.data
+                    val playable = result.data.track
                     queueManager.updateTrack(queueManager.currentIndex, playable)
                     stateStore.updateTrack(playable)
                     stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)

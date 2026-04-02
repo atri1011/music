@@ -11,17 +11,30 @@ import javax.inject.Inject
 import java.io.File
 import java.net.URI
 
+data class ResolvedTrackPlayback(
+    val track: Track,
+    val sourceFallbackMessage: String? = null
+)
+
 class TrackPlaybackResolver @Inject constructor(
     private val onlineRepo: OnlineMusicRepository,
     private val sourceRouter: PlaybackSourceRouter,
     private val downloadManager: DownloadManager
 ) {
-    suspend fun resolve(track: Track, quality: String): Result<Track> {
-        resolveLocalPlayableTrack(track)?.let { return Result.Success(it) }
+    suspend fun resolve(track: Track, quality: String): Result<ResolvedTrackPlayback> {
+        resolveLocalPlayableTrack(track)?.let {
+            return Result.Success(ResolvedTrackPlayback(track = it))
+        }
 
         when (val result = sourceRouter.resolve(track, quality)) {
             is Result.Success -> {
-                return Result.Success(track.copy(playableUrl = result.data, quality = quality))
+                return Result.Success(
+                    ResolvedTrackPlayback(
+                        track = track.copy(playableUrl = result.data.playableUrl, quality = quality),
+                        sourceFallbackMessage = result.data.fallbackReason
+                            ?.takeIf { result.data.didFallback }
+                    )
+                )
             }
             is Result.Error -> {
                 if (!shouldTryQqFallback(track)) {
@@ -77,20 +90,22 @@ class TrackPlaybackResolver @Inject constructor(
         track: Track,
         quality: String,
         originalError: AppError
-    ): Result<Track> {
+    ): Result<ResolvedTrackPlayback> {
         val candidate = findQqMidCandidate(track) ?: return Result.Error(originalError)
         return when (val retry = onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, quality)) {
             is Result.Success -> Result.Success(
-                track.copy(
-                    platform = Platform.QQ,
-                    id = candidate.id,
-                    title = if (track.title.isBlank()) candidate.title else track.title,
-                    artist = if (track.artist.isBlank()) candidate.artist else track.artist,
-                    album = if (track.album.isBlank()) candidate.album else track.album,
-                    coverUrl = if (track.coverUrl.isBlank()) candidate.coverUrl else track.coverUrl,
-                    durationMs = if (track.durationMs <= 0L) candidate.durationMs else track.durationMs,
-                    playableUrl = retry.data,
-                    quality = quality
+                ResolvedTrackPlayback(
+                    track = track.copy(
+                        platform = Platform.QQ,
+                        id = candidate.id,
+                        title = if (track.title.isBlank()) candidate.title else track.title,
+                        artist = if (track.artist.isBlank()) candidate.artist else track.artist,
+                        album = if (track.album.isBlank()) candidate.album else track.album,
+                        coverUrl = if (track.coverUrl.isBlank()) candidate.coverUrl else track.coverUrl,
+                        durationMs = if (track.durationMs <= 0L) candidate.durationMs else track.durationMs,
+                        playableUrl = retry.data,
+                        quality = quality
+                    )
                 )
             )
             is Result.Error -> Result.Error(retry.error)

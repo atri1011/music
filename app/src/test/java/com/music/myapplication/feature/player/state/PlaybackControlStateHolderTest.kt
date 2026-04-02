@@ -79,7 +79,7 @@ class PlaybackControlStateHolderTest {
             val env = createEnvironment(
                 dispatcher = dispatcher,
                 permissionResults = listOf(false, true),
-                resolvedTrack = resolvedTrack
+                resolvedPlayback = ResolvedTrackPlayback(resolvedTrack)
             )
             val actionScope = CoroutineScope(SupervisorJob() + dispatcher)
 
@@ -210,10 +210,55 @@ class PlaybackControlStateHolderTest {
         }
     }
 
+    @Test
+    fun `source fallback info message is published once for consecutive duplicates`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val track = testTrack()
+            val fallbackMessage = "JKAPI 当前歌曲不可用，已自动切到 TuneHub"
+            val resolvedTrack = track.copy(playableUrl = "https://example.com/track.mp3", quality = "128k")
+            val env = createEnvironment(
+                dispatcher = dispatcher,
+                permissionResults = listOf(true),
+                resolvedPlayback = ResolvedTrackPlayback(
+                    track = resolvedTrack,
+                    sourceFallbackMessage = fallbackMessage
+                )
+            )
+            val actionScope = CoroutineScope(SupervisorJob() + dispatcher)
+
+            try {
+                attachScope(env.holder, actionScope)
+                env.holder.playTrack(track, listOf(track), 0)
+                advanceUntilIdle()
+
+                val firstState = env.holder.trackActionState.value
+                assertEquals(fallbackMessage, firstState.infoMessage)
+                assertEquals(1L, firstState.infoId)
+
+                env.holder.clearTrackActionInfo()
+                env.holder.playTrack(track, listOf(track), 0)
+                advanceUntilIdle()
+
+                val secondState = env.holder.trackActionState.value
+                assertNull(secondState.infoMessage)
+                assertEquals(1L, secondState.infoId)
+            } finally {
+                actionScope.cancel()
+                advanceUntilIdle()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     private fun createEnvironment(
         dispatcher: TestDispatcher,
         permissionResults: List<Boolean>,
-        resolvedTrack: Track = testTrack(playableUrl = "https://example.com/original.mp3", quality = "128k"),
+        resolvedPlayback: ResolvedTrackPlayback = ResolvedTrackPlayback(
+            testTrack(playableUrl = "https://example.com/original.mp3", quality = "128k")
+        ),
         savedSnapshot: PlaybackSnapshot? = null
     ): TestEnvironment {
         val downloadManager = mockk<DownloadManager>()
@@ -231,7 +276,7 @@ class PlaybackControlStateHolderTest {
         }
         coEvery { downloadManager.enqueueDownload(any(), any(), any()) } returns true
 
-        coEvery { resolver.resolve(any(), any()) } returns Result.Success(resolvedTrack)
+        coEvery { resolver.resolve(any(), any()) } returns Result.Success(resolvedPlayback)
         every { preferences.playbackMode } returns flowOf(PlaybackMode.SEQUENTIAL)
         every { preferences.quality } returns flowOf("128k")
         every { preferences.playbackSpeed } returns flowOf(1f)

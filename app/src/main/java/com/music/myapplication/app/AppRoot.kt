@@ -146,6 +146,16 @@ fun AppRoot(
         playerViewModel.clearTrackActionError()
     }
 
+    LaunchedEffect(trackActionState.infoId) {
+        val message = trackActionState.infoMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(
+            message = message,
+            withDismissAction = true,
+            duration = SnackbarDuration.Short
+        )
+        playerViewModel.clearTrackActionInfo()
+    }
+
     LaunchedEffect(trackActionState.downloadPermissionRequestId) {
         val permission = downloadPermission ?: return@LaunchedEffect
         val track = trackActionState.downloadPermissionTrack ?: return@LaunchedEffect
