@@ -42,6 +42,7 @@ import com.music.myapplication.feature.player.state.ResolvedTrackPlayback
 import com.music.myapplication.feature.player.state.SleepTimerStateHolder
 import com.music.myapplication.feature.player.state.TrackPlaybackResolver
 import com.music.myapplication.media.equalizer.EqualizerManager
+import com.music.myapplication.media.playback.CacheAwarePlaybackMediaSourceFactory
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.PlaybackLoadRequest
@@ -82,6 +83,7 @@ class MusicPlaybackService : MediaLibraryService() {
     @Inject lateinit var playerPreferences: PlayerPreferences
     @Inject lateinit var trackPlaybackResolver: TrackPlaybackResolver
     @Inject lateinit var localLibraryRepository: LocalLibraryRepository
+    @Inject lateinit var playbackMediaSourceFactory: CacheAwarePlaybackMediaSourceFactory
 
     private var mediaSession: MediaLibraryService.MediaLibrarySession? = null
     private val sessionPlayer: Player by lazy { PlaybackNavigationPlayer(exoPlayer) }
@@ -806,7 +808,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 setPlayerVolume(1f)
             }
 
-            exoPlayer.setMediaItem(mediaItem)
+            exoPlayer.setMediaSource(playbackMediaSourceFactory.create(track, mediaItem))
             exoPlayer.prepare()
             if (startPositionMs > 0L) {
                 exoPlayer.seekTo(startPositionMs)
