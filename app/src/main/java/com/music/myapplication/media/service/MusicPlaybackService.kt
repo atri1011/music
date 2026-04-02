@@ -109,12 +109,6 @@ class MusicPlaybackService : MediaLibraryService() {
     private var cachedCrossfadeDurationMs = PlayerPreferences.DEFAULT_CROSSFADE_DURATION_MS
 
     private companion object {
-        const val ROOT_ID = "library_root"
-        const val FAVORITES_ID = "favorites"
-        const val RECENTS_ID = "recent_plays"
-        const val PLAYLISTS_ID = "playlists"
-        const val PLAYLIST_PREFIX = "playlist:"
-        const val TRACK_PREFIX = "track:"
         const val SEARCH_CACHE_LIMIT = 8
     }
 
@@ -277,16 +271,7 @@ class MusicPlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: MediaLibraryService.LibraryParams?
         ): ListenableFuture<LibraryResult<com.google.common.collect.ImmutableList<MediaItem>>> {
-            val children = when {
-                parentId == ROOT_ID -> buildRootChildren()
-                parentId == FAVORITES_ID -> buildFavoriteChildren()
-                parentId == RECENTS_ID -> buildRecentChildren()
-                parentId == PLAYLISTS_ID -> buildPlaylistChildren()
-                parentId.startsWith(PLAYLIST_PREFIX) -> buildPlaylistTrackChildren(
-                    playlistId = parentId.removePrefix(PLAYLIST_PREFIX)
-                )
-                else -> emptyList()
-            }
+            val children = buildBrowseChildren(parentId)
             return Futures.immediateFuture(
                 LibraryResult.ofItemList(children, params)
             )
@@ -444,44 +429,93 @@ class MusicPlaybackService : MediaLibraryService() {
             .build()
     }
 
-    private fun buildRootChildren(): List<MediaItem> {
-        return listOf(
-            buildFolderItem(
-                mediaId = FAVORITES_ID,
-                title = "收藏",
-                subtitle = "你常听和收下来的歌",
-                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
-            ),
-            buildFolderItem(
-                mediaId = RECENTS_ID,
-                title = "最近播放",
-                subtitle = "接着上次继续听",
-                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
-            ),
-            buildFolderItem(
-                mediaId = PLAYLISTS_ID,
-                title = "歌单",
-                subtitle = "本地资料库歌单",
-                mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
-            )
+    private fun buildBrowseChildren(parentId: String): List<MediaItem> {
+        val snapshot = buildBrowseSnapshot(parentId)
+        return buildAndroidAutoBrowseEntries(parentId, snapshot).map(::buildBrowseEntryItem)
+    }
+
+    private fun buildBrowseSnapshot(parentId: String): AndroidAutoBrowseSnapshot = runBlocking(Dispatchers.IO) {
+        when {
+            parentId == ROOT_ID -> {
+                val recentCount = localLibraryRepository.getRecentPlays(limit = 30).first().size
+                val topPlayedCount = localLibraryRepository.getTopPlayedTracks(limit = 30).first().size
+                val favoriteCount = localLibraryRepository.getFavorites().first().size
+                val localTrackCount = localLibraryRepository.getLocalTrackCount().first()
+                val playlistCount = localLibraryRepository.getPlaylists().first().size
+                AndroidAutoBrowseSnapshot(
+                    recentCount = recentCount,
+                    topPlayedCount = topPlayedCount,
+                    favoriteCount = favoriteCount,
+                    localTrackCount = localTrackCount,
+                    playlistCount = playlistCount
+                )
+            }
+            parentId == LIBRARY_ID -> {
+                val favoriteCount = localLibraryRepository.getFavorites().first().size
+                val localTrackCount = localLibraryRepository.getLocalTrackCount().first()
+                val playlistCount = localLibraryRepository.getPlaylists().first().size
+                AndroidAutoBrowseSnapshot(
+                    favoriteCount = favoriteCount,
+                    localTrackCount = localTrackCount,
+                    playlistCount = playlistCount
+                )
+            }
+            parentId == FAVORITES_ID -> {
+                val favorites = localLibraryRepository.getFavorites().first()
+                AndroidAutoBrowseSnapshot(
+                    favorites = favorites,
+                    favoriteCount = favorites.size
+                )
+            }
+            parentId == RECENTS_ID -> {
+                val recents = localLibraryRepository.getRecentPlays(limit = 30).first()
+                AndroidAutoBrowseSnapshot(
+                    recents = recents,
+                    recentCount = recents.size
+                )
+            }
+            parentId == TOP_PLAYED_ID -> {
+                val topPlayed = localLibraryRepository.getTopPlayedTracks(limit = 30).first().map { it.first }
+                AndroidAutoBrowseSnapshot(
+                    topPlayed = topPlayed,
+                    topPlayedCount = topPlayed.size
+                )
+            }
+            parentId == LOCAL_TRACKS_ID -> {
+                val localTracks = localLibraryRepository.getLocalTracks().first()
+                AndroidAutoBrowseSnapshot(
+                    localTracks = localTracks,
+                    localTrackCount = localTracks.size
+                )
+            }
+            parentId == PLAYLISTS_ID -> {
+                val playlists = localLibraryRepository.getPlaylists().first()
+                AndroidAutoBrowseSnapshot(
+                    playlists = playlists,
+                    playlistCount = playlists.size
+                )
+            }
+            parentId.startsWith(PLAYLIST_PREFIX) -> {
+                val playlistId = parentId.removePrefix(PLAYLIST_PREFIX)
+                AndroidAutoBrowseSnapshot(
+                    playlistTracks = mapOf(
+                        playlistId to localLibraryRepository.getPlaylistSongs(playlistId).first()
+                    )
+                )
+            }
+            else -> AndroidAutoBrowseSnapshot()
+        }
+    }
+
+    private fun buildBrowseEntryItem(entry: AndroidAutoBrowseEntry): MediaItem = when (entry) {
+        is AndroidAutoBrowseEntry.FolderEntry -> buildFolderItem(
+            mediaId = entry.mediaId,
+            title = entry.title,
+            subtitle = entry.subtitle,
+            mediaType = entry.mediaType,
+            artworkUrl = entry.artworkUrl
         )
-    }
-
-    private fun buildFavoriteChildren(): List<MediaItem> = runBlocking {
-        localLibraryRepository.getFavorites().first().map(::buildTrackItem)
-    }
-
-    private fun buildRecentChildren(): List<MediaItem> = runBlocking {
-        localLibraryRepository.getRecentPlays(limit = 30).first().map(::buildTrackItem)
-    }
-
-    private fun buildPlaylistChildren(): List<MediaItem> = runBlocking {
-        val playlists = localLibraryRepository.getPlaylists().first()
-        playlists.map(::buildPlaylistFolderItem)
-    }
-
-    private fun buildPlaylistTrackChildren(playlistId: String): List<MediaItem> = runBlocking {
-        localLibraryRepository.getPlaylistSongs(playlistId).first().map(::buildTrackItem)
+        is AndroidAutoBrowseEntry.TrackEntry -> buildTrackItem(entry.track)
     }
 
     private fun buildPlaylistFolderItem(playlist: Playlist): MediaItem = buildFolderItem(
