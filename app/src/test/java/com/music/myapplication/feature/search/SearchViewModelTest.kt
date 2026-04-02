@@ -340,6 +340,133 @@ class SearchViewModelTest {
         }
     }
 
+    @Test
+    fun submittingSameSongQueryTwiceUsesCachedResults() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val preferences = mockk<PlayerPreferences>()
+            every { preferences.platform } returns flow { emit(Platform.NETEASE.id) }
+            coEvery { preferences.setPlatform(any()) } returns Unit
+            coEvery { onlineRepo.getHotSearchKeywords(any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.getSearchSuggestions(any(), any()) } returns Result.Success(emptyList())
+            coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
+            coEvery { onlineRepo.search(Platform.NETEASE, "夜曲", 1, any()) } returns Result.Success(
+                listOf(testTrack(Platform.NETEASE, "song-1"))
+            )
+
+            val historyStore = mockk<SearchHistoryStore>(relaxed = true)
+            every { historyStore.history } returns flow { emit(emptyList<String>()) }
+
+            val viewModel = SearchViewModel(onlineRepo, localRepo, preferences, historyStore)
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("夜曲")
+            viewModel.submitSearch()
+            advanceUntilIdle()
+
+            viewModel.onHistoryClick("夜曲")
+            advanceUntilIdle()
+
+            assertEquals(listOf("song-1"), viewModel.state.value.tracks.map(Track::id))
+            coVerify(exactly = 1) { onlineRepo.search(Platform.NETEASE, "夜曲", 1, any()) }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun submittingSameAlbumQueryTwiceUsesCachedGenericResults() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>(relaxed = true)
+            val preferences = mockk<PlayerPreferences>()
+            every { preferences.platform } returns flow { emit(Platform.NETEASE.id) }
+            coEvery { preferences.setPlatform(any()) } returns Unit
+            coEvery { onlineRepo.getHotSearchKeywords(any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.getSearchSuggestions(any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.search(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.searchArtists(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.searchPlaylists(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.searchAlbums(Platform.NETEASE, "叶惠美", 1, any()) } returns Result.Success(
+                listOf(
+                    SearchResultItem(
+                        id = "album-1",
+                        title = "叶惠美",
+                        subtitle = "周杰伦",
+                        platform = Platform.NETEASE,
+                        type = SearchType.ALBUM,
+                        trackCount = 11
+                    )
+                )
+            )
+
+            val historyStore = mockk<SearchHistoryStore>(relaxed = true)
+            every { historyStore.history } returns flow { emit(emptyList<String>()) }
+
+            val viewModel = SearchViewModel(onlineRepo, localRepo, preferences, historyStore)
+            advanceUntilIdle()
+
+            viewModel.onSearchTypeChange(SearchType.ALBUM)
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("叶惠美")
+            viewModel.submitSearch()
+            advanceUntilIdle()
+
+            viewModel.onHistoryClick("叶惠美")
+            advanceUntilIdle()
+
+            assertEquals(listOf("album-1"), viewModel.state.value.genericResults.map(SearchResultItem::id))
+            coVerify(exactly = 1) { onlineRepo.searchAlbums(Platform.NETEASE, "叶惠美", 1, any()) }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun repeatingSuggestionQueryUsesCachedSuggestions() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val preferences = mockk<PlayerPreferences>()
+            every { preferences.platform } returns flow { emit(Platform.NETEASE.id) }
+            coEvery { preferences.setPlatform(any()) } returns Unit
+            coEvery { onlineRepo.getHotSearchKeywords(any()) } returns Result.Success(emptyList())
+            coEvery { onlineRepo.search(any(), any(), any(), any()) } returns Result.Success(emptyList())
+            coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
+            coEvery { onlineRepo.getSearchSuggestions(Platform.NETEASE, "夜曲") } returns Result.Success(
+                listOf(SearchSuggestion("夜曲", SuggestionType.KEYWORD))
+            )
+
+            val historyStore = mockk<SearchHistoryStore>(relaxed = true)
+            every { historyStore.history } returns flow { emit(emptyList<String>()) }
+
+            val viewModel = SearchViewModel(onlineRepo, localRepo, preferences, historyStore)
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("夜曲")
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("")
+            advanceUntilIdle()
+
+            viewModel.onQueryChange("夜曲")
+            advanceUntilIdle()
+
+            assertEquals(listOf(SearchSuggestion("夜曲", SuggestionType.KEYWORD)), viewModel.state.value.suggestions)
+            coVerify(exactly = 1) { onlineRepo.getSearchSuggestions(Platform.NETEASE, "夜曲") }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     private fun testTrack(platform: Platform, id: String) = Track(
         id = id,
         platform = platform,

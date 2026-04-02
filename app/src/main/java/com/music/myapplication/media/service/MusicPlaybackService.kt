@@ -13,6 +13,7 @@ import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -44,6 +45,9 @@ import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.PlaybackLoadRequest
 import com.music.myapplication.media.session.loadTrackSessionCommand
 import com.music.myapplication.media.session.toPlaybackLoadRequestOrNull
+import com.music.myapplication.media.state.applyPlaybackRestorePlan
+import com.music.myapplication.media.state.buildPlaybackRestorePlan
+import com.music.myapplication.media.state.PlaybackRestorePlan
 import com.music.myapplication.media.state.PlaybackStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import kotlin.math.roundToInt
@@ -84,6 +88,7 @@ class MusicPlaybackService : MediaLibraryService() {
     private var playerSettingsJob: Job? = null
     private var transitionJob: Job? = null
     private val libraryTrackCache = LinkedHashMap<String, Track>()
+    private var lastPlaybackFailureRecoveryKey: String? = null
 
     private var cachedEqEnabled = false
     private var cachedEqPresetIndex = 0
@@ -230,6 +235,7 @@ class MusicPlaybackService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo
         ): MediaSession.ConnectionResult {
+            restorePlaybackSnapshotStateIfNeeded()
             val defaultResult = super.onConnect(session, controller)
             val sessionCommands = defaultResult.availableSessionCommands
                 .buildUpon()
@@ -322,6 +328,60 @@ class MusicPlaybackService : MediaLibraryService() {
             .addIf(Player.COMMAND_SEEK_TO_NEXT, queueManager.currentTrack != null)
             .addIf(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, queueManager.currentTrack != null)
             .build()
+
+    private fun buildCurrentPlaybackRestorePlan(): PlaybackRestorePlan? = buildPlaybackRestorePlan(
+        currentTrack = stateStore.state.value.currentTrack,
+        queue = queueManager.queue.ifEmpty { stateStore.state.value.queue },
+        currentIndex = if (queueManager.currentIndex >= 0) {
+            queueManager.currentIndex
+        } else {
+            stateStore.state.value.currentIndex
+        },
+        positionMs = stateStore.state.value.positionMs
+    )
+
+    private fun restorePlaybackSnapshotStateIfNeeded(): PlaybackRestorePlan? {
+        buildCurrentPlaybackRestorePlan()?.let { return it }
+        val snapshot = runBlocking(Dispatchers.IO) {
+            playerPreferences.playbackSnapshot.first()
+        }
+        val restorePlan = buildPlaybackRestorePlan(snapshot) ?: return null
+        applyPlaybackRestorePlan(restorePlan, queueManager, stateStore)
+        return restorePlan
+    }
+
+    private fun restorePlaybackOnServicePlayIfNeeded(): Boolean {
+        if (exoPlayer.mediaItemCount > 0) return false
+        val restorePlan = restorePlaybackSnapshotStateIfNeeded() ?: return false
+        launchTransition {
+            when (val result = withContext(Dispatchers.IO) {
+                trackPlaybackResolver.resolve(restorePlan.track, cachedQuality)
+            }) {
+                is Result.Success -> {
+                    val playable = result.data
+                    if (queueManager.currentIndex >= 0) {
+                        queueManager.updateTrack(queueManager.currentIndex, playable)
+                    }
+                    stateStore.updateTrack(playable)
+                    stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+                    stateStore.updatePosition(restorePlan.positionMs)
+                    stateStore.updateDuration(playable.durationMs.coerceAtLeast(0L))
+                    loadTrackOnPlayer(
+                        track = playable,
+                        autoPlay = true,
+                        startPositionMs = restorePlan.positionMs,
+                        transitionMode = CrossfadeTransitionMode.DIRECT
+                    )
+                    withContext(Dispatchers.IO) {
+                        localLibraryRepository.recordRecentPlay(playable, positionMs = restorePlan.positionMs)
+                    }
+                }
+                is Result.Error,
+                Result.Loading -> stateStore.updatePlaying(false)
+            }
+        }
+        return true
+    }
 
     private fun canSkipToNext(): Boolean {
         queueManager.currentTrack ?: return false
@@ -538,6 +598,47 @@ class MusicPlaybackService : MediaLibraryService() {
         }
     }
 
+    private fun handlePlaybackError(error: PlaybackException) {
+        stateStore.updatePlaying(false)
+        val currentTrack = stateStore.state.value.currentTrack ?: return
+        val recoveryRequest = buildPlaybackFailureRecoveryRequest(
+            track = currentTrack,
+            error = error,
+            currentPositionMs = exoPlayer.currentPosition,
+            lastRetryKey = lastPlaybackFailureRecoveryKey
+        ) ?: return
+
+        lastPlaybackFailureRecoveryKey = recoveryRequest.retryKey
+        launchTransition {
+            when (val result = withContext(Dispatchers.IO) {
+                trackPlaybackResolver.resolve(currentTrack, cachedQuality)
+            }) {
+                is Result.Success -> {
+                    val recoveredTrack = result.data
+                    if (recoveredTrack.playableUrl.isNotBlank() &&
+                        recoveredTrack.playableUrl != currentTrack.playableUrl
+                    ) {
+                        if (queueManager.currentIndex >= 0) {
+                            queueManager.updateTrack(queueManager.currentIndex, recoveredTrack)
+                        }
+                        stateStore.updateTrack(recoveredTrack)
+                        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+                        stateStore.updatePosition(recoveryRequest.startPositionMs)
+                        stateStore.updateDuration(recoveredTrack.durationMs.coerceAtLeast(0L))
+                        loadTrackOnPlayer(
+                            track = recoveredTrack,
+                            autoPlay = true,
+                            startPositionMs = recoveryRequest.startPositionMs,
+                            transitionMode = CrossfadeTransitionMode.DIRECT
+                        )
+                    }
+                }
+                is Result.Error,
+                Result.Loading -> Unit
+            }
+        }
+    }
+
     private fun launchTransition(block: suspend () -> Unit) {
         cancelActiveTransition()
         val job = serviceScope.launch { block() }
@@ -588,6 +689,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 setPlayerVolume(1f)
             }
 
+            lastPlaybackFailureRecoveryKey = null
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
             if (startPositionMs > 0L) {
@@ -802,6 +904,11 @@ class MusicPlaybackService : MediaLibraryService() {
             handleSkipToNextCommand()
         }
 
+        override fun play() {
+            if (restorePlaybackOnServicePlayIfNeeded()) return
+            super.play()
+        }
+
         @Deprecated("兼容旧控制器的下一首命令")
         override fun next() {
             handleSkipToNextCommand()
@@ -843,6 +950,10 @@ class MusicPlaybackService : MediaLibraryService() {
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
             bindEqualizerToAudioSession(audioSessionId)
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            handlePlaybackError(error)
         }
     }
 

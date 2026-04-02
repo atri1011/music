@@ -2,26 +2,33 @@ package com.music.myapplication.feature.player.state
 
 import com.music.myapplication.core.common.DispatchersProvider
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.datastore.PlaybackSnapshot
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.Platform
+import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
+import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.session.MediaControllerConnector
+import com.music.myapplication.media.state.PlaybackStateStore
 import com.music.myapplication.core.download.DownloadManager
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
@@ -139,15 +146,83 @@ class PlaybackControlStateHolderTest {
         }
     }
 
+    @Test
+    fun `togglePlayPause delegates paused restore to service play command`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val bindScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val track = testTrack(id = "restored-track")
+            val env = createEnvironment(dispatcher = dispatcher, permissionResults = listOf(true))
+            env.stateStore.updateTrack(track)
+            env.stateStore.updateQueue(listOf(track), 0)
+            env.stateStore.updatePosition(7_000L)
+            env.stateStore.updateDuration(track.durationMs)
+            env.queueManager.setQueue(listOf(track), 0)
+            env.holder.bind(bindScope)
+            runCurrent()
+
+            env.holder.togglePlayPause()
+            runCurrent()
+
+            verify(exactly = 1) { env.connector.play() }
+            verify(exactly = 0) { env.connector.hasMediaItem() }
+            coVerify(exactly = 0) { env.resolver.resolve(any(), any()) }
+        } finally {
+            bindScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `bind keeps service restored state instead of overwriting with snapshot fallback`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val bindScope = CoroutineScope(SupervisorJob() + dispatcher)
+        try {
+            val serviceTrack = testTrack(id = "service-track", title = "来自 Service")
+            val snapshotTrack = testTrack(id = "snapshot-track", title = "来自 Snapshot")
+            val env = createEnvironment(
+                dispatcher = dispatcher,
+                permissionResults = listOf(true),
+                savedSnapshot = PlaybackSnapshot(
+                    currentTrack = snapshotTrack,
+                    queue = listOf(snapshotTrack),
+                    currentIndex = 0,
+                    positionMs = 1_200L
+                )
+            )
+            env.stateStore.updateTrack(serviceTrack)
+            env.stateStore.updateQueue(listOf(serviceTrack), 0)
+            env.stateStore.updatePosition(7_000L)
+            env.stateStore.updateDuration(serviceTrack.durationMs)
+            env.queueManager.setQueue(listOf(serviceTrack), 0)
+
+            env.holder.bind(bindScope)
+            runCurrent()
+
+            assertEquals(serviceTrack, env.stateStore.state.value.currentTrack)
+            assertEquals(listOf(serviceTrack), env.queueManager.queue)
+            assertEquals(7_000L, env.stateStore.state.value.positionMs)
+        } finally {
+            bindScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
     private fun createEnvironment(
         dispatcher: TestDispatcher,
         permissionResults: List<Boolean>,
-        resolvedTrack: Track = testTrack(playableUrl = "https://example.com/original.mp3", quality = "128k")
+        resolvedTrack: Track = testTrack(playableUrl = "https://example.com/original.mp3", quality = "128k"),
+        savedSnapshot: PlaybackSnapshot? = null
     ): TestEnvironment {
         val downloadManager = mockk<DownloadManager>()
         val preferences = mockk<PlayerPreferences>()
         val resolver = mockk<TrackPlaybackResolver>()
         val dispatchers = mockk<DispatchersProvider>()
+        val stateStore = PlaybackStateStore()
+        val connector = mockk<MediaControllerConnector>(relaxed = true)
+        val queueManager = QueueManager()
 
         coEvery { downloadManager.shouldWaitForUnmeteredNetwork() } returns false
         var permissionCallCount = 0
@@ -157,16 +232,21 @@ class PlaybackControlStateHolderTest {
         coEvery { downloadManager.enqueueDownload(any(), any(), any()) } returns true
 
         coEvery { resolver.resolve(any(), any()) } returns Result.Success(resolvedTrack)
+        every { preferences.playbackMode } returns flowOf(PlaybackMode.SEQUENTIAL)
+        every { preferences.quality } returns flowOf("128k")
+        every { preferences.playbackSpeed } returns flowOf(1f)
+        every { preferences.playbackSnapshot } returns flowOf(savedSnapshot)
+        coEvery { preferences.savePlaybackSnapshot(any()) } returns Unit
 
         every { dispatchers.main } returns dispatcher
         every { dispatchers.io } returns dispatcher
         every { dispatchers.default } returns dispatcher
 
         val holder = PlaybackControlStateHolder(
-            stateStore = mockk(relaxed = true),
-            connector = mockk<MediaControllerConnector>(relaxed = true),
+            stateStore = stateStore,
+            connector = connector,
             modeManager = mockk<PlaybackModeManager>(relaxed = true),
-            queueManager = mockk(relaxed = true),
+            queueManager = queueManager,
             localRepo = mockk<LocalLibraryRepository>(relaxed = true),
             preferences = preferences,
             resolver = resolver,
@@ -177,7 +257,10 @@ class PlaybackControlStateHolderTest {
         return TestEnvironment(
             holder = holder,
             downloadManager = downloadManager,
-            resolver = resolver
+            resolver = resolver,
+            connector = connector,
+            queueManager = queueManager,
+            stateStore = stateStore
         )
     }
 
@@ -188,20 +271,27 @@ class PlaybackControlStateHolderTest {
     }
 
     private fun testTrack(
+        id: String = "track-1",
+        title: String = "晴天",
         playableUrl: String = "",
-        quality: String = ""
+        quality: String = "",
+        durationMs: Long = 245_000L
     ) = Track(
-        id = "track-1",
+        id = id,
         platform = Platform.QQ,
-        title = "晴天",
+        title = title,
         artist = "周杰伦",
         playableUrl = playableUrl,
-        quality = quality
+        quality = quality,
+        durationMs = durationMs
     )
 
     private data class TestEnvironment(
         val holder: PlaybackControlStateHolder,
         val downloadManager: DownloadManager,
-        val resolver: TrackPlaybackResolver
+        val resolver: TrackPlaybackResolver,
+        val connector: MediaControllerConnector,
+        val queueManager: QueueManager,
+        val stateStore: PlaybackStateStore
     )
 }

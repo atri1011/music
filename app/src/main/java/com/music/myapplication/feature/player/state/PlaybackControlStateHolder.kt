@@ -16,6 +16,8 @@ import com.music.myapplication.feature.player.TrackActionUiState
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.MediaControllerConnector
+import com.music.myapplication.media.state.applyPlaybackRestorePlan
+import com.music.myapplication.media.state.buildPlaybackRestorePlan
 import com.music.myapplication.media.state.PlaybackStateStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
@@ -198,25 +200,7 @@ class PlaybackControlStateHolder @Inject constructor(
             connector.play()
             return
         }
-        val queue = queueManager.queue.ifEmpty { playbackState.value.queue }
-        val targetQueue = if (queue.isEmpty()) listOf(currentTrack) else queue
-        val targetIndex = when {
-            queueManager.currentIndex >= 0 -> queueManager.currentIndex
-            playbackState.value.currentIndex >= 0 -> playbackState.value.currentIndex
-            else -> 0
-        }.coerceIn(0, targetQueue.lastIndex)
-
-        if (!connector.hasMediaItem()) {
-            loadQueueTrack(
-                track = currentTrack,
-                queue = targetQueue,
-                index = targetIndex,
-                autoPlay = true,
-                startPositionMs = playbackState.value.positionMs
-            )
-            return
-        }
-
+        if (currentTrack.playableUrl.isBlank() && queueManager.isEmpty && playbackState.value.queue.isEmpty()) return
         connector.play()
     }
 
@@ -376,26 +360,25 @@ class PlaybackControlStateHolder @Inject constructor(
     private suspend fun restorePlaybackSnapshotIfNeeded() {
         if (hasRestoredPlaybackSnapshot) return
         hasRestoredPlaybackSnapshot = true
+        if (buildCurrentPlaybackRestorePlan() != null) return
 
         val snapshot = withContext(dispatchers.io) {
             preferences.playbackSnapshot.first()
-        } ?: return
-
-        val restoredQueue = snapshot.queue.ifEmpty { listOfNotNull(snapshot.currentTrack) }
-        val restoredTrack = snapshot.currentTrack ?: restoredQueue.firstOrNull() ?: return
-        val restoredIndex = when {
-            snapshot.currentIndex in restoredQueue.indices -> snapshot.currentIndex
-            else -> restoredQueue.indexOfFirst { it.songKey() == restoredTrack.songKey() }
-                .takeIf { it >= 0 } ?: 0
         }
-
-        queueManager.setQueue(restoredQueue, restoredIndex)
-        stateStore.updateTrack(restoredTrack)
-        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
-        stateStore.updatePosition(snapshot.positionMs.coerceAtLeast(0L))
-        stateStore.updateDuration(restoredTrack.durationMs.coerceAtLeast(0L))
-        stateStore.updatePlaying(false)
+        val restorePlan = buildPlaybackRestorePlan(snapshot) ?: return
+        applyPlaybackRestorePlan(restorePlan, queueManager, stateStore)
     }
+
+    private fun buildCurrentPlaybackRestorePlan() = buildPlaybackRestorePlan(
+        currentTrack = stateStore.state.value.currentTrack,
+        queue = queueManager.queue.ifEmpty { stateStore.state.value.queue },
+        currentIndex = if (queueManager.currentIndex >= 0) {
+            queueManager.currentIndex
+        } else {
+            stateStore.state.value.currentIndex
+        },
+        positionMs = stateStore.state.value.positionMs
+    )
 
     private fun resolveTrackAction(
         track: Track,

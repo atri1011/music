@@ -1,6 +1,7 @@
 package com.music.myapplication.app
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,12 +34,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -70,6 +74,7 @@ data class BottomNavItem(
 fun AppRoot(
     playerViewModel: PlayerViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val navController = rememberNavController()
     val updateViewModel: AppUpdateViewModel = hiltViewModel()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
@@ -84,7 +89,15 @@ fun AppRoot(
             null
         }
     }
+    val notificationPermission = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.POST_NOTIFICATIONS
+        } else {
+            null
+        }
+    }
     var pendingPermissionTrack by remember { mutableStateOf<Track?>(null) }
+    var hasRequestedNotificationPermission by rememberSaveable { mutableStateOf(false) }
     val downloadPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -94,6 +107,16 @@ fun AppRoot(
             playerViewModel.onDownloadPermissionResult(track, granted)
         }
     }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        hasRequestedNotificationPermission = true
+    }
+    val hasNotificationPermission = notificationPermission == null ||
+        ContextCompat.checkSelfPermission(
+            context,
+            notificationPermission
+        ) == PackageManager.PERMISSION_GRANTED
 
     val hasCurrentTrack = miniPlayerState.currentTrack != null
     val isSearchRoute = navBackStackEntry?.destination?.hasRoute(Routes.Search::class) == true
@@ -129,6 +152,28 @@ fun AppRoot(
         pendingPermissionTrack = track
         playerViewModel.consumeDownloadPermissionRequest()
         downloadPermissionLauncher.launch(permission)
+    }
+
+    LaunchedEffect(
+        notificationPermission,
+        hasNotificationPermission,
+        hasRequestedNotificationPermission,
+        miniPlayerState.currentTrack?.id,
+        miniPlayerState.currentTrack?.platform?.id
+    ) {
+        if (!shouldLaunchNotificationPermissionRequest(
+                sdkInt = Build.VERSION.SDK_INT,
+                notificationPermission = notificationPermission,
+                hasPermission = hasNotificationPermission,
+                hasRequestedInSession = hasRequestedNotificationPermission,
+                hasCurrentTrack = hasCurrentTrack
+            )
+        ) {
+            return@LaunchedEffect
+        }
+        val permission = notificationPermission ?: return@LaunchedEffect
+        hasRequestedNotificationPermission = true
+        notificationPermissionLauncher.launch(permission)
     }
 
     val bottomNavItems = remember {
@@ -270,4 +315,18 @@ private fun MiniPlayerContainer(
         progressFraction = miniProgress,
         modifier = modifier
     )
+}
+
+internal fun shouldLaunchNotificationPermissionRequest(
+    sdkInt: Int,
+    notificationPermission: String?,
+    hasPermission: Boolean,
+    hasRequestedInSession: Boolean,
+    hasCurrentTrack: Boolean
+): Boolean {
+    if (sdkInt < Build.VERSION_CODES.TIRAMISU) return false
+    if (notificationPermission.isNullOrBlank()) return false
+    if (hasPermission) return false
+    if (hasRequestedInSession) return false
+    return hasCurrentTrack
 }

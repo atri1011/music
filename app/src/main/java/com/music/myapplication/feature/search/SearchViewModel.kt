@@ -46,6 +46,18 @@ data class SearchUiState(
     val isSuggestionLoading: Boolean = false
 )
 
+private data class SearchCacheKey(
+    val platform: Platform,
+    val query: String,
+    val page: Int,
+    val searchType: SearchType
+)
+
+private data class SuggestionCacheKey(
+    val platform: Platform,
+    val query: String
+)
+
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class SearchViewModel @Inject constructor(
@@ -59,6 +71,9 @@ class SearchViewModel @Inject constructor(
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
     private val hotKeywordsCache = mutableMapOf<Platform, List<String>>()
+    private val songSearchCache = boundedCacheMap<SearchCacheKey, List<Track>>()
+    private val genericSearchCache = boundedCacheMap<SearchCacheKey, List<SearchResultItem>>()
+    private val suggestionCache = boundedCacheMap<SuggestionCacheKey, List<SearchSuggestion>>()
     private val searchQueryFlow = MutableStateFlow("")
     private val suggestionQueryFlow = MutableStateFlow("")
     private var searchJob: Job? = null
@@ -251,19 +266,41 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun performSearch(query: String, platform: Platform, page: Int) {
+        val normalizedQuery = query.trim()
+        val cacheKey = SearchCacheKey(
+            platform = platform,
+            query = normalizedQuery,
+            page = page,
+            searchType = SearchType.SONG
+        )
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
+            songSearchCache[cacheKey]?.let { cachedTracks ->
+                val enriched = localRepo.applyFavoriteState(cachedTracks)
+                _state.update { s ->
+                    if (!isSearchContextStillValid(s, normalizedQuery, platform, SearchType.SONG)) return@update s
+                    s.copy(
+                        tracks = if (page == 1) enriched else s.tracks + enriched,
+                        isLoading = false,
+                        page = page,
+                        hasMore = cachedTracks.size >= 20,
+                        error = null
+                    )
+                }
+                return@launch
+            }
             _state.update { s ->
                 s.copy(
                     isLoading = true, error = null,
                     tracks = if (page == 1) emptyList() else s.tracks
                 )
             }
-            when (val result = onlineRepo.search(platform, query, page)) {
+            when (val result = onlineRepo.search(platform, normalizedQuery, page)) {
                 is Result.Success -> {
+                    songSearchCache[cacheKey] = result.data
                     val enriched = localRepo.applyFavoriteState(result.data)
                     _state.update { s ->
-                        if (!isSearchContextStillValid(s, query, platform, SearchType.SONG)) return@update s
+                        if (!isSearchContextStillValid(s, normalizedQuery, platform, SearchType.SONG)) return@update s
                         s.copy(
                             tracks = if (page == 1) enriched else s.tracks + enriched,
                             isLoading = false, page = page,
@@ -273,7 +310,7 @@ class SearchViewModel @Inject constructor(
                 }
                 is Result.Error -> {
                     _state.update { s ->
-                        if (!isSearchContextStillValid(s, query, platform, SearchType.SONG)) return@update s
+                        if (!isSearchContextStillValid(s, normalizedQuery, platform, SearchType.SONG)) return@update s
                         s.copy(
                             isLoading = false,
                             error = (result.error as AppError).message,
@@ -287,8 +324,28 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun performGenericSearch(query: String, platform: Platform, page: Int, type: SearchType) {
+        val normalizedQuery = query.trim()
+        val cacheKey = SearchCacheKey(
+            platform = platform,
+            query = normalizedQuery,
+            page = page,
+            searchType = type
+        )
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
+            genericSearchCache[cacheKey]?.let { cachedResults ->
+                _state.update { s ->
+                    if (!isSearchContextStillValid(s, normalizedQuery, platform, type)) return@update s
+                    s.copy(
+                        genericResults = if (page == 1) cachedResults else s.genericResults + cachedResults,
+                        isLoading = false,
+                        page = page,
+                        hasMore = cachedResults.size >= 20,
+                        error = null
+                    )
+                }
+                return@launch
+            }
             _state.update { s ->
                 s.copy(
                     isLoading = true, error = null,
@@ -296,15 +353,16 @@ class SearchViewModel @Inject constructor(
                 )
             }
             val result = when (type) {
-                SearchType.ARTIST -> onlineRepo.searchArtists(platform, query, page)
-                SearchType.ALBUM -> onlineRepo.searchAlbums(platform, query, page)
-                SearchType.PLAYLIST -> onlineRepo.searchPlaylists(platform, query, page)
+                SearchType.ARTIST -> onlineRepo.searchArtists(platform, normalizedQuery, page)
+                SearchType.ALBUM -> onlineRepo.searchAlbums(platform, normalizedQuery, page)
+                SearchType.PLAYLIST -> onlineRepo.searchPlaylists(platform, normalizedQuery, page)
                 else -> return@launch
             }
             when (result) {
                 is Result.Success -> {
+                    genericSearchCache[cacheKey] = result.data
                     _state.update { s ->
-                        if (!isSearchContextStillValid(s, query, platform, type)) return@update s
+                        if (!isSearchContextStillValid(s, normalizedQuery, platform, type)) return@update s
                         s.copy(
                             genericResults = if (page == 1) result.data else s.genericResults + result.data,
                             isLoading = false, page = page,
@@ -314,7 +372,7 @@ class SearchViewModel @Inject constructor(
                 }
                 is Result.Error -> {
                     _state.update { s ->
-                        if (!isSearchContextStillValid(s, query, platform, type)) return@update s
+                        if (!isSearchContextStillValid(s, normalizedQuery, platform, type)) return@update s
                         s.copy(
                             isLoading = false,
                             error = (result.error as AppError).message,
@@ -356,11 +414,25 @@ class SearchViewModel @Inject constructor(
     }
 
     private suspend fun loadSuggestions(keyword: String, platform: Platform) {
+        val normalizedKeyword = keyword.trim()
+        val cacheKey = SuggestionCacheKey(platform = platform, query = normalizedKeyword)
+        suggestionCache[cacheKey]?.let { cachedSuggestions ->
+            _state.update { s ->
+                if (s.platform != platform || s.query.trim() != normalizedKeyword) return@update s
+                s.copy(
+                    suggestions = cachedSuggestions,
+                    showSuggestions = s.showSuggestions && cachedSuggestions.isNotEmpty(),
+                    isSuggestionLoading = false
+                )
+            }
+            return
+        }
         _state.update { it.copy(isSuggestionLoading = true) }
-        when (val result = onlineRepo.getSearchSuggestions(platform, keyword)) {
+        when (val result = onlineRepo.getSearchSuggestions(platform, normalizedKeyword)) {
             is Result.Success -> {
+                suggestionCache[cacheKey] = result.data
                 _state.update { s ->
-                    if (s.platform != platform || s.query.trim() != keyword.trim()) return@update s
+                    if (s.platform != platform || s.query.trim() != normalizedKeyword) return@update s
                     s.copy(
                         suggestions = result.data,
                         showSuggestions = s.showSuggestions && result.data.isNotEmpty(),
@@ -377,3 +449,9 @@ class SearchViewModel @Inject constructor(
         if (s.query.isNotBlank()) performSearchByType(s.query, s.platform, 1, s.searchType)
     }
 }
+
+private fun <K, V> boundedCacheMap(maxEntries: Int = 24): MutableMap<K, V> =
+    object : LinkedHashMap<K, V>(maxEntries, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?): Boolean =
+            size > maxEntries
+    }
