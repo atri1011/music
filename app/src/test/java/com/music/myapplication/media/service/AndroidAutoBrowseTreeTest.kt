@@ -1,5 +1,6 @@
 package com.music.myapplication.media.service
 
+import androidx.media3.session.MediaConstants
 import androidx.media3.common.MediaMetadata
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Playlist
@@ -9,6 +10,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AndroidAutoBrowseTreeTest {
+
+    @Test
+    fun `buildAndroidAutoRootContentStyleHints prefer list items for browsable and playable rows`() {
+        val hints = buildAndroidAutoRootContentStyleHints()
+
+        assertEquals(
+            MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
+            hints.browsable
+        )
+        assertEquals(
+            MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
+            hints.playable
+        )
+    }
 
     @Test
     fun `buildAndroidAutoBrowseEntries exposes focused root categories with library summary`() {
@@ -32,6 +47,10 @@ class AndroidAutoBrowseTreeTest {
         assertEquals(
             "本地 41 首 / 收藏 12 首 / 歌单 3 个",
             (entries[2] as AndroidAutoBrowseEntry.FolderEntry).subtitle
+        )
+        assertEquals(
+            listOf("快速访问", "快速访问", "资料库"),
+            entries.map { (it as AndroidAutoBrowseEntry.FolderEntry).groupTitle }
         )
     }
 

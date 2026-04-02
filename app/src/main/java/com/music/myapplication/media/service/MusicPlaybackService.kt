@@ -260,7 +260,7 @@ class MusicPlaybackService : MediaLibraryService() {
             params: MediaLibraryService.LibraryParams?
         ): ListenableFuture<LibraryResult<MediaItem>> {
             return Futures.immediateFuture(
-                LibraryResult.ofItem(buildRootItem(), params)
+                LibraryResult.ofItem(buildRootItem(), buildAndroidAutoRootLibraryParams(params))
             )
         }
 
@@ -514,7 +514,8 @@ class MusicPlaybackService : MediaLibraryService() {
             title = entry.title,
             subtitle = entry.subtitle,
             mediaType = entry.mediaType,
-            artworkUrl = entry.artworkUrl
+            artworkUrl = entry.artworkUrl,
+            extras = buildAndroidAutoBrowseFolderExtras(entry)
         )
         is AndroidAutoBrowseEntry.TrackEntry -> buildTrackItem(entry.track)
     }
@@ -592,7 +593,8 @@ class MusicPlaybackService : MediaLibraryService() {
         title: String,
         subtitle: String,
         mediaType: Int,
-        artworkUrl: String = ""
+        artworkUrl: String = "",
+        extras: Bundle? = null
     ): MediaItem {
         val metadataBuilder = MediaMetadata.Builder()
             .setTitle(title)
@@ -600,6 +602,7 @@ class MusicPlaybackService : MediaLibraryService() {
             .setIsBrowsable(true)
             .setIsPlayable(false)
             .setMediaType(mediaType)
+        extras?.let(metadataBuilder::setExtras)
         artworkUrl.takeIf { it.isNotBlank() }?.let { url ->
             metadataBuilder.setArtworkUri(Uri.parse(url))
         }

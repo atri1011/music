@@ -1,6 +1,9 @@
 package com.music.myapplication.media.service
 
+import android.os.Bundle
 import androidx.media3.common.MediaMetadata
+import androidx.media3.session.MediaConstants
+import androidx.media3.session.MediaLibraryService
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
 
@@ -13,6 +16,11 @@ internal const val LOCAL_TRACKS_ID = "local_tracks"
 internal const val PLAYLISTS_ID = "playlists"
 internal const val PLAYLIST_PREFIX = "playlist:"
 internal const val TRACK_PREFIX = "track:"
+
+internal data class AndroidAutoRootContentStyleHints(
+    val browsable: Int,
+    val playable: Int
+)
 
 internal data class AndroidAutoBrowseSnapshot(
     val favorites: List<Track> = emptyList(),
@@ -34,10 +42,46 @@ internal sealed interface AndroidAutoBrowseEntry {
         val title: String,
         val subtitle: String,
         val mediaType: Int,
-        val artworkUrl: String = ""
+        val artworkUrl: String = "",
+        val groupTitle: String? = null
     ) : AndroidAutoBrowseEntry
 
     data class TrackEntry(val track: Track) : AndroidAutoBrowseEntry
+}
+
+internal fun buildAndroidAutoRootContentStyleHints(): AndroidAutoRootContentStyleHints =
+    AndroidAutoRootContentStyleHints(
+        browsable = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
+        playable = MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM
+    )
+
+internal fun buildAndroidAutoRootLibraryParams(
+    requestParams: MediaLibraryService.LibraryParams? = null
+): MediaLibraryService.LibraryParams {
+    val contentStyleHints = buildAndroidAutoRootContentStyleHints()
+    val extras = Bundle().apply {
+        putInt(
+            MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE,
+            contentStyleHints.browsable
+        )
+        putInt(
+            MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE,
+            contentStyleHints.playable
+        )
+    }
+    return MediaLibraryService.LibraryParams.Builder()
+        .setOffline(requestParams?.isOffline ?: false)
+        .setRecent(requestParams?.isRecent ?: false)
+        .setSuggested(requestParams?.isSuggested ?: false)
+        .setExtras(extras)
+        .build()
+}
+
+internal fun buildAndroidAutoBrowseFolderExtras(entry: AndroidAutoBrowseEntry.FolderEntry): Bundle? {
+    val groupTitle = entry.groupTitle ?: return null
+    return Bundle().apply {
+        putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, groupTitle)
+    }
 }
 
 internal fun buildAndroidAutoBrowseEntries(
@@ -68,7 +112,8 @@ private fun buildRootEntries(snapshot: AndroidAutoBrowseSnapshot): List<AndroidA
             } else {
                 "从最近播放里继续"
             },
-            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED,
+            groupTitle = "快速访问"
         ),
         AndroidAutoBrowseEntry.FolderEntry(
             mediaId = TOP_PLAYED_ID,
@@ -78,13 +123,15 @@ private fun buildRootEntries(snapshot: AndroidAutoBrowseSnapshot): List<AndroidA
             } else {
                 "按播放次数整理你的常听歌曲"
             },
-            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED,
+            groupTitle = "快速访问"
         ),
         AndroidAutoBrowseEntry.FolderEntry(
             mediaId = LIBRARY_ID,
             title = "资料库",
             subtitle = buildLibrarySummarySubtitle(snapshot),
-            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+            mediaType = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED,
+            groupTitle = "资料库"
         )
     )
 }
