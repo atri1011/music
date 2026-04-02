@@ -50,6 +50,7 @@ import com.music.myapplication.media.session.loadTrackSessionCommand
 import com.music.myapplication.media.session.toPlaybackLoadRequestOrNull
 import com.music.myapplication.media.state.applyPlaybackRestorePlan
 import com.music.myapplication.media.state.buildPlaybackRestorePlan
+import com.music.myapplication.media.state.clearPreparedPlaybackTransport
 import com.music.myapplication.media.state.PlaybackRestorePlan
 import com.music.myapplication.media.state.PlaybackStateStore
 import dagger.hilt.android.AndroidEntryPoint
@@ -1059,6 +1060,12 @@ class MusicPlaybackService : MediaLibraryService() {
         override fun play() {
             if (restorePlaybackOnServicePlayIfNeeded()) return
             super.play()
+        }
+
+        override fun clearMediaItems() {
+            super.clearMediaItems()
+            clearPlaybackFailureRecoveryState()
+            stateStore.clearPreparedPlaybackTransport()
         }
 
         @Deprecated("兼容旧控制器的下一首命令")

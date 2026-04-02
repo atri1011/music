@@ -51,3 +51,9 @@ class PlaybackStateStore @Inject constructor() {
 
     fun reset() = _state.update { PlaybackState() }
 }
+
+fun PlaybackStateStore.clearPreparedPlaybackTransport() {
+    updatePlaying(false)
+    updatePosition(0L)
+    updateDuration(0L)
+}

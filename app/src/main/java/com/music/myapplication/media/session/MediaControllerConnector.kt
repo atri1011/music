@@ -55,8 +55,6 @@ class MediaControllerConnector @Inject constructor(
         }
         stateStore.updateTrack(track)
         stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
-        stateStore.updatePosition(startPositionMs.coerceAtLeast(0L))
-        stateStore.updateDuration(track.durationMs.coerceAtLeast(0L))
         if (track.playableUrl.isNotBlank()) {
             withController {
                 sendCustomCommand(
@@ -70,9 +68,6 @@ class MediaControllerConnector @Inject constructor(
                     ).toCommandExtras()
                 )
             }
-        }
-        if (!autoPlay) {
-            stateStore.updatePlaying(false)
         }
     }
 
@@ -117,9 +112,6 @@ class MediaControllerConnector @Inject constructor(
             stop()
             clearMediaItems()
         }
-        stateStore.updatePlaying(false)
-        stateStore.updatePosition(0L)
-        stateStore.updateDuration(0L)
     }
 
     fun stop() {
