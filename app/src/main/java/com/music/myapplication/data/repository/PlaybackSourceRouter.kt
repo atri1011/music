@@ -13,6 +13,7 @@ import javax.inject.Singleton
 class PlaybackSourceRouter @Inject constructor(
     private val preferences: PlayerPreferences,
     private val tuneHubResolver: TuneHubPlayableResolver,
+    private val metingPlayableResolver: MetingPlayableResolver,
     private val jkApiResolver: JkApiPlayableResolver,
     private val neteaseCloudApiResolver: NeteaseCloudApiPlayableResolver
 ) {
@@ -20,6 +21,16 @@ class PlaybackSourceRouter @Inject constructor(
         val source = preferences.audioSource.first()
         return when (source) {
             AudioSource.TUNEHUB -> tuneHubResolver.resolve(track, quality)
+            AudioSource.METING_BAKA -> {
+                if (track.platform == Platform.KUWO) {
+                    return tuneHubResolver.resolve(track, quality)
+                }
+                when (val result = metingPlayableResolver.resolve(track, quality)) {
+                    is Result.Success -> result
+                    is Result.Error -> tuneHubResolver.resolve(track, quality)
+                    Result.Loading -> tuneHubResolver.resolve(track, quality)
+                }
+            }
             AudioSource.JKAPI -> {
                 if (track.platform == Platform.KUWO) {
                     return tuneHubResolver.resolve(track, quality)

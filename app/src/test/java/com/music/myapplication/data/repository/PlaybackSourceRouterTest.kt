@@ -20,11 +20,13 @@ class PlaybackSourceRouterTest {
 
     private val preferences = mockk<PlayerPreferences>()
     private val tuneHubResolver = mockk<TuneHubPlayableResolver>()
+    private val metingPlayableResolver = mockk<MetingPlayableResolver>()
     private val jkApiResolver = mockk<JkApiPlayableResolver>()
     private val neteaseCloudApiResolver = mockk<NeteaseCloudApiPlayableResolver>()
     private val router = PlaybackSourceRouter(
         preferences,
         tuneHubResolver,
+        metingPlayableResolver,
         jkApiResolver,
         neteaseCloudApiResolver
     )
@@ -38,6 +40,56 @@ class PlaybackSourceRouterTest {
         val result = router.resolve(track, "320k")
 
         assertEquals("https://example.com/play.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { metingPlayableResolver.resolve(any(), any()) }
+        coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
+    }
+
+    @Test
+    fun `METING selected for NETEASE - uses Meting resolver`() = runTest {
+        val track = testTrack(Platform.NETEASE)
+        every { preferences.audioSource } returns flowOf(AudioSource.METING_BAKA)
+        coEvery {
+            metingPlayableResolver.resolve(track, "320k")
+        } returns Result.Success("https://example.com/meting.mp3")
+
+        val result = router.resolve(track, "320k")
+
+        assertEquals("https://example.com/meting.mp3", (result as Result.Success).data)
+        coVerify(exactly = 1) { metingPlayableResolver.resolve(track, "320k") }
+        coVerify(exactly = 0) { tuneHubResolver.resolve(any(), any()) }
+        coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
+    }
+
+    @Test
+    fun `METING selected for KUWO - auto fallback to TuneHub`() = runTest {
+        val track = testTrack(Platform.KUWO)
+        every { preferences.audioSource } returns flowOf(AudioSource.METING_BAKA)
+        coEvery { tuneHubResolver.resolve(track, "128k") } returns Result.Success("https://example.com/kuwo.mp3")
+
+        val result = router.resolve(track, "128k")
+
+        assertEquals("https://example.com/kuwo.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { metingPlayableResolver.resolve(any(), any()) }
+        coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
+        coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
+    }
+
+    @Test
+    fun `METING fails - falls back to TuneHub`() = runTest {
+        val track = testTrack(Platform.QQ)
+        every { preferences.audioSource } returns flowOf(AudioSource.METING_BAKA)
+        coEvery {
+            metingPlayableResolver.resolve(track, "128k")
+        } returns Result.Error(AppError.Parse(message = "Meting 未返回可播放链接"))
+        coEvery { tuneHubResolver.resolve(track, "128k") } returns Result.Success("https://example.com/fallback.mp3")
+
+        val result = router.resolve(track, "128k")
+
+        assertEquals("https://example.com/fallback.mp3", (result as Result.Success).data)
+        coVerify(exactly = 1) { metingPlayableResolver.resolve(track, "128k") }
+        coVerify(exactly = 1) { tuneHubResolver.resolve(track, "128k") }
         coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
         coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
     }
@@ -51,6 +103,7 @@ class PlaybackSourceRouterTest {
         val result = router.resolve(track, "128k")
 
         assertEquals("https://example.com/kuwo.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { metingPlayableResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
         coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
     }
@@ -64,6 +117,7 @@ class PlaybackSourceRouterTest {
         val result = router.resolve(track, "128k")
 
         assertEquals("https://jkapi.com/music.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { metingPlayableResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { tuneHubResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
     }
@@ -78,6 +132,7 @@ class PlaybackSourceRouterTest {
         val result = router.resolve(track, "128k")
 
         assertEquals("https://example.com/fallback.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { metingPlayableResolver.resolve(any(), any()) }
         coVerify(exactly = 1) { jkApiResolver.resolve(track) }
         coVerify(exactly = 1) { tuneHubResolver.resolve(track, "128k") }
         coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
@@ -94,6 +149,7 @@ class PlaybackSourceRouterTest {
 
         assertTrue(result is Result.Error)
         assertEquals("TuneHub error", (result as Result.Error).error.message)
+        coVerify(exactly = 0) { metingPlayableResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
     }
 
@@ -108,6 +164,7 @@ class PlaybackSourceRouterTest {
         val result = router.resolve(track, "320k")
 
         assertEquals("https://example.com/netease.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { metingPlayableResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { tuneHubResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { jkApiResolver.resolve(any()) }
     }
@@ -121,6 +178,7 @@ class PlaybackSourceRouterTest {
         val result = router.resolve(track, "128k")
 
         assertEquals("https://example.com/fallback.mp3", (result as Result.Success).data)
+        coVerify(exactly = 0) { metingPlayableResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { neteaseCloudApiResolver.resolve(any(), any()) }
         coVerify(exactly = 1) { tuneHubResolver.resolve(track, "128k") }
     }

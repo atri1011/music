@@ -4,6 +4,8 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -528,18 +530,21 @@ private fun CrossfadeDurationPicker(current: Int, onSelect: (Int) -> Unit) {
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AudioSourcePicker(current: AudioSource, onSelect: (AudioSource) -> Unit) {
     val options = listOf(
         AudioSource.TUNEHUB to "TuneHub",
+        AudioSource.METING_BAKA to "Meting (baka.plus)",
         AudioSource.JKAPI to "JKAPI (无铭API)",
         AudioSource.NETEASE_CLOUD_API_ENHANCED to "网易云增强版 API"
     )
-    Row(
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         options.forEach { (source, label) ->
             val selected = source == current
@@ -658,6 +663,7 @@ private fun crossfadeDurationLabel(durationMs: Int): String {
 
 private fun audioSourceSubtitle(source: AudioSource): String = when (source) {
     AudioSource.TUNEHUB -> "默认音源，支持全平台"
+    AudioSource.METING_BAKA -> "支持网易云/QQ音乐，酷我自动回退 TuneHub"
     AudioSource.JKAPI -> "支持网易云/QQ音乐（不支持酷我）"
     AudioSource.NETEASE_CLOUD_API_ENHANCED -> "仅代理网易云歌曲，需填写自部署接口地址"
 }
