@@ -27,6 +27,32 @@ class MediaControllerConnectorTest {
     }
 
     @Test
+    fun `stop without connected controller leaves playback state untouched`() {
+        val track = testTrack(playableUrl = "https://example.com/current.mp3", durationMs = 245_000L)
+        val stateStore = PlaybackStateStore().apply {
+            updateTrack(track)
+            updateQueue(listOf(track), 0)
+            updatePosition(4_000L)
+            updateDuration(track.durationMs)
+            updatePlaying(true)
+        }
+        val connector = MediaControllerConnector(
+            context = mockk<Context>(relaxed = true),
+            stateStore = stateStore,
+            queueManager = QueueManager()
+        )
+
+        connector.stop()
+
+        assertEquals(track, stateStore.state.value.currentTrack)
+        assertEquals(listOf(track), stateStore.state.value.queue)
+        assertEquals(0, stateStore.state.value.currentIndex)
+        assertEquals(4_000L, stateStore.state.value.positionMs)
+        assertEquals(track.durationMs, stateStore.state.value.durationMs)
+        assertTrue(stateStore.state.value.isPlaying)
+    }
+
+    @Test
     fun `loadTrack without connected controller keeps transport state service driven`() {
         val track = testTrack(playableUrl = "https://example.com/loaded.mp3", durationMs = 245_000L)
         val queueManager = QueueManager()

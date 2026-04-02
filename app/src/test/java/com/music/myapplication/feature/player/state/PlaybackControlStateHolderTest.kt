@@ -240,6 +240,85 @@ class PlaybackControlStateHolderTest {
     }
 
     @Test
+    fun `stopPlayback does not persist snapshot before service publishes stopped state`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val env = createEnvironment(
+                dispatcher = dispatcher,
+                permissionResults = listOf(true)
+            )
+            val actionScope = CoroutineScope(SupervisorJob() + dispatcher)
+
+            try {
+                attachScope(env.holder, actionScope)
+                val track = testTrack(playableUrl = "https://example.com/current.mp3")
+                env.stateStore.updateTrack(track)
+                env.stateStore.updateQueue(listOf(track), 0)
+                env.stateStore.updatePosition(3_000L)
+                env.stateStore.updateDuration(track.durationMs)
+                env.stateStore.updatePlaying(true)
+
+                env.holder.stopPlayback()
+                advanceUntilIdle()
+
+                verify(exactly = 1) { env.connector.stop() }
+                coVerify(exactly = 0) { env.preferences.savePlaybackSnapshot(any()) }
+            } finally {
+                actionScope.cancel()
+                advanceUntilIdle()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `stopPlayback persists cleared snapshot after service publishes stopped state`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val env = createEnvironment(
+                dispatcher = dispatcher,
+                permissionResults = listOf(true)
+            )
+            val actionScope = CoroutineScope(SupervisorJob() + dispatcher)
+
+            try {
+                attachScope(env.holder, actionScope)
+                val track = testTrack(playableUrl = "https://example.com/current.mp3")
+                env.stateStore.updateTrack(track)
+                env.stateStore.updateQueue(listOf(track), 0)
+                env.stateStore.updatePosition(3_000L)
+                env.stateStore.updateDuration(track.durationMs)
+                env.stateStore.updatePlaying(true)
+                every { env.connector.stop() } answers { env.stateStore.reset() }
+
+                env.holder.stopPlayback()
+                advanceUntilIdle()
+
+                coVerify(exactly = 1) {
+                    env.preferences.savePlaybackSnapshot(
+                        match {
+                            it.currentTrack == null &&
+                                it.queue.isEmpty() &&
+                                it.currentIndex == -1 &&
+                                it.positionMs == 0L &&
+                                it.durationMs == 0L &&
+                                !it.isPlaying
+                        }
+                    )
+                }
+            } finally {
+                actionScope.cancel()
+                advanceUntilIdle()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun `source fallback info message is published once for consecutive duplicates`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)

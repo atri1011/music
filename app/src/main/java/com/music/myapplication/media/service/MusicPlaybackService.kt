@@ -1062,6 +1062,15 @@ class MusicPlaybackService : MediaLibraryService() {
             super.play()
         }
 
+        override fun stop() {
+            super.stop()
+            stopPositionUpdates()
+            super.clearMediaItems()
+            clearPlaybackFailureRecoveryState()
+            queueManager.clear()
+            stateStore.reset()
+        }
+
         override fun clearMediaItems() {
             super.clearMediaItems()
             clearPlaybackFailureRecoveryState()

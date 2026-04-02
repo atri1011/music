@@ -116,7 +116,6 @@ class MediaControllerConnector @Inject constructor(
 
     fun stop() {
         withController { stop() }
-        stateStore.reset()
     }
 
     private fun withController(action: MediaController.() -> Unit) {

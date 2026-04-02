@@ -215,7 +215,6 @@ class PlaybackControlStateHolder @Inject constructor(
 
     fun stopPlayback() {
         connector.stop()
-        persistPlaybackSnapshot()
     }
 
     fun seekTo(positionMs: Long) {
