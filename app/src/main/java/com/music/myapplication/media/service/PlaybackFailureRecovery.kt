@@ -3,6 +3,7 @@ package com.music.myapplication.media.service
 import androidx.media3.common.PlaybackException
 import androidx.media3.datasource.HttpDataSource
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.media.playback.normalizePlaybackUrl
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -25,7 +26,7 @@ internal fun buildPlaybackFailureRecoveryRequest(
     lastRetryKey: String?
 ): PlaybackFailureRecoveryRequest? {
     val currentTrack = track ?: return null
-    val playableUrl = currentTrack.playableUrl.trim()
+    val playableUrl = normalizePlaybackUrl(currentTrack.playableUrl)
     if (!playableUrl.isRemoteHttpUrl()) return null
 
     val recoveryFingerprint = classifyPlaybackFailure(error) ?: return null

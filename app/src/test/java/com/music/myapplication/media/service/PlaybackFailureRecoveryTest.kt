@@ -33,6 +33,22 @@ class PlaybackFailureRecoveryTest {
     }
 
     @Test
+    fun buildsRecoveryRequestForQuotedRemotePlaybackUrl() {
+        val track = remoteTrack(playableUrl = "  'https://cdn.example.com/old.mp3'  ")
+
+        val request = buildPlaybackFailureRecoveryRequest(
+            track = track,
+            error = playbackExceptionForStatus(404),
+            currentPositionMs = 3_000L,
+            lastRetryKey = null
+        )
+
+        assertNotNull(request)
+        assertEquals("qq:song-1:https://cdn.example.com/old.mp3:404", request?.retryKey)
+        assertEquals(PlaybackFailureRecoveryStrategy.RE_RESOLVE_TRACK, request?.strategy)
+    }
+
+    @Test
     fun skipsRecoveryForUnsupportedStatusOrLocalTrack() {
         val remoteTrack = remoteTrack(playableUrl = "https://cdn.example.com/old.mp3")
         val localTrack = remoteTrack(playableUrl = "content://media/external/audio/media/1")
