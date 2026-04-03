@@ -114,6 +114,20 @@ class MediaControllerConnector @Inject constructor(
         }
     }
 
+    fun refreshQueue(queue: List<Track>, index: Int) {
+        queueManager.setQueue(queue, index)
+        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+        withController {
+            sendCustomCommand(
+                refreshQueueSessionCommand,
+                PlaybackQueueRefreshRequest(
+                    queue = queueManager.queue,
+                    index = queueManager.currentIndex
+                ).toCommandExtras()
+            )
+        }
+    }
+
     fun stop() {
         withController { stop() }
     }

@@ -23,7 +23,7 @@ data class MoreUiState(
     val showApiKeyDialog: Boolean = false,
     val darkMode: DarkModeOption = DarkModeOption.FOLLOW_SYSTEM,
     val autoPlay: Boolean = true,
-    val crossfadeEnabled: Boolean = true,
+    val crossfadeEnabled: Boolean = false,
     val crossfadeDurationMs: Int = PlayerPreferences.DEFAULT_CROSSFADE_DURATION_MS,
     val wifiOnly: Boolean = false,
     val cacheLimitMb: Int = PlayerPreferences.DEFAULT_CACHE_LIMIT_MB,

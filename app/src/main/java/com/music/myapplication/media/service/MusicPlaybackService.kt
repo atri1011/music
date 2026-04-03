@@ -19,6 +19,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.BitmapLoader
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -47,8 +48,11 @@ import com.music.myapplication.media.playback.normalizePlaybackUrl
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.session.PlaybackLoadRequest
+import com.music.myapplication.media.session.PlaybackQueueRefreshRequest
 import com.music.myapplication.media.session.loadTrackSessionCommand
+import com.music.myapplication.media.session.refreshQueueSessionCommand
 import com.music.myapplication.media.session.toPlaybackLoadRequestOrNull
+import com.music.myapplication.media.session.toPlaybackQueueRefreshRequestOrNull
 import com.music.myapplication.media.state.applyPlaybackRestorePlan
 import com.music.myapplication.media.state.buildPlaybackRestorePlan
 import com.music.myapplication.media.state.clearPreparedPlaybackTransport
@@ -94,6 +98,7 @@ class MusicPlaybackService : MediaLibraryService() {
     private var equalizerSettingsJob: Job? = null
     private var playerSettingsJob: Job? = null
     private var transitionJob: Job? = null
+    private var gaplessPreloadJob: Job? = null
     private val libraryTrackCache = LinkedHashMap<String, Track>()
     private val searchResultCache =
         object : LinkedHashMap<String, List<AndroidAutoSearchEntry>>(16, 0.75f, true) {
@@ -107,6 +112,7 @@ class MusicPlaybackService : MediaLibraryService() {
     private var cachedEqPresetIndex = 0
     private var cachedEqCustomBands: Map<Int, Int> = emptyMap()
     private var cachedQuality = "128k"
+    private var cachedPlaybackMode = PlaybackMode.SEQUENTIAL
     private var cachedCrossfadeEnabled = false
     private var cachedCrossfadeDurationMs = PlayerPreferences.DEFAULT_CROSSFADE_DURATION_MS
 
@@ -155,6 +161,7 @@ class MusicPlaybackService : MediaLibraryService() {
         equalizerSettingsJob?.cancel()
         playerSettingsJob?.cancel()
         transitionJob?.cancel()
+        gaplessPreloadJob?.cancel()
         equalizerManager.release()
         setPlayerVolume(1f)
         exoPlayer.removeListener(playerListener)
@@ -186,17 +193,28 @@ class MusicPlaybackService : MediaLibraryService() {
         playerSettingsJob = serviceScope.launch {
             combine(
                 playerPreferences.quality,
+                playerPreferences.playbackMode,
                 playerPreferences.crossfadeEnabled,
                 playerPreferences.crossfadeDurationMs
-            ) { quality, crossfadeEnabled, crossfadeDurationMs ->
-                Triple(quality, crossfadeEnabled, crossfadeDurationMs)
-            }.collect { (quality, crossfadeEnabled, crossfadeDurationMs) ->
-                cachedQuality = quality
-                cachedCrossfadeEnabled = crossfadeEnabled
-                cachedCrossfadeDurationMs = crossfadeDurationMs
-                if (!crossfadeEnabled) {
+            ) { quality, playbackMode, crossfadeEnabled, crossfadeDurationMs ->
+                PlayerSettingsSnapshot(
+                    quality = quality,
+                    playbackMode = playbackMode,
+                    crossfadeEnabled = crossfadeEnabled,
+                    crossfadeDurationMs = crossfadeDurationMs
+                )
+            }.collect { settings ->
+                cachedQuality = settings.quality
+                if (cachedPlaybackMode != settings.playbackMode) {
+                    cachedPlaybackMode = settings.playbackMode
+                    modeManager.setMode(settings.playbackMode)
+                }
+                cachedCrossfadeEnabled = settings.crossfadeEnabled
+                cachedCrossfadeDurationMs = settings.crossfadeDurationMs
+                if (!settings.crossfadeEnabled) {
                     cancelActiveTransition()
                 }
+                syncGaplessPlaybackWindow(autoPlay = exoPlayer.playWhenReady)
             }
         }
     }
@@ -248,6 +266,7 @@ class MusicPlaybackService : MediaLibraryService() {
             val sessionCommands = defaultResult.availableSessionCommands
                 .buildUpon()
                 .add(loadTrackSessionCommand)
+                .add(refreshQueueSessionCommand)
                 .build()
             return MediaSession.ConnectionResult.accept(
                 sessionCommands,
@@ -328,6 +347,15 @@ class MusicPlaybackService : MediaLibraryService() {
                         Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
                     } else {
                         handleLoadTrackRequest(request)
+                        Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+                }
+                refreshQueueSessionCommand.customAction -> {
+                    val request = args.toPlaybackQueueRefreshRequestOrNull()
+                    if (request == null) {
+                        Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+                    } else {
+                        handleQueueRefreshRequest(request)
                         Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                     }
                 }
@@ -647,6 +675,130 @@ class MusicPlaybackService : MediaLibraryService() {
 
     private fun trackMediaId(track: Track): String = "$TRACK_PREFIX${track.platform.id}:${track.id}"
 
+    private fun syncGaplessPlaybackWindow(autoPlay: Boolean) {
+        if (cachedCrossfadeEnabled) {
+            cancelGaplessPreload(removeFutureItems = true)
+            return
+        }
+        if (exoPlayer.mediaItemCount <= 0 || queueManager.currentIndex < 0) return
+        val currentMediaQueueIndex = playbackQueueIndexFromMediaId(exoPlayer.currentMediaItem?.mediaId)
+        if (currentMediaQueueIndex != null && currentMediaQueueIndex != queueManager.currentIndex) {
+            cancelGaplessPreload(removeFutureItems = true)
+            return
+        }
+        scheduleGaplessPreloadForCurrent(autoPlay = autoPlay)
+    }
+
+    private fun scheduleGaplessPreloadForCurrent(autoPlay: Boolean) {
+        val window = buildGaplessPlaybackWindow(
+            queue = queueManager.queue,
+            currentIndex = queueManager.currentIndex,
+            autoPlay = autoPlay,
+            playbackMode = modeManager.currentMode(),
+            crossfadeEnabled = cachedCrossfadeEnabled
+        )
+        scheduleGaplessPreload(window)
+    }
+
+    private fun scheduleGaplessPreload(window: GaplessPlaybackWindow?) {
+        val next = window?.next ?: run {
+            cancelGaplessPreload(removeFutureItems = true)
+            return
+        }
+        cancelGaplessPreload(removeFutureItems = false)
+        val expectedCurrentMediaId = buildPlaybackQueueMediaId(
+            track = window.current.track,
+            queueIndex = window.current.queueIndex
+        )
+        val job = serviceScope.launch {
+            val playableNext = resolveTrackForPlayback(next.track) ?: return@launch
+            if (cachedCrossfadeEnabled || modeManager.currentMode() != PlaybackMode.SEQUENTIAL) return@launch
+            if (queueManager.currentIndex != window.current.queueIndex) return@launch
+            if (exoPlayer.currentMediaItem?.mediaId != expectedCurrentMediaId) return@launch
+
+            queueManager.updateTrack(next.queueIndex, playableNext)
+            stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+            trimQueuedFuturePlaybackItems()
+            exoPlayer.addMediaSource(
+                buildPlaybackMediaSource(
+                    queueTrack = GaplessQueueTrack(
+                        queueIndex = next.queueIndex,
+                        track = playableNext
+                    )
+                )
+            )
+        }
+        gaplessPreloadJob = job
+        job.invokeOnCompletion {
+            if (gaplessPreloadJob === job) {
+                gaplessPreloadJob = null
+            }
+        }
+    }
+
+    private suspend fun resolveTrackForPlayback(track: Track): Track? {
+        val normalizedTrack = track.withNormalizedPlaybackUrl()
+        if (normalizedTrack.playableUrl.isNotBlank()) return normalizedTrack
+        return when (val result = withContext(Dispatchers.IO) {
+            trackPlaybackResolver.resolve(track, cachedQuality)
+        }) {
+            is Result.Success -> result.data.track.withNormalizedPlaybackUrl()
+            is Result.Error,
+            Result.Loading -> null
+        }
+    }
+
+    private fun buildPlaybackMediaSource(queueTrack: GaplessQueueTrack): MediaSource {
+        val playbackTrack = queueTrack.track.withNormalizedPlaybackUrl()
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(
+                buildPlaybackQueueMediaId(
+                    track = playbackTrack,
+                    queueIndex = queueTrack.queueIndex
+                )
+            )
+            .setUri(playbackTrack.playableUrl)
+            .setMediaMetadata(buildTrackMetadata(playbackTrack).build())
+            .build()
+        return playbackMediaSourceFactory.create(playbackTrack, mediaItem)
+    }
+
+    private fun handleAutoMediaItemTransition(mediaItem: MediaItem?) {
+        val targetIndex = playbackQueueIndexFromMediaId(mediaItem?.mediaId) ?: return
+        val currentTrack = queueManager.moveToIndex(targetIndex) ?: return
+        dropPlayedPlaybackItems()
+        stateStore.updateTrack(currentTrack)
+        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+        stateStore.updatePosition(0L)
+        stateStore.updateDuration(currentTrack.durationMs.coerceAtLeast(0L))
+        serviceScope.launch(Dispatchers.IO) {
+            localLibraryRepository.recordRecentPlay(currentTrack)
+        }
+        scheduleGaplessPreloadForCurrent(autoPlay = true)
+    }
+
+    private fun cancelGaplessPreload(removeFutureItems: Boolean = false) {
+        gaplessPreloadJob?.cancel()
+        gaplessPreloadJob = null
+        if (removeFutureItems) {
+            trimQueuedFuturePlaybackItems()
+        }
+    }
+
+    private fun trimQueuedFuturePlaybackItems() {
+        val fromIndex = exoPlayer.currentMediaItemIndex + 1
+        if (fromIndex in 0 until exoPlayer.mediaItemCount) {
+            exoPlayer.removeMediaItems(fromIndex, exoPlayer.mediaItemCount)
+        }
+    }
+
+    private fun dropPlayedPlaybackItems() {
+        val currentMediaItemIndex = exoPlayer.currentMediaItemIndex
+        if (currentMediaItemIndex > 0) {
+            exoPlayer.removeMediaItems(0, currentMediaItemIndex)
+        }
+    }
+
     private fun String.searchCacheKey(): String =
         trim().lowercase(Locale.ROOT)
 
@@ -677,6 +829,15 @@ class MusicPlaybackService : MediaLibraryService() {
                 }
             )
         }
+    }
+
+    private fun handleQueueRefreshRequest(request: PlaybackQueueRefreshRequest) {
+        queueManager.setQueue(request.queue, request.index)
+        stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+        if (queueManager.currentIndex >= 0) {
+            stateStore.updateTrack(queueManager.currentTrack)
+        }
+        syncGaplessPlaybackWindow(autoPlay = exoPlayer.playWhenReady)
     }
 
     private fun handleSkipToNextCommand() {
@@ -827,14 +988,19 @@ class MusicPlaybackService : MediaLibraryService() {
         startPositionMs: Long,
         transitionMode: CrossfadeTransitionMode
     ) {
+        cancelGaplessPreload()
         val playbackTrack = track.withNormalizedPlaybackUrl()
         if (playbackTrack.playableUrl.isBlank()) return
+        if (queueManager.currentIndex >= 0) {
+            queueManager.updateTrack(queueManager.currentIndex, playbackTrack)
+            stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+        }
+        stateStore.updateTrack(playbackTrack)
 
-        val mediaItem = MediaItem.Builder()
-            .setMediaId(trackMediaId(playbackTrack))
-            .setUri(playbackTrack.playableUrl)
-            .setMediaMetadata(buildTrackMetadata(playbackTrack).build())
-            .build()
+        val currentQueueTrack = GaplessQueueTrack(
+            queueIndex = queueManager.currentIndex.takeIf { it >= 0 } ?: 0,
+            track = playbackTrack
+        )
         try {
             when (transitionMode) {
                 CrossfadeTransitionMode.FADE_THROUGH -> fadePlayerVolumeTo(
@@ -851,7 +1017,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 setPlayerVolume(1f)
             }
 
-            exoPlayer.setMediaSource(playbackMediaSourceFactory.create(playbackTrack, mediaItem))
+            exoPlayer.setMediaSource(buildPlaybackMediaSource(currentQueueTrack))
             exoPlayer.prepare()
             if (startPositionMs > 0L) {
                 exoPlayer.seekTo(startPositionMs)
@@ -870,6 +1036,7 @@ class MusicPlaybackService : MediaLibraryService() {
             } else {
                 setPlayerVolume(1f)
             }
+            scheduleGaplessPreloadForCurrent(autoPlay = autoPlay)
         } catch (cancelled: CancellationException) {
             setPlayerVolume(1f)
             throw cancelled
@@ -1082,6 +1249,7 @@ class MusicPlaybackService : MediaLibraryService() {
         override fun stop() {
             super.stop()
             stopPositionUpdates()
+            cancelGaplessPreload()
             super.clearMediaItems()
             clearPlaybackFailureRecoveryState()
             queueManager.clear()
@@ -1089,6 +1257,7 @@ class MusicPlaybackService : MediaLibraryService() {
         }
 
         override fun clearMediaItems() {
+            cancelGaplessPreload()
             super.clearMediaItems()
             clearPlaybackFailureRecoveryState()
             stateStore.clearPreparedPlaybackTransport()
@@ -1117,6 +1286,9 @@ class MusicPlaybackService : MediaLibraryService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                handleAutoMediaItemTransition(mediaItem)
+            }
             stateStore.updateDuration(exoPlayer.duration.coerceAtLeast(0))
         }
 
@@ -1137,7 +1309,9 @@ class MusicPlaybackService : MediaLibraryService() {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (!playWhenReady) {
                 cancelActiveTransition()
+                return
             }
+            syncGaplessPlaybackWindow(autoPlay = true)
         }
 
         override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
@@ -1158,6 +1332,13 @@ class MusicPlaybackService : MediaLibraryService() {
         FADE_IN_ONLY,
         FADE_THROUGH
     }
+
+    private data class PlayerSettingsSnapshot(
+        val quality: String,
+        val playbackMode: PlaybackMode,
+        val crossfadeEnabled: Boolean,
+        val crossfadeDurationMs: Int
+    )
 }
 
 internal fun shouldPublishPositionFromDiscontinuity(reason: Int): Boolean =

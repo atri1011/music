@@ -9,6 +9,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 private const val LOAD_TRACK_CUSTOM_ACTION = "com.music.myapplication.media.LOAD_TRACK"
+private const val REFRESH_QUEUE_CUSTOM_ACTION = "com.music.myapplication.media.REFRESH_QUEUE"
 private const val EXTRA_REQUEST_PAYLOAD = "request_payload"
 
 private val playbackLoadJson = Json {
@@ -17,6 +18,7 @@ private val playbackLoadJson = Json {
 }
 
 internal val loadTrackSessionCommand = SessionCommand(LOAD_TRACK_CUSTOM_ACTION, Bundle.EMPTY)
+internal val refreshQueueSessionCommand = SessionCommand(REFRESH_QUEUE_CUSTOM_ACTION, Bundle.EMPTY)
 
 @Serializable
 internal data class PlaybackLoadRequest(
@@ -27,6 +29,12 @@ internal data class PlaybackLoadRequest(
     val startPositionMs: Long = 0L
 )
 
+@Serializable
+internal data class PlaybackQueueRefreshRequest(
+    val queue: List<Track>,
+    val index: Int
+)
+
 internal fun PlaybackLoadRequest.toCommandExtras(): Bundle = Bundle().apply {
     putString(EXTRA_REQUEST_PAYLOAD, playbackLoadJson.encodeToString(this@toCommandExtras))
 }
@@ -35,4 +43,14 @@ internal fun Bundle.toPlaybackLoadRequestOrNull(): PlaybackLoadRequest? =
     getString(EXTRA_REQUEST_PAYLOAD)
         ?.let { payload ->
             runCatching { playbackLoadJson.decodeFromString<PlaybackLoadRequest>(payload) }.getOrNull()
+        }
+
+internal fun PlaybackQueueRefreshRequest.toCommandExtras(): Bundle = Bundle().apply {
+    putString(EXTRA_REQUEST_PAYLOAD, playbackLoadJson.encodeToString(this@toCommandExtras))
+}
+
+internal fun Bundle.toPlaybackQueueRefreshRequestOrNull(): PlaybackQueueRefreshRequest? =
+    getString(EXTRA_REQUEST_PAYLOAD)
+        ?.let { payload ->
+            runCatching { playbackLoadJson.decodeFromString<PlaybackQueueRefreshRequest>(payload) }.getOrNull()
         }

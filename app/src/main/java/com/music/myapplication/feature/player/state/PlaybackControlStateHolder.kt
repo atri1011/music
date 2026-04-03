@@ -353,6 +353,7 @@ class PlaybackControlStateHolder @Inject constructor(
 
     fun refreshQueueState() {
         stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+        connector.refreshQueue(queueManager.queue, queueManager.currentIndex)
     }
 
     fun syncQueueState(currentTrack: Track? = playbackState.value.currentTrack, clearPreparedTrack: Boolean = false) {
@@ -361,6 +362,9 @@ class PlaybackControlStateHolder @Inject constructor(
         }
         stateStore.updateTrack(currentTrack)
         stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
+        if (!clearPreparedTrack) {
+            connector.refreshQueue(queueManager.queue, queueManager.currentIndex)
+        }
     }
 
     private suspend fun restorePlaybackSnapshotIfNeeded() {

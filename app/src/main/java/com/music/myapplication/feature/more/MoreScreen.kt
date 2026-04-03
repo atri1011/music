@@ -740,7 +740,7 @@ private fun darkModeLabel(option: DarkModeOption): String = when (option) {
 
 private fun crossfadeStatusLabel(state: MoreUiState): String = when {
     state.crossfadeEnabled -> "POC 模式，淡出/淡入各 ${crossfadeDurationLabel(state.crossfadeDurationMs)}"
-    else -> "关闭后回退普通切歌"
+    else -> "关闭时优先走顺序播放的无缝切歌"
 }
 
 private fun crossfadeDurationLabel(durationMs: Int): String {
