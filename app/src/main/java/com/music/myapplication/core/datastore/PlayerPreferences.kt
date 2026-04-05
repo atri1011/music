@@ -30,11 +30,18 @@ import javax.inject.Singleton
 enum class DarkModeOption { FOLLOW_SYSTEM, DARK, LIGHT }
 
 @Serializable
+data class PlaybackShuffleSnapshot(
+    val queueKeys: List<String> = emptyList(),
+    val order: List<Int> = emptyList()
+)
+
+@Serializable
 data class PlaybackSnapshot(
     val currentTrack: Track? = null,
     val queue: List<Track> = emptyList(),
     val currentIndex: Int = -1,
-    val positionMs: Long = 0L
+    val positionMs: Long = 0L,
+    val shuffleSession: PlaybackShuffleSnapshot? = null
 )
 
 private val Context.dataStore by preferencesDataStore("player_preferences")
@@ -253,7 +260,14 @@ class PlayerPreferences @Inject constructor(
     }
 
     suspend fun savePlaybackSnapshot(state: PlaybackState) {
-        val snapshot = state.toPlaybackSnapshot()
+        savePlaybackSnapshot(state = state, shuffleSnapshot = null)
+    }
+
+    suspend fun savePlaybackSnapshot(
+        state: PlaybackState,
+        shuffleSnapshot: PlaybackShuffleSnapshot?
+    ) {
+        val snapshot = state.toPlaybackSnapshot(shuffleSnapshot)
         context.dataStore.edit { prefs ->
             if (snapshot == null) {
                 prefs[Keys.PLAYBACK_SNAPSHOT] = ""
@@ -293,7 +307,9 @@ class PlayerPreferences @Inject constructor(
         limitMb.coerceIn(MIN_CACHE_LIMIT_MB, MAX_CACHE_LIMIT_MB)
 }
 
-private fun PlaybackState.toPlaybackSnapshot(): PlaybackSnapshot? {
+private fun PlaybackState.toPlaybackSnapshot(
+    shuffleSnapshot: PlaybackShuffleSnapshot? = null
+): PlaybackSnapshot? {
     if (currentTrack == null && queue.isEmpty()) return null
 
     val snapshotQueue = queue.ifEmpty { listOfNotNull(currentTrack) }
@@ -309,6 +325,7 @@ private fun PlaybackState.toPlaybackSnapshot(): PlaybackSnapshot? {
         currentTrack = currentTrack ?: snapshotQueue.getOrNull(snapshotIndex),
         queue = snapshotQueue,
         currentIndex = snapshotIndex,
-        positionMs = positionMs.coerceAtLeast(0L)
+        positionMs = positionMs.coerceAtLeast(0L),
+        shuffleSession = shuffleSnapshot?.takeIf { playbackMode == PlaybackMode.SHUFFLE }
     )
 }

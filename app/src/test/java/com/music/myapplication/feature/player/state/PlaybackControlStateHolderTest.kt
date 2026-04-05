@@ -26,6 +26,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -229,7 +230,7 @@ class PlaybackControlStateHolderTest {
                 advanceUntilIdle()
 
                 verify(exactly = 1) { env.connector.seekTo(9_000L) }
-                coVerify(exactly = 0) { env.preferences.savePlaybackSnapshot(any()) }
+                coVerify(exactly = 0) { env.preferences.savePlaybackSnapshot(any(), any()) }
             } finally {
                 actionScope.cancel()
                 advanceUntilIdle()
@@ -251,7 +252,8 @@ class PlaybackControlStateHolderTest {
             val actionScope = CoroutineScope(SupervisorJob() + dispatcher)
 
             try {
-                attachScope(env.holder, actionScope)
+                env.holder.bind(actionScope)
+                runCurrent()
                 val track = testTrack(playableUrl = "https://example.com/current.mp3")
                 env.stateStore.updateTrack(track)
                 env.stateStore.updateQueue(listOf(track), 0)
@@ -260,10 +262,10 @@ class PlaybackControlStateHolderTest {
                 env.stateStore.updatePlaying(true)
 
                 env.holder.stopPlayback()
-                advanceUntilIdle()
+                runCurrent()
 
                 verify(exactly = 1) { env.connector.stop() }
-                coVerify(exactly = 0) { env.preferences.savePlaybackSnapshot(any()) }
+                coVerify(exactly = 0) { env.preferences.savePlaybackSnapshot(any(), any()) }
             } finally {
                 actionScope.cancel()
                 advanceUntilIdle()
@@ -285,7 +287,8 @@ class PlaybackControlStateHolderTest {
             val actionScope = CoroutineScope(SupervisorJob() + dispatcher)
 
             try {
-                attachScope(env.holder, actionScope)
+                env.holder.bind(actionScope)
+                runCurrent()
                 val track = testTrack(playableUrl = "https://example.com/current.mp3")
                 env.stateStore.updateTrack(track)
                 env.stateStore.updateQueue(listOf(track), 0)
@@ -295,7 +298,8 @@ class PlaybackControlStateHolderTest {
                 every { env.connector.stop() } answers { env.stateStore.reset() }
 
                 env.holder.stopPlayback()
-                advanceUntilIdle()
+                advanceTimeBy(2_000L)
+                runCurrent()
 
                 coVerify(exactly = 1) {
                     env.preferences.savePlaybackSnapshot(
@@ -306,7 +310,73 @@ class PlaybackControlStateHolderTest {
                                 it.positionMs == 0L &&
                                 it.durationMs == 0L &&
                                 !it.isPlaying
-                        }
+                        },
+                        null
+                    )
+                }
+            } finally {
+                actionScope.cancel()
+                advanceUntilIdle()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `pausePlayback persists recoverable shuffle session alongside playback snapshot`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val queueManager = QueueManager().apply {
+                setQueue(
+                    listOf(
+                        testTrack(id = "track-1"),
+                        testTrack(id = "track-2"),
+                        testTrack(id = "track-3")
+                    ),
+                    startIndex = 0
+                )
+            }
+            val stateStore = PlaybackStateStore().also {
+                it.updateQueue(queueManager.queue, queueManager.currentIndex)
+                it.updateTrack(queueManager.currentTrack)
+            }
+            val modeManager = PlaybackModeManager(
+                queueManager = queueManager,
+                stateStore = stateStore,
+                preferences = mockk(relaxed = true)
+            ).apply {
+                setMode(PlaybackMode.SHUFFLE)
+            }
+            val expectedShuffleSession = requireNotNull(modeManager.buildPersistableShuffleSnapshot())
+            val env = createEnvironment(
+                dispatcher = dispatcher,
+                permissionResults = listOf(true),
+                modeManager = modeManager,
+                queueManager = queueManager,
+                stateStore = stateStore
+            )
+            val actionScope = CoroutineScope(SupervisorJob() + dispatcher)
+
+            try {
+                attachScope(env.holder, actionScope)
+                attachPlaybackState(env.holder, env.stateStore.state)
+                env.stateStore.updatePlaying(true)
+
+                env.holder.pausePlayback()
+                advanceUntilIdle()
+
+                verify(exactly = 1) { env.connector.pause() }
+                coVerify(exactly = 1) {
+                    env.preferences.savePlaybackSnapshot(
+                        match {
+                            it.playbackMode == PlaybackMode.SHUFFLE &&
+                                it.currentTrack == queueManager.currentTrack &&
+                                it.queue == queueManager.queue &&
+                                it.currentIndex == queueManager.currentIndex
+                        },
+                        expectedShuffleSession
                     )
                 }
             } finally {
@@ -367,15 +437,22 @@ class PlaybackControlStateHolderTest {
         resolvedPlayback: ResolvedTrackPlayback = ResolvedTrackPlayback(
             testTrack(playableUrl = "https://example.com/original.mp3", quality = "128k")
         ),
-        savedSnapshot: PlaybackSnapshot? = null
+        savedSnapshot: PlaybackSnapshot? = null,
+        modeManager: PlaybackModeManager? = null,
+        queueManager: QueueManager? = null,
+        stateStore: PlaybackStateStore? = null
     ): TestEnvironment {
         val downloadManager = mockk<DownloadManager>()
         val preferences = mockk<PlayerPreferences>()
         val resolver = mockk<TrackPlaybackResolver>()
         val dispatchers = mockk<DispatchersProvider>()
-        val stateStore = PlaybackStateStore()
         val connector = mockk<MediaControllerConnector>(relaxed = true)
-        val queueManager = QueueManager()
+        val holderStateStore = stateStore ?: PlaybackStateStore()
+        val holderQueueManager = queueManager ?: QueueManager()
+        val holderModeManager = modeManager ?: mockk(relaxed = true)
+        if (modeManager == null) {
+            every { holderModeManager.buildPersistableShuffleSnapshot() } returns null
+        }
 
         coEvery { downloadManager.shouldWaitForUnmeteredNetwork() } returns false
         var permissionCallCount = 0
@@ -389,17 +466,17 @@ class PlaybackControlStateHolderTest {
         every { preferences.quality } returns flowOf("128k")
         every { preferences.playbackSpeed } returns flowOf(1f)
         every { preferences.playbackSnapshot } returns flowOf(savedSnapshot)
-        coEvery { preferences.savePlaybackSnapshot(any()) } returns Unit
+        coEvery { preferences.savePlaybackSnapshot(any(), any()) } returns Unit
 
         every { dispatchers.main } returns dispatcher
         every { dispatchers.io } returns dispatcher
         every { dispatchers.default } returns dispatcher
 
         val holder = PlaybackControlStateHolder(
-            stateStore = stateStore,
+            stateStore = holderStateStore,
             connector = connector,
-            modeManager = mockk<PlaybackModeManager>(relaxed = true),
-            queueManager = queueManager,
+            modeManager = holderModeManager,
+            queueManager = holderQueueManager,
             localRepo = mockk<LocalLibraryRepository>(relaxed = true),
             preferences = preferences,
             resolver = resolver,
@@ -413,8 +490,8 @@ class PlaybackControlStateHolderTest {
             resolver = resolver,
             preferences = preferences,
             connector = connector,
-            queueManager = queueManager,
-            stateStore = stateStore
+            queueManager = holderQueueManager,
+            stateStore = holderStateStore
         )
     }
 
@@ -422,6 +499,12 @@ class PlaybackControlStateHolderTest {
         val scopeField = PlaybackControlStateHolder::class.java.getDeclaredField("scope")
         scopeField.isAccessible = true
         scopeField.set(holder, scope)
+    }
+
+    private fun attachPlaybackState(holder: PlaybackControlStateHolder, playbackState: Any) {
+        val playbackStateField = PlaybackControlStateHolder::class.java.getDeclaredField("playbackState")
+        playbackStateField.isAccessible = true
+        playbackStateField.set(holder, playbackState)
     }
 
     private fun testTrack(

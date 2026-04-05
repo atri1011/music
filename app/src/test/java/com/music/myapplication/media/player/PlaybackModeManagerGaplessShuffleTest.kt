@@ -53,6 +53,51 @@ class PlaybackModeManagerGaplessShuffleTest {
         assertEquals(setOf(1, 2), setOf(firstPreview, nextPreview))
     }
 
+    @Test
+    fun `persisted shuffle session restores cursor and pending preview after recreation`() {
+        val queue = listOf(
+            testTrack(id = "1", title = "A"),
+            testTrack(id = "2", title = "B"),
+            testTrack(id = "3", title = "C"),
+            testTrack(id = "4", title = "D")
+        )
+        val originalQueueManager = QueueManager().apply { setQueue(queue, startIndex = 0) }
+        val originalStateStore = PlaybackStateStore().also {
+            it.updateQueue(originalQueueManager.queue, originalQueueManager.currentIndex)
+            it.updateTrack(originalQueueManager.currentTrack)
+        }
+        val originalModeManager = PlaybackModeManager(
+            queueManager = originalQueueManager,
+            stateStore = originalStateStore,
+            preferences = mockk<PlayerPreferences>(relaxed = true)
+        ).apply {
+            setMode(PlaybackMode.SHUFFLE)
+        }
+
+        val firstPreview = requireNotNull(originalModeManager.peekNextQueueIndexForGapless())
+        originalModeManager.commitAutoTransitionToQueueIndex(firstPreview)
+        originalQueueManager.moveToIndex(firstPreview)
+        val secondPreview = requireNotNull(originalModeManager.peekNextQueueIndexForGapless())
+        val persistedSession = requireNotNull(originalModeManager.buildPersistableShuffleSnapshot())
+
+        val recreatedQueueManager = QueueManager().apply { setQueue(queue, startIndex = firstPreview) }
+        val recreatedStateStore = PlaybackStateStore().also {
+            it.updateQueue(recreatedQueueManager.queue, recreatedQueueManager.currentIndex)
+            it.updateTrack(recreatedQueueManager.currentTrack)
+        }
+        val recreatedModeManager = PlaybackModeManager(
+            queueManager = recreatedQueueManager,
+            stateStore = recreatedStateStore,
+            preferences = mockk<PlayerPreferences>(relaxed = true)
+        )
+
+        recreatedModeManager.restorePersistedShuffleSnapshot(persistedSession)
+        recreatedModeManager.setMode(PlaybackMode.SHUFFLE)
+
+        assertEquals(persistedSession, recreatedModeManager.buildPersistableShuffleSnapshot())
+        assertEquals(secondPreview, recreatedModeManager.peekNextQueueIndexForGapless())
+    }
+
     private fun testTrack(id: String, title: String) = Track(
         id = id,
         platform = Platform.QQ,

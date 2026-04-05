@@ -399,6 +399,7 @@ class MusicPlaybackService : MediaLibraryService() {
         }
         val restorePlan = buildPlaybackRestorePlan(snapshot) ?: return null
         applyPlaybackRestorePlan(restorePlan, queueManager, stateStore)
+        modeManager.restorePersistedShuffleSnapshot(snapshot?.shuffleSession)
         return restorePlan
     }
 

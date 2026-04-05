@@ -1,11 +1,10 @@
 package com.music.myapplication.media.player
 
+import com.music.myapplication.core.datastore.PlaybackShuffleSnapshot
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.media.state.PlaybackStateStore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,16 +17,18 @@ class PlaybackModeManager @Inject constructor(
 
     private var mode: PlaybackMode = PlaybackMode.SEQUENTIAL
     private var shuffleSession: ShuffleSession? = null
+    private var pendingShuffleRestoreSnapshot: PlaybackShuffleSnapshot? = null
 
     fun setMode(newMode: PlaybackMode) {
         mode = newMode
         stateStore.updatePlaybackMode(mode)
         shuffleSession = if (mode == PlaybackMode.SHUFFLE) {
-            buildShuffleSession(
+            restoreOrBuildShuffleSession(
                 queueKeys = currentQueueKeys(),
                 currentIndex = queueManager.currentIndex
             )
         } else {
+            pendingShuffleRestoreSnapshot = null
             null
         }
     }
@@ -49,6 +50,25 @@ class PlaybackModeManager @Inject constructor(
     }
 
     fun currentMode(): PlaybackMode = mode
+
+    internal fun buildPersistableShuffleSnapshot(): PlaybackShuffleSnapshot? {
+        if (mode != PlaybackMode.SHUFFLE) return null
+        val session = ensureShuffleSession() ?: return null
+        return PlaybackShuffleSnapshot(
+            queueKeys = session.queueKeys,
+            order = session.order
+        )
+    }
+
+    internal fun restorePersistedShuffleSnapshot(snapshot: PlaybackShuffleSnapshot?) {
+        pendingShuffleRestoreSnapshot = snapshot
+        if (mode == PlaybackMode.SHUFFLE) {
+            shuffleSession = restoreOrBuildShuffleSession(
+                queueKeys = currentQueueKeys(),
+                currentIndex = queueManager.currentIndex
+            )
+        }
+    }
 
     internal fun peekNextQueueIndexForGapless(): Int? {
         if (mode != PlaybackMode.SHUFFLE) return null
@@ -127,14 +147,14 @@ class PlaybackModeManager @Inject constructor(
         val recoveredSession = when {
             mode != PlaybackMode.SHUFFLE -> null
             queueKeys.isEmpty() || currentIndex !in queueKeys.indices -> null
-            existing == null -> buildShuffleSession(queueKeys, currentIndex)
-            existing.queueKeys != queueKeys -> buildShuffleSession(queueKeys, currentIndex)
-            existing.order.size != queueKeys.size -> buildShuffleSession(queueKeys, currentIndex)
-            existing.order.any { it !in queueKeys.indices } -> buildShuffleSession(queueKeys, currentIndex)
+            existing == null -> restoreOrBuildShuffleSession(queueKeys, currentIndex)
+            existing.queueKeys != queueKeys -> restoreOrBuildShuffleSession(queueKeys, currentIndex)
+            existing.order.size != queueKeys.size -> restoreOrBuildShuffleSession(queueKeys, currentIndex)
+            existing.order.any { it !in queueKeys.indices } -> restoreOrBuildShuffleSession(queueKeys, currentIndex)
             else -> {
                 val recoveredPosition = existing.order.indexOf(currentIndex)
                 if (recoveredPosition < 0) {
-                    buildShuffleSession(queueKeys, currentIndex)
+                    restoreOrBuildShuffleSession(queueKeys, currentIndex)
                 } else {
                     existing.copy(
                         currentPosition = recoveredPosition,
@@ -149,6 +169,27 @@ class PlaybackModeManager @Inject constructor(
         return recoveredSession
     }
 
+    private fun restoreOrBuildShuffleSession(
+        queueKeys: List<String>,
+        currentIndex: Int
+    ): ShuffleSession? {
+        pendingShuffleRestoreSnapshot?.let { snapshot ->
+            buildShuffleSession(
+                queueKeys = queueKeys,
+                currentIndex = currentIndex,
+                snapshot = snapshot
+            )?.also {
+                pendingShuffleRestoreSnapshot = null
+                return it
+            }
+            if (queueKeys.isEmpty() || currentIndex !in queueKeys.indices) {
+                return null
+            }
+            pendingShuffleRestoreSnapshot = null
+        }
+        return buildShuffleSession(queueKeys, currentIndex)
+    }
+
     private fun buildShuffleSession(queueKeys: List<String>, currentIndex: Int): ShuffleSession? {
         if (queueKeys.isEmpty() || currentIndex !in queueKeys.indices) return null
         val remainingOrder = queueKeys.indices
@@ -158,6 +199,26 @@ class PlaybackModeManager @Inject constructor(
             queueKeys = queueKeys,
             order = listOf(currentIndex) + remainingOrder,
             currentPosition = 0,
+            pendingNextIndex = null
+        )
+    }
+
+    private fun buildShuffleSession(
+        queueKeys: List<String>,
+        currentIndex: Int,
+        snapshot: PlaybackShuffleSnapshot
+    ): ShuffleSession? {
+        if (queueKeys.isEmpty() || currentIndex !in queueKeys.indices) return null
+        if (snapshot.queueKeys != queueKeys) return null
+        if (snapshot.order.size != queueKeys.size) return null
+        if (snapshot.order.distinct().size != queueKeys.size) return null
+        if (snapshot.order.any { it !in queueKeys.indices }) return null
+        val restoredPosition = snapshot.order.indexOf(currentIndex)
+        if (restoredPosition < 0) return null
+        return ShuffleSession(
+            queueKeys = queueKeys,
+            order = snapshot.order,
+            currentPosition = restoredPosition,
             pendingNextIndex = null
         )
     }

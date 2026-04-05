@@ -133,7 +133,7 @@ class PlaybackControlStateHolder @Inject constructor(
                 .sample(2_000L)
                 .collect { state ->
                     withContext(dispatchers.io) {
-                        preferences.savePlaybackSnapshot(state)
+                        savePlaybackSnapshot(state)
                     }
                 }
         }
@@ -163,7 +163,7 @@ class PlaybackControlStateHolder @Inject constructor(
             connector.playTrack(playable, queue, index)
             withContext(dispatchers.io) {
                 localRepo.recordRecentPlay(playable)
-                preferences.savePlaybackSnapshot(stateStore.state.value)
+                savePlaybackSnapshot()
             }
         }
     }
@@ -185,7 +185,7 @@ class PlaybackControlStateHolder @Inject constructor(
             if (autoPlay) {
                 withContext(dispatchers.io) {
                     localRepo.recordRecentPlay(playable, positionMs = startPositionMs)
-                    preferences.savePlaybackSnapshot(stateStore.state.value)
+                    savePlaybackSnapshot()
                 }
             }
         }
@@ -377,6 +377,7 @@ class PlaybackControlStateHolder @Inject constructor(
         }
         val restorePlan = buildPlaybackRestorePlan(snapshot) ?: return
         applyPlaybackRestorePlan(restorePlan, queueManager, stateStore)
+        modeManager.restorePersistedShuffleSnapshot(snapshot?.shuffleSession)
     }
 
     private fun buildCurrentPlaybackRestorePlan() = buildPlaybackRestorePlan(
@@ -473,9 +474,16 @@ class PlaybackControlStateHolder @Inject constructor(
     private fun persistPlaybackSnapshot() {
         scope.launch {
             withContext(dispatchers.io) {
-                preferences.savePlaybackSnapshot(stateStore.state.value)
+                savePlaybackSnapshot()
             }
         }
+    }
+
+    private suspend fun savePlaybackSnapshot(state: PlaybackState = stateStore.state.value) {
+        preferences.savePlaybackSnapshot(
+            state = state,
+            shuffleSnapshot = modeManager.buildPersistableShuffleSnapshot()
+        )
     }
 }
 

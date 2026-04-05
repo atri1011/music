@@ -4,6 +4,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
+import com.music.myapplication.core.datastore.PlaybackSnapshot
 import com.music.myapplication.core.datastore.EqualizerPreferences
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.Platform
@@ -24,6 +25,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -157,6 +159,67 @@ class MusicPlaybackServiceGaplessTest {
         )
         verify { harness.exoPlayer.removeMediaItems(0, 1) }
         verify(exactly = 2) { harness.exoPlayer.addMediaSource(any()) }
+    }
+
+    @Test
+    fun `service snapshot restore preserves shuffle cursor for later gapless rebuild`() = runTest {
+        val queue = listOf(
+            testTrack(id = "1", title = "A"),
+            testTrack(id = "2", title = "B"),
+            testTrack(id = "3", title = "C"),
+            testTrack(id = "4", title = "D")
+        )
+        val seedQueueManager = QueueManager().apply { setQueue(queue, startIndex = 0) }
+        val seedStateStore = PlaybackStateStore().also {
+            it.updateQueue(seedQueueManager.queue, seedQueueManager.currentIndex)
+            it.updateTrack(seedQueueManager.currentTrack)
+        }
+        val seedModeManager = PlaybackModeManager(
+            queueManager = seedQueueManager,
+            stateStore = seedStateStore,
+            preferences = mockk<PlayerPreferences>(relaxed = true)
+        ).apply {
+            setMode(PlaybackMode.SHUFFLE)
+        }
+        val firstPreview = requireNotNull(seedModeManager.peekNextQueueIndexForGapless())
+        seedModeManager.commitAutoTransitionToQueueIndex(firstPreview)
+        seedQueueManager.moveToIndex(firstPreview)
+        val persistedSession = requireNotNull(seedModeManager.buildPersistableShuffleSnapshot())
+
+        val snapshot = PlaybackSnapshot(
+            currentTrack = queue[firstPreview],
+            queue = queue,
+            currentIndex = firstPreview,
+            positionMs = 12_000L,
+            shuffleSession = persistedSession
+        )
+        val preferences = mockk<PlayerPreferences>()
+        every { preferences.playbackSnapshot } returns flowOf(snapshot)
+
+        val service = MusicPlaybackService()
+        val queueManager = QueueManager()
+        val stateStore = PlaybackStateStore()
+        val modeManager = PlaybackModeManager(
+            queueManager = queueManager,
+            stateStore = stateStore,
+            preferences = preferences
+        )
+        service.injectField("queueManager", queueManager)
+        service.injectField("stateStore", stateStore)
+        service.injectField("modeManager", modeManager)
+        service.injectField("playerPreferences", preferences)
+
+        invokePrivate(
+            service = service,
+            methodName = "restorePlaybackSnapshotStateIfNeeded",
+            parameterTypes = emptyArray(),
+            args = emptyArray()
+        )
+        modeManager.setMode(PlaybackMode.SHUFFLE)
+
+        assertEquals(queue, queueManager.queue)
+        assertEquals(firstPreview, queueManager.currentIndex)
+        assertEquals(persistedSession, modeManager.buildPersistableShuffleSnapshot())
     }
 
     private fun createHarness(
