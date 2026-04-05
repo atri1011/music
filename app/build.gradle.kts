@@ -44,7 +44,7 @@ android {
         buildConfigField("String", "TUNEHUB_API_KEY", "\"$tuneHubApiKey\"")
         buildConfigField("String", "APP_UPDATE_REPO", "\"$appUpdateRepo\"")
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.music.myapplication.HiltTestRunner"
     }
 
     signingConfigs {
@@ -153,6 +153,8 @@ dependencies {
     testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
     androidTestImplementation(libs.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
