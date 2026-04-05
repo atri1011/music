@@ -31,6 +31,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -115,6 +116,44 @@ class MusicPlaybackServiceGaplessTest {
                 buildPlaybackQueueMediaId(queue[0], queueIndex = 0)
             ),
             harness.capturedMediaIds
+        )
+        verify { harness.exoPlayer.removeMediaItems(0, 1) }
+        verify(exactly = 2) { harness.exoPlayer.addMediaSource(any()) }
+    }
+
+    @Test
+    fun `shuffle auto transition consumes the preloaded cursor and continues preloading forward`() = runTest {
+        val queue = listOf(
+            testTrack(id = "1", title = "A"),
+            testTrack(id = "2", title = "B"),
+            testTrack(id = "3", title = "C")
+        )
+        val harness = createHarness(queue = queue, startIndex = 0, playbackMode = PlaybackMode.SHUFFLE)
+
+        harness.invokeScheduleGaplessPreloadForCurrent(autoPlay = true)
+        advanceUntilIdle()
+
+        val firstPreloadedMediaId = requireNotNull(harness.capturedMediaIds.firstOrNull())
+        val preloadedIndex = requireNotNull(playbackQueueIndexFromMediaId(firstPreloadedMediaId))
+
+        harness.currentMediaItemIndex = 1
+        val transitionedMediaItem = MediaItem.Builder()
+            .setMediaId(firstPreloadedMediaId)
+            .build()
+        harness.currentMediaItem = transitionedMediaItem
+
+        harness.invokeHandleAutoMediaItemTransition(transitionedMediaItem)
+        advanceUntilIdle()
+
+        val expectedFollowUpIndex = queue.indices
+            .first { index -> index != 0 && index != preloadedIndex }
+
+        assertEquals(preloadedIndex, harness.queueManager.currentIndex)
+        assertEquals(queue[preloadedIndex], harness.stateStore.state.value.currentTrack)
+        assertEquals(2, harness.capturedMediaIds.size)
+        assertEquals(
+            expectedFollowUpIndex,
+            playbackQueueIndexFromMediaId(harness.capturedMediaIds.last())
         )
         verify { harness.exoPlayer.removeMediaItems(0, 1) }
         verify(exactly = 2) { harness.exoPlayer.addMediaSource(any()) }

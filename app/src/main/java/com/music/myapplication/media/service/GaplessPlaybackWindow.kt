@@ -20,7 +20,8 @@ internal fun buildGaplessPlaybackWindow(
     currentIndex: Int,
     autoPlay: Boolean,
     playbackMode: PlaybackMode,
-    crossfadeEnabled: Boolean
+    crossfadeEnabled: Boolean,
+    shuffleNextQueueIndex: Int? = null
 ): GaplessPlaybackWindow? {
     val currentTrack = queue.getOrNull(currentIndex) ?: return null
     val current = GaplessQueueTrack(queueIndex = currentIndex, track = currentTrack)
@@ -32,6 +33,13 @@ internal fun buildGaplessPlaybackWindow(
             }
         }
         playbackMode == PlaybackMode.REPEAT_ONE -> current
+        playbackMode == PlaybackMode.SHUFFLE -> {
+            shuffleNextQueueIndex
+                ?.takeIf { it in queue.indices }
+                ?.let { queueIndex ->
+                    GaplessQueueTrack(queueIndex = queueIndex, track = queue[queueIndex])
+                }
+        }
         else -> null
     }
     return GaplessPlaybackWindow(current = current, next = next)
@@ -58,6 +66,6 @@ private fun shouldPreloadGaplessTrack(
     !crossfadeEnabled &&
     when (playbackMode) {
         PlaybackMode.SEQUENTIAL,
-        PlaybackMode.REPEAT_ONE -> true
-        PlaybackMode.SHUFFLE -> false
+        PlaybackMode.REPEAT_ONE,
+        PlaybackMode.SHUFFLE -> true
     }

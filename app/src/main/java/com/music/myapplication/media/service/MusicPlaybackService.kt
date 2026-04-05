@@ -690,13 +690,7 @@ class MusicPlaybackService : MediaLibraryService() {
     }
 
     private fun scheduleGaplessPreloadForCurrent(autoPlay: Boolean) {
-        val window = buildGaplessPlaybackWindow(
-            queue = queueManager.queue,
-            currentIndex = queueManager.currentIndex,
-            autoPlay = autoPlay,
-            playbackMode = modeManager.currentMode(),
-            crossfadeEnabled = cachedCrossfadeEnabled
-        )
+        val window = buildGaplessPlaybackWindowForCurrent(autoPlay = autoPlay)
         scheduleGaplessPreload(window)
     }
 
@@ -712,13 +706,7 @@ class MusicPlaybackService : MediaLibraryService() {
         )
         val job = serviceScope.launch {
             val playableNext = resolveTrackForPlayback(next.track) ?: return@launch
-            val refreshedWindow = buildGaplessPlaybackWindow(
-                queue = queueManager.queue,
-                currentIndex = queueManager.currentIndex,
-                autoPlay = true,
-                playbackMode = modeManager.currentMode(),
-                crossfadeEnabled = cachedCrossfadeEnabled
-            )
+            val refreshedWindow = buildGaplessPlaybackWindowForCurrent(autoPlay = true)
             if (cachedCrossfadeEnabled) return@launch
             if (refreshedWindow?.current?.queueIndex != window.current.queueIndex) return@launch
             if (refreshedWindow.next?.queueIndex != next.queueIndex) return@launch
@@ -774,6 +762,7 @@ class MusicPlaybackService : MediaLibraryService() {
 
     private fun handleAutoMediaItemTransition(mediaItem: MediaItem?) {
         val targetIndex = playbackQueueIndexFromMediaId(mediaItem?.mediaId) ?: return
+        modeManager.commitAutoTransitionToQueueIndex(targetIndex)
         val currentTrack = queueManager.moveToIndex(targetIndex) ?: return
         dropPlayedPlaybackItems()
         stateStore.updateTrack(currentTrack)
@@ -793,6 +782,16 @@ class MusicPlaybackService : MediaLibraryService() {
             trimQueuedFuturePlaybackItems()
         }
     }
+
+    private fun buildGaplessPlaybackWindowForCurrent(autoPlay: Boolean): GaplessPlaybackWindow? =
+        buildGaplessPlaybackWindow(
+            queue = queueManager.queue,
+            currentIndex = queueManager.currentIndex,
+            autoPlay = autoPlay,
+            playbackMode = modeManager.currentMode(),
+            crossfadeEnabled = cachedCrossfadeEnabled,
+            shuffleNextQueueIndex = modeManager.peekNextQueueIndexForGapless()
+        )
 
     private fun trimQueuedFuturePlaybackItems() {
         val fromIndex = exoPlayer.currentMediaItemIndex + 1

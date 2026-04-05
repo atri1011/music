@@ -127,6 +127,29 @@ class GaplessPlaybackWindowTest {
     }
 
     @Test
+    fun `shuffle mode preloads the session supplied queue item`() {
+        val queue = listOf(
+            testTrack(id = "1", title = "A"),
+            testTrack(id = "2", title = "B"),
+            testTrack(id = "3", title = "C")
+        )
+
+        val window = buildGaplessPlaybackWindow(
+            queue = queue,
+            currentIndex = 0,
+            autoPlay = true,
+            playbackMode = PlaybackMode.SHUFFLE,
+            crossfadeEnabled = false,
+            shuffleNextQueueIndex = 2
+        )
+
+        val actual = requireNotNull(window)
+        assertNotNull(actual.next)
+        assertEquals(2, actual.next?.queueIndex)
+        assertEquals(queue[2], actual.next?.track)
+    }
+
+    @Test
     fun `playback queue media id round trips queue index`() {
         val mediaId = buildPlaybackQueueMediaId(
             track = testTrack(id = "42", title = "Round Trip"),
