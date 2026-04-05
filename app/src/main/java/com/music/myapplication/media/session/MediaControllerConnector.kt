@@ -15,24 +15,51 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+internal interface MediaControllerConnectionFactory {
+    fun create(context: Context): ListenableFuture<MediaController>
+
+    fun release(future: ListenableFuture<MediaController>) {
+        MediaController.releaseFuture(future)
+    }
+}
+
+private object DefaultMediaControllerConnectionFactory : MediaControllerConnectionFactory {
+    override fun create(context: Context): ListenableFuture<MediaController> {
+        val sessionToken = SessionToken(context, ComponentName(context, MusicPlaybackService::class.java))
+        return MediaController.Builder(context, sessionToken).buildAsync()
+    }
+}
+
 @Singleton
-class MediaControllerConnector @Inject constructor(
-    @ApplicationContext private val context: Context,
+class MediaControllerConnector internal constructor(
+    private val context: Context,
     private val stateStore: PlaybackStateStore,
-    private val queueManager: QueueManager
+    private val queueManager: QueueManager,
+    private val controllerConnectionFactory: MediaControllerConnectionFactory
 ) {
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        stateStore: PlaybackStateStore,
+        queueManager: QueueManager
+    ) : this(
+        context = context,
+        stateStore = stateStore,
+        queueManager = queueManager,
+        controllerConnectionFactory = DefaultMediaControllerConnectionFactory
+    )
+
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
     fun connect() {
         if (controllerFuture != null) return
-        val sessionToken = SessionToken(context, ComponentName(context, MusicPlaybackService::class.java))
-        controllerFuture = MediaController.Builder(context, sessionToken).buildAsync().also { future ->
+        controllerFuture = controllerConnectionFactory.create(context).also { future ->
             future.addListener({ /* connected */ }, MoreExecutors.directExecutor())
         }
     }
 
     fun disconnect() {
-        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controllerFuture?.let(controllerConnectionFactory::release)
         controllerFuture = null
     }
 
