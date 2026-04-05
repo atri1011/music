@@ -67,6 +67,10 @@ internal class AndroidTestMediaControllerBindingHarness(
         return future.get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
     }
 
+    fun play() {
+        withController { play() }
+    }
+
     fun <T> withController(action: MediaController.() -> T): T {
         val controller = connect()
         return runOnControllerThread { controller.action() }
