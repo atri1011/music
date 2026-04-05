@@ -86,7 +86,29 @@ class GaplessPlaybackWindowTest {
     }
 
     @Test
-    fun `non sequential mode does not preload next item`() {
+    fun `repeat one autoplay preloads the current queue item again`() {
+        val queue = listOf(
+            testTrack(id = "1", title = "Loop")
+        )
+
+        val window = buildGaplessPlaybackWindow(
+            queue = queue,
+            currentIndex = 0,
+            autoPlay = true,
+            playbackMode = PlaybackMode.REPEAT_ONE,
+            crossfadeEnabled = false
+        )
+
+        val actual = requireNotNull(window)
+        assertEquals(0, actual.current.queueIndex)
+        assertEquals(queue[0], actual.current.track)
+        assertNotNull(actual.next)
+        assertEquals(0, actual.next?.queueIndex)
+        assertEquals(queue[0], actual.next?.track)
+    }
+
+    @Test
+    fun `shuffle mode does not preload next item`() {
         val queue = listOf(
             testTrack(id = "1", title = "A"),
             testTrack(id = "2", title = "B")

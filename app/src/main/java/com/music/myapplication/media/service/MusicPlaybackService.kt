@@ -712,7 +712,16 @@ class MusicPlaybackService : MediaLibraryService() {
         )
         val job = serviceScope.launch {
             val playableNext = resolveTrackForPlayback(next.track) ?: return@launch
-            if (cachedCrossfadeEnabled || modeManager.currentMode() != PlaybackMode.SEQUENTIAL) return@launch
+            val refreshedWindow = buildGaplessPlaybackWindow(
+                queue = queueManager.queue,
+                currentIndex = queueManager.currentIndex,
+                autoPlay = true,
+                playbackMode = modeManager.currentMode(),
+                crossfadeEnabled = cachedCrossfadeEnabled
+            )
+            if (cachedCrossfadeEnabled) return@launch
+            if (refreshedWindow?.current?.queueIndex != window.current.queueIndex) return@launch
+            if (refreshedWindow.next?.queueIndex != next.queueIndex) return@launch
             if (queueManager.currentIndex != window.current.queueIndex) return@launch
             if (exoPlayer.currentMediaItem?.mediaId != expectedCurrentMediaId) return@launch
 

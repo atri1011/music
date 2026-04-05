@@ -24,12 +24,15 @@ internal fun buildGaplessPlaybackWindow(
 ): GaplessPlaybackWindow? {
     val currentTrack = queue.getOrNull(currentIndex) ?: return null
     val current = GaplessQueueTrack(queueIndex = currentIndex, track = currentTrack)
-    val next = if (shouldPreloadNextSequentialTrack(autoPlay, playbackMode, crossfadeEnabled)) {
-        queue.getOrNull(currentIndex + 1)?.let { track ->
-            GaplessQueueTrack(queueIndex = currentIndex + 1, track = track)
+    val next = when {
+        !shouldPreloadGaplessTrack(autoPlay, playbackMode, crossfadeEnabled) -> null
+        playbackMode == PlaybackMode.SEQUENTIAL -> {
+            queue.getOrNull(currentIndex + 1)?.let { track ->
+                GaplessQueueTrack(queueIndex = currentIndex + 1, track = track)
+            }
         }
-    } else {
-        null
+        playbackMode == PlaybackMode.REPEAT_ONE -> current
+        else -> null
     }
     return GaplessPlaybackWindow(current = current, next = next)
 }
@@ -47,8 +50,14 @@ internal fun playbackQueueIndexFromMediaId(mediaId: String?): Int? {
         ?.takeIf { it >= 0 }
 }
 
-private fun shouldPreloadNextSequentialTrack(
+private fun shouldPreloadGaplessTrack(
     autoPlay: Boolean,
     playbackMode: PlaybackMode,
     crossfadeEnabled: Boolean
-): Boolean = autoPlay && playbackMode == PlaybackMode.SEQUENTIAL && !crossfadeEnabled
+): Boolean = autoPlay &&
+    !crossfadeEnabled &&
+    when (playbackMode) {
+        PlaybackMode.SEQUENTIAL,
+        PlaybackMode.REPEAT_ONE -> true
+        PlaybackMode.SHUFFLE -> false
+    }
