@@ -2,6 +2,7 @@ package com.music.myapplication.media.service
 
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
 import com.music.myapplication.core.common.Result
@@ -22,6 +23,7 @@ import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.state.PlaybackStateStore
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -31,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -280,6 +283,58 @@ class MusicPlaybackServiceGaplessTest {
         )
     }
 
+    @Test
+    fun `session player play restores persisted shuffle snapshot and preloads next gapless item`() = runTest {
+        val queue = listOf(
+            testTrack(id = "1", title = "A"),
+            testTrack(id = "2", title = "B"),
+            testTrack(id = "3", title = "C"),
+            testTrack(id = "4", title = "D")
+        )
+        val persistedSession = PlaybackShuffleSnapshot(
+            queueKeys = queue.mapIndexed { index, track -> "$index:${track.platform.id}:${track.id}" },
+            order = listOf(2, 0, 3, 1)
+        )
+        val snapshot = PlaybackSnapshot(
+            currentTrack = queue[2],
+            queue = queue,
+            currentIndex = 2,
+            positionMs = 12_000L,
+            shuffleSession = persistedSession
+        )
+        val preferences = mockk<PlayerPreferences>()
+        every { preferences.playbackSnapshot } returns flowOf(snapshot)
+        every { preferences.playbackMode } returns flowOf(PlaybackMode.SHUFFLE)
+        val harness = createHarness(
+            queue = queue,
+            startIndex = 2,
+            playbackMode = PlaybackMode.SEQUENTIAL,
+            playerPreferences = preferences,
+            startPreparedPlayback = false,
+            seedPlaybackState = false
+        )
+
+        harness.invokeSessionPlayerPlay()
+        mainDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(2, harness.queueManager.currentIndex)
+        assertEquals(queue[2], harness.stateStore.state.value.currentTrack)
+        assertEquals(12_000L, harness.stateStore.state.value.positionMs)
+        assertEquals(
+            listOf(
+                buildPlaybackQueueMediaId(queue[2], queueIndex = 2),
+                buildPlaybackQueueMediaId(queue[0], queueIndex = 0)
+            ),
+            harness.capturedMediaIds
+        )
+        verify(exactly = 1) { harness.exoPlayer.play() }
+        verify(exactly = 1) { harness.exoPlayer.prepare() }
+        verify(exactly = 1) { harness.exoPlayer.seekTo(12_000L) }
+        coVerify(exactly = 1) {
+            harness.localLibraryRepository.recordRecentPlay(queue[2], positionMs = 12_000L)
+        }
+    }
+
     private fun createHarness(
         queue: List<Track>,
         startIndex: Int,
@@ -377,10 +432,12 @@ class MusicPlaybackServiceGaplessTest {
         service.injectField("trackPlaybackResolver", trackPlaybackResolver)
         service.injectField("localLibraryRepository", localLibraryRepository)
         service.injectField("playbackMediaSourceFactory", playbackMediaSourceFactory)
+        service.backgroundDispatcher = UnconfinedTestDispatcher(mainDispatcher.scheduler)
 
         return ServiceHarness(
             service = service,
             exoPlayer = exoPlayer,
+            localLibraryRepository = localLibraryRepository,
             queueManager = queueManager,
             stateStore = stateStore,
             capturedMediaIds = capturedMediaIds,
@@ -405,6 +462,7 @@ class MusicPlaybackServiceGaplessTest {
     private data class ServiceHarness(
         val service: MusicPlaybackService,
         val exoPlayer: ExoPlayer,
+        val localLibraryRepository: LocalLibraryRepository,
         val queueManager: QueueManager,
         val stateStore: PlaybackStateStore,
         val capturedMediaIds: List<String>,
@@ -446,6 +504,15 @@ class MusicPlaybackServiceGaplessTest {
                 args = arrayOf(mediaItem)
             )
         }
+
+        fun invokeSessionPlayerPlay() {
+            resolveSessionPlayer().play()
+        }
+
+        private fun resolveSessionPlayer(): Player =
+            service.javaClass.getDeclaredMethod("getSessionPlayer").apply {
+                isAccessible = true
+            }.invoke(service) as Player
 
     }
 

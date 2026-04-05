@@ -7,6 +7,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
+import androidx.annotation.VisibleForTesting
 import androidx.core.graphics.drawable.toBitmap
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -61,6 +62,7 @@ import com.music.myapplication.media.state.PlaybackStateStore
 import dagger.hilt.android.AndroidEntryPoint
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,6 +96,8 @@ class MusicPlaybackService : MediaLibraryService() {
     private var mediaSession: MediaLibraryService.MediaLibrarySession? = null
     private val sessionPlayer: Player by lazy { PlaybackNavigationPlayer(exoPlayer) }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    @VisibleForTesting
+    internal var backgroundDispatcher: CoroutineDispatcher = Dispatchers.IO
     private var positionUpdateJob: Job? = null
     private var equalizerSettingsJob: Job? = null
     private var playerSettingsJob: Job? = null
@@ -394,7 +398,7 @@ class MusicPlaybackService : MediaLibraryService() {
 
     private fun restorePlaybackSnapshotStateIfNeeded(): PlaybackRestorePlan? {
         buildCurrentPlaybackRestorePlan()?.let { return it }
-        val (snapshot, restoredPlaybackMode) = runBlocking(Dispatchers.IO) {
+        val (snapshot, restoredPlaybackMode) = runBlocking(backgroundDispatcher) {
             playerPreferences.playbackSnapshot.first() to playerPreferences.playbackMode.first()
         }
         val restorePlan = buildPlaybackRestorePlan(snapshot) ?: return null
@@ -409,7 +413,7 @@ class MusicPlaybackService : MediaLibraryService() {
         if (exoPlayer.mediaItemCount > 0) return false
         val restorePlan = restorePlaybackSnapshotStateIfNeeded() ?: return false
         launchTransition {
-            when (val result = withContext(Dispatchers.IO) {
+            when (val result = withContext(backgroundDispatcher) {
                 trackPlaybackResolver.resolve(restorePlan.track, cachedQuality)
             }) {
                 is Result.Success -> {
@@ -427,7 +431,7 @@ class MusicPlaybackService : MediaLibraryService() {
                         startPositionMs = restorePlan.positionMs,
                         transitionMode = CrossfadeTransitionMode.DIRECT
                     )
-                    withContext(Dispatchers.IO) {
+                    withContext(backgroundDispatcher) {
                         localLibraryRepository.recordRecentPlay(playable, positionMs = restorePlan.positionMs)
                     }
                 }
