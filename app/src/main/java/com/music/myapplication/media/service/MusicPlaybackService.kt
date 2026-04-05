@@ -394,11 +394,13 @@ class MusicPlaybackService : MediaLibraryService() {
 
     private fun restorePlaybackSnapshotStateIfNeeded(): PlaybackRestorePlan? {
         buildCurrentPlaybackRestorePlan()?.let { return it }
-        val snapshot = runBlocking(Dispatchers.IO) {
-            playerPreferences.playbackSnapshot.first()
+        val (snapshot, restoredPlaybackMode) = runBlocking(Dispatchers.IO) {
+            playerPreferences.playbackSnapshot.first() to playerPreferences.playbackMode.first()
         }
         val restorePlan = buildPlaybackRestorePlan(snapshot) ?: return null
         applyPlaybackRestorePlan(restorePlan, queueManager, stateStore)
+        cachedPlaybackMode = restoredPlaybackMode
+        modeManager.setMode(restoredPlaybackMode)
         modeManager.restorePersistedShuffleSnapshot(snapshot?.shuffleSession)
         return restorePlan
     }

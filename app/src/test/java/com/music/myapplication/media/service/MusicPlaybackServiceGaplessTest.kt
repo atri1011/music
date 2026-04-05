@@ -4,13 +4,16 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
+import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlaybackSnapshot
+import com.music.myapplication.core.datastore.PlaybackShuffleSnapshot
 import com.music.myapplication.core.datastore.EqualizerPreferences
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
+import com.music.myapplication.feature.player.state.ResolvedTrackPlayback
 import com.music.myapplication.feature.player.state.SleepTimerStateHolder
 import com.music.myapplication.feature.player.state.TrackPlaybackResolver
 import com.music.myapplication.media.equalizer.EqualizerManager
@@ -18,6 +21,7 @@ import com.music.myapplication.media.playback.CacheAwarePlaybackMediaSourceFacto
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
 import com.music.myapplication.media.state.PlaybackStateStore
+import io.mockk.coEvery
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -195,6 +199,7 @@ class MusicPlaybackServiceGaplessTest {
         )
         val preferences = mockk<PlayerPreferences>()
         every { preferences.playbackSnapshot } returns flowOf(snapshot)
+        every { preferences.playbackMode } returns flowOf(PlaybackMode.SHUFFLE)
 
         val service = MusicPlaybackService()
         val queueManager = QueueManager()
@@ -215,48 +220,127 @@ class MusicPlaybackServiceGaplessTest {
             parameterTypes = emptyArray(),
             args = emptyArray()
         )
-        modeManager.setMode(PlaybackMode.SHUFFLE)
 
         assertEquals(queue, queueManager.queue)
         assertEquals(firstPreview, queueManager.currentIndex)
         assertEquals(persistedSession, modeManager.buildPersistableShuffleSnapshot())
     }
 
+    @Test
+    fun `service snapshot restore drives the first preloaded shuffle item after reconstruction`() = runTest {
+        val queue = listOf(
+            testTrack(id = "1", title = "A"),
+            testTrack(id = "2", title = "B"),
+            testTrack(id = "3", title = "C"),
+            testTrack(id = "4", title = "D")
+        )
+        val persistedSession = PlaybackShuffleSnapshot(
+            queueKeys = queue.mapIndexed { index, track -> "$index:${track.platform.id}:${track.id}" },
+            order = listOf(2, 0, 3, 1)
+        )
+        val snapshot = PlaybackSnapshot(
+            currentTrack = queue[2],
+            queue = queue,
+            currentIndex = 2,
+            positionMs = 12_000L,
+            shuffleSession = persistedSession
+        )
+        val preferences = mockk<PlayerPreferences>()
+        every { preferences.playbackSnapshot } returns flowOf(snapshot)
+        every { preferences.playbackMode } returns flowOf(PlaybackMode.SHUFFLE)
+        val harness = createHarness(
+            queue = queue,
+            startIndex = 2,
+            playbackMode = PlaybackMode.SEQUENTIAL,
+            playerPreferences = preferences,
+            startPreparedPlayback = false,
+            seedPlaybackState = false
+        )
+
+        invokePrivate(
+            service = harness.service,
+            methodName = "restorePlaybackSnapshotStateIfNeeded",
+            parameterTypes = emptyArray(),
+            args = emptyArray()
+        )
+        harness.currentMediaItem = MediaItem.Builder()
+            .setMediaId(buildPlaybackQueueMediaId(queue[2], queueIndex = 2))
+            .build()
+        harness.currentMediaItemCount = 1
+        harness.invokeScheduleGaplessPreloadForCurrent(autoPlay = true)
+        mainDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(2, harness.queueManager.currentIndex)
+        assertEquals(queue[2], harness.stateStore.state.value.currentTrack)
+        assertEquals(
+            listOf(
+                buildPlaybackQueueMediaId(queue[0], queueIndex = 0)
+            ),
+            harness.capturedMediaIds
+        )
+    }
+
     private fun createHarness(
         queue: List<Track>,
         startIndex: Int,
-        playbackMode: PlaybackMode
+        playbackMode: PlaybackMode,
+        playerPreferences: PlayerPreferences = mockk(relaxed = true),
+        startPreparedPlayback: Boolean = true,
+        seedPlaybackState: Boolean = true
     ): ServiceHarness {
         val service = MusicPlaybackService()
         val exoPlayer = mockk<ExoPlayer>(relaxed = true)
         val playbackMediaSourceFactory = mockk<CacheAwarePlaybackMediaSourceFactory>()
         val localLibraryRepository = mockk<LocalLibraryRepository>(relaxed = true)
-        val trackPlaybackResolver = mockk<TrackPlaybackResolver>(relaxed = true)
-        val queueManager = QueueManager().apply { setQueue(queue, startIndex) }
+        val trackPlaybackResolver = mockk<TrackPlaybackResolver>()
+        val queueManager = QueueManager().apply {
+            if (seedPlaybackState) {
+                setQueue(queue, startIndex)
+            }
+        }
         val stateStore = PlaybackStateStore().also {
-            it.updateQueue(queueManager.queue, queueManager.currentIndex)
-            it.updateTrack(queueManager.currentTrack)
+            if (seedPlaybackState) {
+                it.updateQueue(queueManager.queue, queueManager.currentIndex)
+                it.updateTrack(queueManager.currentTrack)
+            }
         }
         val modeManager = PlaybackModeManager(
             queueManager = queueManager,
             stateStore = stateStore,
-            preferences = mockk<PlayerPreferences>(relaxed = true)
+            preferences = playerPreferences
         ).apply {
             setMode(playbackMode)
         }
 
         val capturedMediaIds = mutableListOf<String>()
-        var currentMediaItem: MediaItem? = MediaItem.Builder()
-            .setMediaId(buildPlaybackQueueMediaId(queue[startIndex], queueIndex = startIndex))
-            .build()
+        var latestBuiltMediaId: String? = null
+        var currentMediaItem: MediaItem? = if (startPreparedPlayback) {
+            MediaItem.Builder()
+                .setMediaId(buildPlaybackQueueMediaId(queue[startIndex], queueIndex = startIndex))
+                .build()
+        } else {
+            null
+        }
         var currentMediaItemIndex = 0
-        var mediaItemCount = 1
+        var mediaItemCount = if (startPreparedPlayback) 1 else 0
 
         every { exoPlayer.currentMediaItem } answers { currentMediaItem }
         every { exoPlayer.currentMediaItemIndex } answers { currentMediaItemIndex }
         every { exoPlayer.mediaItemCount } answers { mediaItemCount }
         every { exoPlayer.duration } returns queue[startIndex].durationMs
         every { exoPlayer.audioSessionId } returns C.AUDIO_SESSION_ID_UNSET
+        every { exoPlayer.setMediaSource(any<MediaSource>()) } answers {
+            val mediaId = requireNotNull(latestBuiltMediaId)
+            currentMediaItem = MediaItem.Builder()
+                .setMediaId(mediaId)
+                .build()
+            currentMediaItemIndex = 0
+            mediaItemCount = 1
+        }
+        every { exoPlayer.prepare() } just Runs
+        every { exoPlayer.play() } just Runs
+        every { exoPlayer.pause() } just Runs
+        every { exoPlayer.seekTo(any<Long>()) } just Runs
         every { exoPlayer.removeMediaItems(any(), any()) } answers {
             val fromIndex = firstArg<Int>()
             val toIndex = secondArg<Int>()
@@ -271,9 +355,13 @@ class MusicPlaybackServiceGaplessTest {
             mediaItemCount += 1
         }
         every { exoPlayer.volume = any() } just Runs
+        coEvery { trackPlaybackResolver.resolve(any(), any()) } answers {
+            Result.Success(ResolvedTrackPlayback(firstArg<Track>()))
+        }
 
         every { playbackMediaSourceFactory.create(any(), any()) } answers {
             val mediaItem = secondArg<MediaItem>()
+            latestBuiltMediaId = mediaItem.mediaId
             capturedMediaIds += mediaItem.mediaId
             mockk<MediaSource>()
         }
@@ -285,7 +373,7 @@ class MusicPlaybackServiceGaplessTest {
         service.injectField("sleepTimer", mockk<SleepTimerStateHolder>(relaxed = true))
         service.injectField("equalizerManager", mockk<EqualizerManager>(relaxed = true))
         service.injectField("equalizerPreferences", mockk<EqualizerPreferences>(relaxed = true))
-        service.injectField("playerPreferences", mockk<PlayerPreferences>(relaxed = true))
+        service.injectField("playerPreferences", playerPreferences)
         service.injectField("trackPlaybackResolver", trackPlaybackResolver)
         service.injectField("localLibraryRepository", localLibraryRepository)
         service.injectField("playbackMediaSourceFactory", playbackMediaSourceFactory)
@@ -299,7 +387,9 @@ class MusicPlaybackServiceGaplessTest {
             currentMediaItemAccessor = { currentMediaItem },
             currentMediaItemMutator = { currentMediaItem = it },
             currentMediaItemIndexAccessor = { currentMediaItemIndex },
-            currentMediaItemIndexMutator = { currentMediaItemIndex = it }
+            currentMediaItemIndexMutator = { currentMediaItemIndex = it },
+            currentMediaItemCountAccessor = { mediaItemCount },
+            currentMediaItemCountMutator = { mediaItemCount = it }
         )
     }
 
@@ -321,7 +411,9 @@ class MusicPlaybackServiceGaplessTest {
         private val currentMediaItemAccessor: () -> MediaItem?,
         private val currentMediaItemMutator: (MediaItem?) -> Unit,
         private val currentMediaItemIndexAccessor: () -> Int,
-        private val currentMediaItemIndexMutator: (Int) -> Unit
+        private val currentMediaItemIndexMutator: (Int) -> Unit,
+        private val currentMediaItemCountAccessor: () -> Int,
+        private val currentMediaItemCountMutator: (Int) -> Unit
     ) {
         var currentMediaItem: MediaItem?
             get() = currentMediaItemAccessor()
@@ -330,6 +422,12 @@ class MusicPlaybackServiceGaplessTest {
         var currentMediaItemIndex: Int
             get() = currentMediaItemIndexAccessor()
             set(value) = currentMediaItemIndexMutator(value)
+
+        var currentMediaItemCount: Int
+            get() = currentMediaItemCountAccessor()
+            set(value) {
+                currentMediaItemCountMutator(value)
+            }
 
         fun invokeScheduleGaplessPreloadForCurrent(autoPlay: Boolean) {
             invokePrivate(
@@ -348,6 +446,7 @@ class MusicPlaybackServiceGaplessTest {
                 args = arrayOf(mediaItem)
             )
         }
+
     }
 
     private fun MusicPlaybackService.injectField(name: String, value: Any) {
@@ -364,9 +463,9 @@ private fun invokePrivate(
     methodName: String,
     parameterTypes: Array<Class<*>>,
     args: Array<Any?>
-) {
+): Any? {
     service.javaClass.getDeclaredMethod(methodName, *parameterTypes).apply {
         isAccessible = true
-        invoke(service, *args)
+        return invoke(service, *args)
     }
 }
