@@ -190,16 +190,34 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          RELEASE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${{ steps.version.outputs.release_tag }}")
-          APK_URL=$(echo "${RELEASE_JSON}" | jq -r '.assets[] | select(.name == "${{ steps.apk.outputs.apk_name }}") | .browser_download_url' | head -n 1)
+          RELEASE_TAG='${{ steps.version.outputs.release_tag }}'
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
+          APK_URL_FALLBACK="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${{ steps.apk.outputs.apk_name }}"
+          RELEASE_JSON=''
+          for attempt in 1 2 3 4 5; do
+            if RELEASE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>/dev/null); then
+              break
+            fi
+            if [[ "${attempt}" -lt 5 ]]; then
+              echo "Release metadata is not ready yet, retrying (${attempt}/5)..."
+              sleep 3
+            fi
+          done
+          if [[ -z "${RELEASE_JSON}" ]]; then
+            echo 'Release metadata lookup failed after retries, fallback to deterministic URLs.'
+            RELEASE_JSON='{}'
+          fi
+          APK_URL=$(echo "${RELEASE_JSON}" | jq -r '.assets[]? | select(.name == "${{ steps.apk.outputs.apk_name }}") | .browser_download_url' | head -n 1)
           if [[ -z "${APK_URL}" || "${APK_URL}" == 'null' ]]; then
-            echo 'Release asset direct download URL not found'
-            exit 1
+            APK_URL="${APK_URL_FALLBACK}"
           fi
           RELEASE_NOTES=$(echo "${RELEASE_JSON}" | jq -r '.body // ""')
           FULL_CHANGELOG_URL=$(printf '%s\n' "${RELEASE_NOTES}" | sed -nE 's/^.*Full Changelog[^:]*:[[:space:]]*(https?:\/\/[^[:space:]]+).*$/\1/p' | tail -n 1)
           if [[ -z "${FULL_CHANGELOG_URL}" ]]; then
             FULL_CHANGELOG_URL=$(echo "${RELEASE_JSON}" | jq -r '.html_url // ""')
+          fi
+          if [[ -z "${FULL_CHANGELOG_URL}" ]]; then
+            FULL_CHANGELOG_URL="${RELEASE_URL}"
           fi
           echo "apk_url=${APK_URL}" >> "${GITHUB_OUTPUT}"
           echo "full_changelog_url=${FULL_CHANGELOG_URL}" >> "${GITHUB_OUTPUT}"

@@ -21,6 +21,10 @@ data class LxSourcesUiState(
     val isEditing: Boolean = false,
     val editingScriptId: String? = null,
     val editingScriptText: String = "",
+    val isImportUrlDialogVisible: Boolean = false,
+    val importUrlText: String = "",
+    val importUrlError: String? = null,
+    val isImportingUrl: Boolean = false,
     val isSaving: Boolean = false,
     val isProcessing: Boolean = false,
     val validationErrorScript: LxCustomScript? = null,
@@ -38,6 +42,13 @@ private data class LxSourcesEditorState(
     val scriptText: String = ""
 )
 
+private data class LxSourcesImportUrlState(
+    val isDialogVisible: Boolean = false,
+    val url: String = "",
+    val error: String? = null,
+    val isImporting: Boolean = false
+)
+
 private data class LxSourcesTransientState(
     val isSaving: Boolean = false,
     val isProcessing: Boolean = false,
@@ -52,19 +63,25 @@ class LxSourcesViewModel @Inject constructor(
     private val scriptRepository: LxCustomScriptRepository
 ) : ViewModel() {
     private val editorState = MutableStateFlow(LxSourcesEditorState())
+    private val importUrlState = MutableStateFlow(LxSourcesImportUrlState())
     private val transientState = MutableStateFlow(LxSourcesTransientState())
 
     val state: StateFlow<LxSourcesUiState> = combine(
         scriptRepository.catalog,
         editorState,
+        importUrlState,
         transientState
-    ) { catalog, editor, transient ->
+    ) { catalog, editor, importUrl, transient ->
         LxSourcesUiState(
             scripts = catalog.scripts.sortedByDescending { it.updatedAt },
             activeScriptId = catalog.activeScriptId,
             isEditing = editor.isEditing,
             editingScriptId = editor.scriptId,
             editingScriptText = editor.scriptText,
+            isImportUrlDialogVisible = importUrl.isDialogVisible,
+            importUrlText = importUrl.url,
+            importUrlError = importUrl.error,
+            isImportingUrl = importUrl.isImporting,
             isSaving = transient.isSaving,
             isProcessing = transient.isProcessing,
             validationErrorScript = transient.validationErrorScript,
@@ -90,9 +107,58 @@ class LxSourcesViewModel @Inject constructor(
         editorState.update { it.copy(scriptText = text) }
     }
 
+    fun showImportUrlDialog() {
+        importUrlState.update {
+            it.copy(
+                isDialogVisible = true,
+                error = null
+            )
+        }
+    }
+
+    fun dismissImportUrlDialog() {
+        if (importUrlState.value.isImporting) return
+        importUrlState.value = LxSourcesImportUrlState()
+    }
+
+    fun updateImportUrl(text: String) {
+        importUrlState.update {
+            it.copy(
+                url = text,
+                error = null
+            )
+        }
+    }
+
+    fun importScriptFromUrl() {
+        val currentImport = importUrlState.value
+        if (!currentImport.isDialogVisible || currentImport.isImporting) return
+        viewModelScope.launch {
+            importUrlState.update { it.copy(isImporting = true, error = null) }
+            when (val result = scriptRepository.importScriptFromUrl(currentImport.url)) {
+                is Result.Success -> {
+                    importUrlState.value = LxSourcesImportUrlState()
+                    loadImportedScript(
+                        rawScript = result.data.rawScript,
+                        sourceLabel = result.data.sourceLabel
+                    )
+                }
+                is Result.Error -> {
+                    importUrlState.update {
+                        it.copy(
+                            isImporting = false,
+                            error = result.error.message
+                        )
+                    }
+                }
+                Result.Loading -> Unit
+            }
+        }
+    }
+
     fun loadImportedScript(
         rawScript: String,
-        fileName: String? = null
+        sourceLabel: String? = null
     ) {
         val normalizedScript = rawScript.removePrefix("\uFEFF")
         if (normalizedScript.isBlank()) {
@@ -114,7 +180,7 @@ class LxSourcesViewModel @Inject constructor(
         transientState.update {
             it.copy(
                 statusMessage = buildImportedScriptMessage(
-                    fileName = fileName,
+                    sourceLabel = sourceLabel,
                     keepExistingScript = currentEditor.isEditing && currentEditor.scriptId != null
                 ),
                 statusMessageId = System.currentTimeMillis()
@@ -226,14 +292,14 @@ class LxSourcesViewModel @Inject constructor(
     }
 
     private fun buildImportedScriptMessage(
-        fileName: String?,
+        sourceLabel: String?,
         keepExistingScript: Boolean
     ): String {
-        val sourceLabel = fileName?.takeIf { it.isNotBlank() } ?: "本地文件"
+        val resolvedSourceLabel = sourceLabel?.takeIf { it.isNotBlank() } ?: "导入内容"
         return if (keepExistingScript) {
-            "已载入 $sourceLabel，保存后会覆盖当前脚本"
+            "已载入 $resolvedSourceLabel，保存后会覆盖当前脚本"
         } else {
-            "已载入 $sourceLabel，确认后保存并校验"
+            "已载入 $resolvedSourceLabel，确认后保存并校验"
         }
     }
 }

@@ -2,16 +2,24 @@ package com.music.myapplication.data.repository.lx
 
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.core.datastore.LxScriptCatalogStore
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 @Singleton
 class LxCustomScriptRepository @Inject constructor(
     private val store: LxScriptCatalogStore,
-    private val runtime: LxCustomScriptRuntime
+    private val runtime: LxCustomScriptRuntime,
+    private val okHttpClient: OkHttpClient
 ) {
     val catalog: Flow<LxScriptCatalog> = store.catalog
 
@@ -20,6 +28,50 @@ class LxCustomScriptRepository @Inject constructor(
     suspend fun getCatalog(): LxScriptCatalog = store.read()
 
     suspend fun getActiveValidatedScript(): LxCustomScript? = store.read().activeValidatedScript
+
+    suspend fun importScriptFromUrl(url: String): Result<LxImportedScriptContent> = withContext(Dispatchers.IO) {
+        val normalizedUrl = normalizeImportedScriptUrl(url)
+            ?: return@withContext Result.Error(AppError.Parse(message = "请输入有效的 https 脚本链接"))
+
+        try {
+            val request = Request.Builder()
+                .url(normalizedUrl)
+                .get()
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.Error(
+                        AppError.Network(
+                            message = "下载脚本失败（HTTP ${response.code}）",
+                            code = response.code
+                        )
+                    )
+                }
+
+                val rawScript = response.body?.string()
+                    ?.removePrefix("\uFEFF")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@withContext Result.Error(
+                        AppError.Parse(message = "导入失败：链接返回的脚本内容为空")
+                    )
+
+                Result.Success(
+                    LxImportedScriptContent(
+                        rawScript = rawScript,
+                        sourceLabel = buildImportedScriptSourceLabel(response.request.url.toString())
+                    )
+                )
+            }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            Result.Error(
+                AppError.Network(
+                    message = "下载脚本失败，请检查网络或稍后再试",
+                    cause = error
+                )
+            )
+        }
+    }
 
     suspend fun saveScript(
         rawScript: String,
@@ -117,4 +169,21 @@ class LxCustomScriptRepository @Inject constructor(
     companion object {
         private fun buildScriptId(timestampMs: Long): String = "lx_${timestampMs}"
     }
+}
+
+internal fun normalizeImportedScriptUrl(rawUrl: String): String? {
+    val candidate = ShareUtils.normalizeShareUrlCandidate(rawUrl)
+        .takeIf { it.isNotBlank() }
+        ?: return null
+    val parsed = candidate.toHttpUrlOrNull() ?: return null
+    if (!parsed.isHttps) return null
+    return parsed.toString()
+}
+
+internal fun buildImportedScriptSourceLabel(finalUrl: String): String {
+    val parsed = finalUrl.toHttpUrlOrNull()
+    return parsed?.pathSegments
+        ?.asReversed()
+        ?.firstOrNull { it.isNotBlank() }
+        ?: "远程链接"
 }
