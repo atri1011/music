@@ -6,6 +6,8 @@ import com.music.myapplication.core.cache.CacheManager
 import com.music.myapplication.core.cache.CacheUsage
 import com.music.myapplication.core.datastore.DarkModeOption
 import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.data.repository.lx.LxCustomScriptRepository
+import com.music.myapplication.data.repository.lx.toLxSourceDisplayText
 import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,6 +36,13 @@ data class MoreUiState(
     val showJkapiKeyDialog: Boolean = false,
     val neteaseCloudApiBaseUrl: String = "",
     val showNeteaseCloudApiBaseUrlDialog: Boolean = false,
+    val lxScriptCount: Int = 0,
+    val lxValidScriptCount: Int = 0,
+    val lxActiveScriptName: String = "",
+    val lxActiveScriptVersion: String = "",
+    val lxActiveScriptSources: List<String> = emptyList(),
+    val lxActiveScriptValidationError: String? = null,
+    val canSelectLxCustom: Boolean = false,
     val imageCacheBytes: Long = 0L,
     val lyricsCacheBytes: Long = 0L,
     val templateCacheBytes: Long = 0L,
@@ -42,6 +51,25 @@ data class MoreUiState(
 ) {
     val totalCacheBytes: Long
         get() = imageCacheBytes + lyricsCacheBytes + templateCacheBytes
+
+    val lxSourceSummary: String
+        get() = when {
+            lxScriptCount <= 0 -> "还没配置脚本"
+            lxActiveScriptName.isBlank() -> "已保存 $lxScriptCount 份脚本，当前未启用"
+            lxActiveScriptValidationError.isNullOrBlank() -> buildString {
+                append("当前：")
+                append(lxActiveScriptName)
+                if (lxActiveScriptVersion.isNotBlank()) {
+                    append(" v")
+                    append(lxActiveScriptVersion)
+                }
+                if (lxActiveScriptSources.isNotEmpty()) {
+                    append("\n来源：")
+                    append(lxActiveScriptSources.toLxSourceDisplayText())
+                }
+            }
+            else -> "当前脚本校验失败：${lxActiveScriptValidationError}"
+        }
 }
 
 private data class CacheUiState(
@@ -53,7 +81,8 @@ private data class CacheUiState(
 @HiltViewModel
 class MoreViewModel @Inject constructor(
     private val preferences: PlayerPreferences,
-    private val cacheManager: CacheManager
+    private val cacheManager: CacheManager,
+    private val lxCustomScriptRepository: LxCustomScriptRepository
 ) : ViewModel() {
 
     private val dialogVisible = MutableStateFlow(false)
@@ -77,9 +106,11 @@ class MoreViewModel @Inject constructor(
         jkapiDialogVisible,
         preferences.neteaseCloudApiBaseUrl,
         neteaseCloudApiBaseUrlDialogVisible,
+        lxCustomScriptRepository.summary,
         cacheUiState
     ) { values ->
-        val cacheState = values[15] as CacheUiState
+        val lxSummary = values[15] as com.music.myapplication.data.repository.lx.LxScriptCatalogSummary
+        val cacheState = values[16] as CacheUiState
         MoreUiState(
             apiKey = values[0] as String,
             showApiKeyDialog = values[1] as Boolean,
@@ -96,6 +127,16 @@ class MoreViewModel @Inject constructor(
             showJkapiKeyDialog = values[12] as Boolean,
             neteaseCloudApiBaseUrl = values[13] as String,
             showNeteaseCloudApiBaseUrlDialog = values[14] as Boolean,
+            lxScriptCount = lxSummary.scriptCount,
+            lxValidScriptCount = lxSummary.validScriptCount,
+            lxActiveScriptName = lxSummary.activeScriptName,
+            lxActiveScriptVersion = lxSummary.activeScriptVersion,
+            lxActiveScriptSources = lxSummary.activeScriptSources,
+            lxActiveScriptValidationError = lxSummary.activeScriptValidationError,
+            canSelectLxCustom = lxSummary.hasActiveValidatedScript &&
+                lxSummary.activeScriptSources.any { sourceId ->
+                    sourceId in setOf("wy", "tx", "kw")
+                },
             imageCacheBytes = cacheState.usage.imageBytes,
             lyricsCacheBytes = cacheState.usage.lyricsBytes,
             templateCacheBytes = cacheState.usage.templateBytes,

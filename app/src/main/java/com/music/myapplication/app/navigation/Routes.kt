@@ -12,6 +12,7 @@ sealed interface Routes {
     @Serializable data object Downloaded : Routes
     @Serializable data object LocalMusic : Routes
     @Serializable data object PlayRanking : Routes
+    @Serializable data object LxSources : Routes
     @Serializable data object Equalizer : Routes
     @Serializable data class VideoPlayer(
         val trackId: String = "",

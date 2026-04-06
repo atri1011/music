@@ -134,6 +134,7 @@ dependencies {
 
     // Kotlinx Serialization
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.quickjs.kt)
 
     // Palette
     implementation(libs.palette.ktx)

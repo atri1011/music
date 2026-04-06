@@ -8,7 +8,12 @@ internal fun normalizePlaybackUrl(playableUrl: String): String {
     val candidate = normalizedPlaybackUrlCandidate(playableUrl)
     if (candidate.isEmpty()) return ""
 
-    return parseNormalizedPlaybackHttpUrl(candidate)?.toString() ?: candidate
+    val parsed = parseNormalizedPlaybackHttpUrl(candidate) ?: return candidate
+    return if (parsed.shouldUpgradePlaybackUrlToHttps()) {
+        parsed.newBuilder().scheme("https").build().toString()
+    } else {
+        parsed.toString()
+    }
 }
 
 internal fun buildPlaybackRequestHeaders(
@@ -35,6 +40,8 @@ private fun playbackRefererFor(playableUrl: String): String? {
         normalizedHost.matchesPlaybackDomain("y.qq.com") ||
             normalizedHost.matchesPlaybackDomain("qqmusic.qq.com") -> "https://y.qq.com/"
         normalizedHost.matchesPlaybackDomain("music.163.com") ||
+            normalizedHost.matchesPlaybackDomain("music.126.net") ||
+            normalizedHost.matchesPlaybackDomain("vod.126.net") ||
             normalizedHost.matchesPlaybackDomain("163cn.tv") -> "https://music.163.com/"
         normalizedHost.matchesPlaybackDomain("kuwo.cn") -> "https://www.kuwo.cn/"
         else -> null
@@ -65,3 +72,15 @@ private fun parseNormalizedPlaybackHttpUrl(playableUrl: String) =
 
 private fun String.matchesPlaybackDomain(candidate: String): Boolean =
     equals(candidate, ignoreCase = true) || endsWith(".$candidate", ignoreCase = true)
+
+private fun okhttp3.HttpUrl.shouldUpgradePlaybackUrlToHttps(): Boolean {
+    val normalizedHost = host.lowercase()
+    return scheme.equals("http", ignoreCase = true) &&
+        (
+            normalizedHost == "wx.music.tc.qq.com" ||
+                normalizedHost.endsWith(".music.tc.qq.com") ||
+                normalizedHost.endsWith(".qqmusic.qq.com") ||
+                normalizedHost.endsWith(".music.126.net") ||
+                normalizedHost.endsWith(".vod.126.net")
+            )
+}

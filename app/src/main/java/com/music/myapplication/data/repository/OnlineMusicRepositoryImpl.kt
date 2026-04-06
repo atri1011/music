@@ -1658,7 +1658,10 @@ internal fun shareRefererFor(url: String): String? {
     val normalizedUrl = url.lowercase()
     return when {
         "y.qq.com" in normalizedUrl -> "https://y.qq.com/"
-        "music.163.com" in normalizedUrl || "163cn.tv" in normalizedUrl -> "https://music.163.com/"
+        "music.163.com" in normalizedUrl ||
+            "music.126.net" in normalizedUrl ||
+            "vod.126.net" in normalizedUrl ||
+            "163cn.tv" in normalizedUrl -> "https://music.163.com/"
         "kuwo.cn" in normalizedUrl -> "https://www.kuwo.cn/"
         else -> null
     }

@@ -13,6 +13,7 @@ import javax.inject.Singleton
 class PlaybackSourceRouter @Inject constructor(
     private val preferences: PlayerPreferences,
     private val tuneHubResolver: TuneHubPlayableResolver,
+    private val lxCustomSourcePlayableResolver: LxCustomSourcePlayableResolver,
     private val metingPlayableResolver: MetingPlayableResolver,
     private val jkApiResolver: JkApiPlayableResolver,
     private val neteaseCloudApiResolver: NeteaseCloudApiPlayableResolver
@@ -23,6 +24,12 @@ class PlaybackSourceRouter @Inject constructor(
             AudioSource.TUNEHUB -> resolveDirectly(requestedSource) {
                 tuneHubResolver.resolve(track, quality)
             }
+            AudioSource.LX_CUSTOM -> resolveWithTuneHubFallback(
+                track = track,
+                quality = quality,
+                requestedSource = requestedSource,
+                resolveRequested = { lxCustomSourcePlayableResolver.resolve(track, quality) }
+            )
             AudioSource.METING_BAKA -> resolveWithTuneHubFallback(
                 track = track,
                 quality = quality,
@@ -124,6 +131,7 @@ class PlaybackSourceRouter @Inject constructor(
 
     private fun buildUnsupportedFallbackReason(source: AudioSource, platform: Platform): String {
         return when (source) {
+            AudioSource.LX_CUSTOM -> "${source.displayName} 不支持${platform.displayName}，已自动切到 TuneHub"
             AudioSource.METING_BAKA,
             AudioSource.JKAPI -> "${source.displayName} 不支持${platform.displayName}，已自动切到 TuneHub"
             AudioSource.NETEASE_CLOUD_API_ENHANCED -> {

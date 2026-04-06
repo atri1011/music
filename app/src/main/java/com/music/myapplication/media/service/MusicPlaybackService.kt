@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.annotation.VisibleForTesting
 import androidx.core.graphics.drawable.toBitmap
@@ -21,6 +22,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.BitmapLoader
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -121,6 +123,7 @@ class MusicPlaybackService : MediaLibraryService() {
     private var cachedCrossfadeDurationMs = PlayerPreferences.DEFAULT_CROSSFADE_DURATION_MS
 
     private companion object {
+        const val TAG = "MusicPlaybackService"
         const val SEARCH_CACHE_LIMIT = 8
     }
 
@@ -918,6 +921,11 @@ class MusicPlaybackService : MediaLibraryService() {
     private fun handlePlaybackError(error: PlaybackException) {
         stateStore.updatePlaying(false)
         val currentTrack = stateStore.state.value.currentTrack ?: return
+        Log.e(
+            TAG,
+            "播放失败: platform=${currentTrack.platform.id}, trackId=${currentTrack.id}, url=${currentTrack.playableUrl}, detail=${error.describeForLog()}",
+            error
+        )
         val recoveryRequest = buildPlaybackFailureRecoveryRequest(
             track = currentTrack,
             error = error,
@@ -1006,6 +1014,10 @@ class MusicPlaybackService : MediaLibraryService() {
         cancelGaplessPreload()
         val playbackTrack = track.withNormalizedPlaybackUrl()
         if (playbackTrack.playableUrl.isBlank()) return
+        Log.d(
+            TAG,
+            "准备加载播放源: platform=${playbackTrack.platform.id}, trackId=${playbackTrack.id}, url=${playbackTrack.playableUrl}"
+        )
         if (queueManager.currentIndex >= 0) {
             queueManager.updateTrack(queueManager.currentIndex, playbackTrack)
             stateStore.updateQueue(queueManager.queue, queueManager.currentIndex)
@@ -1057,8 +1069,25 @@ class MusicPlaybackService : MediaLibraryService() {
             throw cancelled
         } catch (_: IllegalStateException) {
             setPlayerVolume(1f)
+    }
+}
+
+private fun PlaybackException.describeForLog(): String {
+    val rootCause = cause
+    val invalidResponse = rootCause as? HttpDataSource.InvalidResponseCodeException
+    return buildString {
+        append("code=").append(errorCodeName)
+        append(", message=").append(message.orEmpty())
+        if (rootCause != null) {
+            append(", cause=").append(rootCause::class.java.simpleName)
+            append(": ").append(rootCause.message.orEmpty())
+        }
+        if (invalidResponse != null) {
+            append(", http=").append(invalidResponse.responseCode)
+            append(", headers=").append(invalidResponse.headerFields)
         }
     }
+}
 
     private fun Track.withNormalizedPlaybackUrl(): Track {
         val normalizedPlayableUrl = normalizePlaybackUrl(playableUrl)

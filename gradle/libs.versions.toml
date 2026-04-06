@@ -26,6 +26,7 @@ coroutines = "1.9.0"
 mockk = "1.13.13"
 workManager = "2.10.1"
 robolectric = "4.14.1"
+quickjsKt = "1.0.0-alpha13"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -81,6 +82,7 @@ datastore-preferences = { group = "androidx.datastore", name = "datastore-prefer
 
 # Kotlinx Serialization
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+quickjs-kt = { group = "io.github.dokar3", name = "quickjs-kt", version.ref = "quickjsKt" }
 
 # Palette
 palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }

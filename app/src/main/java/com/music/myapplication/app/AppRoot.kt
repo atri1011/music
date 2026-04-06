@@ -1,6 +1,7 @@
 package com.music.myapplication.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,11 +25,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -54,6 +58,7 @@ import com.music.myapplication.domain.model.Track
 import com.music.myapplication.feature.player.MiniPlayerBar
 import com.music.myapplication.feature.player.MiniPlayerUiState
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.feature.more.LxCustomUpdateAlertViewModel
 import com.music.myapplication.feature.update.AppUpdateDialog
 import com.music.myapplication.feature.update.AppUpdateViewModel
 import com.music.myapplication.ui.theme.AppElevation
@@ -77,7 +82,9 @@ fun AppRoot(
     val context = LocalContext.current
     val navController = rememberNavController()
     val updateViewModel: AppUpdateViewModel = hiltViewModel()
+    val lxAlertViewModel: LxCustomUpdateAlertViewModel = hiltViewModel()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
+    val lxAlert by lxAlertViewModel.state.collectAsStateWithLifecycle()
     val miniPlayerState by playerViewModel.miniPlayerState.collectAsStateWithLifecycle()
     val trackActionState by playerViewModel.trackActionState.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -298,6 +305,41 @@ fun AppRoot(
                     stageMessage = updateState.stageMessage,
                     onPrimaryAction = updateViewModel::onPrimaryAction,
                     onLater = updateViewModel::dismissCurrentUpdate
+                )
+            }
+
+            lxAlert?.let { alert ->
+                AlertDialog(
+                    onDismissRequest = lxAlertViewModel::dismiss,
+                    title = {
+                        Text(
+                            text = if (alert.scriptVersion.isBlank()) {
+                                "${alert.scriptName} 更新提示"
+                            } else {
+                                "${alert.scriptName} v${alert.scriptVersion} 更新提示"
+                            }
+                        )
+                    },
+                    text = { Text(alert.log) },
+                    confirmButton = {
+                        alert.updateUrl?.let { url ->
+                            TextButton(
+                                onClick = {
+                                    lxAlertViewModel.dismiss()
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            ) {
+                                Text("前往更新")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = lxAlertViewModel::dismiss) {
+                            Text("关闭")
+                        }
+                    }
                 )
             }
         }

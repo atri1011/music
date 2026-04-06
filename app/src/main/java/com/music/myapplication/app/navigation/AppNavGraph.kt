@@ -21,6 +21,7 @@ import com.music.myapplication.feature.library.DownloadedScreen
 import com.music.myapplication.feature.library.LibraryScreen
 import com.music.myapplication.feature.library.LocalMusicScreen
 import com.music.myapplication.feature.library.PlayRankingScreen
+import com.music.myapplication.feature.more.LxSourcesScreen
 import com.music.myapplication.feature.more.MoreScreen
 import com.music.myapplication.feature.playlist.PlaylistDetailScreen
 import com.music.myapplication.feature.player.EqualizerScreen
@@ -98,7 +99,35 @@ fun AppNavGraph(
             )
         }
         composable<Routes.More> {
-            MoreScreen()
+            MoreScreen(
+                onNavigateToLxSources = {
+                    navController.navigate(Routes.LxSources)
+                }
+            )
+        }
+        composable<Routes.LxSources>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            LxSourcesScreen(
+                onBack = { navController.popBackStack() }
+            )
         }
 
         // Downloaded: slide in from right

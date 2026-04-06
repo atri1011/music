@@ -35,10 +35,12 @@ class MoreScreenAudioSourceDialogTest {
         }
 
         composeRule.onNodeWithText("TuneHub").assertTextContains("TuneHub")
+        composeRule.onNodeWithText("LX Music 自定义源").assertTextContains("LX Music 自定义源")
         composeRule.onNodeWithText("Meting (baka.plus)").assertTextContains("Meting (baka.plus)")
         composeRule.onNodeWithText("JKAPI (无铭API)").assertTextContains("JKAPI (无铭API)")
         composeRule.onNodeWithText("网易云增强版 API").assertTextContains("网易云增强版 API")
         composeRule.onNodeWithText("推荐/默认 · 当前使用中").assertTextContains("当前使用中")
+        composeRule.onNodeWithText("额外配置：需至少保存 1 份脚本").assertTextContains("需至少保存 1 份脚本")
         composeRule.onNodeWithText("额外配置：需 JKAPI 密钥（未配置）").assertTextContains("未配置")
         composeRule.onNodeWithText("额外配置：需增强版接口地址（未配置）").assertTextContains("未配置")
     }

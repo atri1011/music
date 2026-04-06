@@ -62,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.BuildConfig
 import com.music.myapplication.core.datastore.DarkModeOption
 import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.data.repository.lx.toLxSourceDisplayText
 import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.feature.update.AppUpdateActionState
@@ -72,6 +73,7 @@ import com.music.myapplication.ui.theme.AppSpacing
 @Composable
 fun MoreScreen(
     viewModel: MoreViewModel = hiltViewModel(),
+    onNavigateToLxSources: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -236,6 +238,13 @@ fun MoreScreen(
                 showChevron = true
             )
             SettingsItem(
+                icon = Icons.Default.Code,
+                title = "落雪脚本",
+                subtitle = state.lxSourceSummary,
+                onClick = onNavigateToLxSources,
+                showChevron = true
+            )
+            SettingsItem(
                 icon = Icons.Default.VpnKey,
                 title = "TuneHub 密钥",
                 subtitle = maskApiKey(state.apiKey),
@@ -295,6 +304,7 @@ fun MoreScreen(
                 showAudioSourceDialog = false
                 when (source) {
                     AudioSource.JKAPI -> viewModel.showJkapiKeyDialog(true)
+                    AudioSource.LX_CUSTOM -> onNavigateToLxSources()
                     AudioSource.NETEASE_CLOUD_API_ENHANCED -> {
                         viewModel.showNeteaseCloudApiBaseUrlDialog(true)
                     }
@@ -760,7 +770,7 @@ internal fun buildAudioSourceOptions(state: MoreUiState): List<AudioSourceOption
         AudioSourceOptionUi(
             source = source,
             title = source.displayName,
-            supportText = "支持平台：${audioSourceSupportedPlatformsText(source)}",
+            supportText = "支持平台：${audioSourceSupportedPlatformsText(source, state)}",
             configText = "额外配置：${audioSourceConfigText(source, state)}",
             fallbackText = "失败行为：${audioSourceFallbackText(source)}",
             statusText = audioSourceStatusText(source, state),
@@ -780,17 +790,27 @@ internal fun audioSourceSubtitle(state: MoreUiState): String {
     }
     return listOf(
         currentLine,
-        "支持：${audioSourceSupportedPlatformsText(source)}",
+        "支持：${audioSourceSupportedPlatformsText(source, state)}",
         "失败行为：${audioSourceFallbackText(source)}"
     ).joinToString("\n")
 }
 
-private fun audioSourceSupportedPlatformsText(source: AudioSource): String =
-    source.supportedPlatforms.joinToString("、") { it.displayName }
+private fun audioSourceSupportedPlatformsText(source: AudioSource, state: MoreUiState): String = when (source) {
+    AudioSource.LX_CUSTOM -> when {
+        state.lxActiveScriptSources.isNotEmpty() -> state.lxActiveScriptSources.toLxSourceDisplayText()
+        else -> "由当前脚本决定（网易云 / QQ / 酷我）"
+    }
+    else -> source.supportedPlatforms.joinToString("、") { it.displayName }
+}
 
 private fun audioSourceConfigText(source: AudioSource, state: MoreUiState): String = when (source) {
     AudioSource.TUNEHUB,
     AudioSource.METING_BAKA -> "无需额外配置"
+    AudioSource.LX_CUSTOM -> when {
+        state.lxScriptCount <= 0 -> "需至少保存 1 份脚本"
+        state.canSelectLxCustom -> "当前脚本可用，共 ${state.lxValidScriptCount} 份通过校验"
+        else -> "需激活 1 份通过校验且声明 wy/tx/kw 的脚本"
+    }
     AudioSource.JKAPI -> {
         if (state.jkapiKey.isBlank()) "需 JKAPI 密钥（未配置）" else "JKAPI 密钥已配置"
     }
@@ -809,23 +829,29 @@ private fun audioSourceStatusText(source: AudioSource, state: MoreUiState): Stri
         if (source == AudioSource.TUNEHUB) add("推荐/默认")
         if (source == state.audioSource) add("当前使用中")
         if (!isAudioSourceSelectable(source, state)) add("先配置再使用")
+        if (source == AudioSource.LX_CUSTOM && state.lxActiveScriptValidationError != null) {
+            add("当前脚本校验失败")
+        }
     }
     return labels.joinToString(" · ")
 }
 
 private fun audioSourceCurrentStatusSuffix(source: AudioSource, state: MoreUiState): String? = when {
     source == AudioSource.TUNEHUB -> "（推荐/默认）"
+    source == AudioSource.LX_CUSTOM && state.lxActiveScriptName.isBlank() -> "（先完成脚本配置）"
     !isAudioSourceSelectable(source, state) -> "（先完成配置）"
     else -> null
 }
 
 private fun isAudioSourceSelectable(source: AudioSource, state: MoreUiState): Boolean = when (source) {
+    AudioSource.LX_CUSTOM -> state.canSelectLxCustom
     AudioSource.JKAPI -> state.jkapiKey.isNotBlank()
     AudioSource.NETEASE_CLOUD_API_ENHANCED -> state.neteaseCloudApiBaseUrl.isNotBlank()
     else -> true
 }
 
 private fun audioSourceConfigureActionLabel(source: AudioSource): String? = when (source) {
+    AudioSource.LX_CUSTOM -> "配置脚本"
     AudioSource.JKAPI -> "配置密钥"
     AudioSource.NETEASE_CLOUD_API_ENHANCED -> "配置接口"
     else -> null
