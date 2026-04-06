@@ -102,6 +102,7 @@ class AppUpdateRepositoryImpl @Inject constructor(
         val apkUrl = resolveApkUrl(manifest.apkUrl, manifest.downloadUrl)
         val sha256 = manifest.sha256.trim().lowercase(Locale.ROOT)
         val fileSizeBytes = manifest.fileSizeBytes
+        val fullChangelogUrl = manifest.fullChangelogUrl?.trim()?.takeIf { it.isNotBlank() }
         val minSupportedVersionCode = manifest.minSupportedVersionCode
 
         return when {
@@ -111,6 +112,9 @@ class AppUpdateRepositoryImpl @Inject constructor(
             !isDirectDownloadUrl(apkUrl) -> Result.Error(AppError.Parse(message = "更新清单 apkUrl 非直连下载地址"))
             !SHA256_REGEX.matches(sha256) -> Result.Error(AppError.Parse(message = "更新清单 sha256 非法"))
             fileSizeBytes <= 0L -> Result.Error(AppError.Parse(message = "更新清单 fileSizeBytes 无效"))
+            fullChangelogUrl != null && !isDirectDownloadUrl(fullChangelogUrl) -> {
+                Result.Error(AppError.Parse(message = "更新清单 fullChangelogUrl 非法"))
+            }
             minSupportedVersionCode < 0 -> Result.Error(AppError.Parse(message = "更新清单 minSupportedVersionCode 无效"))
             else -> Result.Success(
                 AppUpdateInfo(
@@ -120,6 +124,7 @@ class AppUpdateRepositoryImpl @Inject constructor(
                     sha256 = sha256,
                     fileSizeBytes = fileSizeBytes,
                     changelog = manifest.changelog?.trim()?.takeIf { it.isNotBlank() },
+                    fullChangelogUrl = fullChangelogUrl,
                     isForceUpdate = manifest.isForceUpdate,
                     minSupportedVersionCode = minSupportedVersionCode,
                     publishedAt = manifest.publishedAt?.trim()?.takeIf { it.isNotBlank() }

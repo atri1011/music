@@ -196,11 +196,26 @@ jobs:
             echo 'Release asset direct download URL not found'
             exit 1
           fi
+          RELEASE_NOTES=$(echo "${RELEASE_JSON}" | jq -r '.body // ""')
+          FULL_CHANGELOG_URL=$(printf '%s\n' "${RELEASE_NOTES}" | sed -nE 's/^.*Full Changelog[^:]*:[[:space:]]*(https?:\/\/[^[:space:]]+).*$/\1/p' | tail -n 1)
+          if [[ -z "${FULL_CHANGELOG_URL}" ]]; then
+            FULL_CHANGELOG_URL=$(echo "${RELEASE_JSON}" | jq -r '.html_url // ""')
+          fi
           echo "apk_url=${APK_URL}" >> "${GITHUB_OUTPUT}"
+          echo "full_changelog_url=${FULL_CHANGELOG_URL}" >> "${GITHUB_OUTPUT}"
+          {
+            echo 'release_notes<<__RELEASE_NOTES__'
+            printf '%s\n' "${RELEASE_NOTES}"
+            echo '__RELEASE_NOTES__'
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Generate update manifest
         id: manifest
         shell: bash
+        env:
+          APK_URL: ${{ steps.asset.outputs.apk_url }}
+          RELEASE_NOTES: ${{ steps.asset.outputs.release_notes }}
+          FULL_CHANGELOG_URL: ${{ steps.asset.outputs.full_changelog_url }}
         run: |
           set -euo pipefail
           FORCE_UPDATE="${{ github.event.inputs.force_update || 'false' }}"
@@ -214,19 +229,29 @@ jobs:
             exit 1
           fi
 
-          cat > update.json <<EOF
-          {
-            "latestVersionCode": ${{ steps.version.outputs.version_code }},
-            "latestVersionName": "${{ steps.version.outputs.version_name }}",
-            "apkUrl": "${{ steps.asset.outputs.apk_url }}",
-            "sha256": "${{ steps.apk.outputs.sha256 }}",
-            "fileSizeBytes": ${{ steps.apk.outputs.file_size_bytes }},
-            "changelog": "自动构建发布：${{ steps.version.outputs.release_tag }}",
-            "isForceUpdate": ${FORCE_UPDATE},
-            "minSupportedVersionCode": ${MIN_SUPPORTED},
-            "publishedAt": "${{ steps.apk.outputs.published_at }}"
-          }
-          EOF
+          jq -n \
+            --argjson latestVersionCode "${{ steps.version.outputs.version_code }}" \
+            --arg latestVersionName "${{ steps.version.outputs.version_name }}" \
+            --arg apkUrl "${APK_URL}" \
+            --arg sha256 "${{ steps.apk.outputs.sha256 }}" \
+            --argjson fileSizeBytes "${{ steps.apk.outputs.file_size_bytes }}" \
+            --arg changelog "${RELEASE_NOTES}" \
+            --arg fullChangelogUrl "${FULL_CHANGELOG_URL}" \
+            --argjson isForceUpdate "${FORCE_UPDATE}" \
+            --argjson minSupportedVersionCode "${MIN_SUPPORTED}" \
+            --arg publishedAt "${{ steps.apk.outputs.published_at }}" \
+            '{
+              latestVersionCode: $latestVersionCode,
+              latestVersionName: $latestVersionName,
+              apkUrl: $apkUrl,
+              sha256: $sha256,
+              fileSizeBytes: $fileSizeBytes,
+              changelog: ($changelog | if length > 0 then . else null end),
+              fullChangelogUrl: ($fullChangelogUrl | if length > 0 then . else null end),
+              isForceUpdate: $isForceUpdate,
+              minSupportedVersionCode: $minSupportedVersionCode,
+              publishedAt: $publishedAt
+            }' > update.json
 
       - name: Validate generated manifest
         shell: bash
@@ -237,6 +262,8 @@ jobs:
           jq -e '.apkUrl | (startswith("https://") or startswith("http://"))' update.json > /dev/null
           jq -e '.sha256 | test("^[A-Fa-f0-9]{64}$")' update.json > /dev/null
           jq -e '.fileSizeBytes > 0' update.json > /dev/null
+          jq -e '(.changelog == null) or (.changelog | length > 0)' update.json > /dev/null
+          jq -e '(.fullChangelogUrl == null) or (.fullChangelogUrl | (startswith("https://") or startswith("http://")))' update.json > /dev/null
           jq -e '.isForceUpdate | type == "boolean"' update.json > /dev/null
           jq -e '.minSupportedVersionCode >= 0' update.json > /dev/null
           jq -e '.publishedAt | length > 0' update.json > /dev/null

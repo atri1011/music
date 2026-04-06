@@ -36,6 +36,7 @@ class AppUpdateRepositoryImplTest {
         assertEquals("https://example.com/app-release.apk", update.apkUrl)
         assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", update.sha256)
         assertEquals(10_240L, update.fileSizeBytes)
+        assertEquals("https://github.com/example/repo/compare/v1.3.0...v1.4.0", update.fullChangelogUrl)
         assertEquals(false, update.isForceUpdate)
         assertEquals(0, update.minSupportedVersionCode)
     }
@@ -71,6 +72,22 @@ class AppUpdateRepositoryImplTest {
         val error = (result as Result.Error).error
         assertTrue(error is AppError.Parse)
         assertTrue(error.message.contains("sha256"))
+    }
+
+    @Test
+    fun invalidFullChangelogUrl_returnsParseError() = runTest {
+        assumeUpdateRepoConfigured()
+        coEvery { api.fetchJsonElement(any()) } returns Json.parseToJsonElement("""{"version":"main"}""")
+        coEvery { api.fetchAppUpdateManifest(any()) } returns validManifest(
+            fullChangelogUrl = "javascript:alert(1)"
+        )
+
+        val result = repository.fetchLatest()
+
+        assertTrue(result is Result.Error)
+        val error = (result as Result.Error).error
+        assertTrue(error is AppError.Parse)
+        assertTrue(error.message.contains("fullChangelogUrl"))
     }
 
     @Test
@@ -153,6 +170,7 @@ class AppUpdateRepositoryImplTest {
         sha256: String = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         fileSizeBytes: Long = 10_240L,
         changelog: String = "- 自动更新升级",
+        fullChangelogUrl: String? = "https://github.com/example/repo/compare/v1.3.0...v1.4.0",
         isForceUpdate: Boolean = false,
         minSupportedVersionCode: Int = 0,
         publishedAt: String = "2026-03-18T00:00:00Z"
@@ -165,6 +183,7 @@ class AppUpdateRepositoryImplTest {
             sha256 = sha256,
             fileSizeBytes = fileSizeBytes,
             changelog = changelog,
+            fullChangelogUrl = fullChangelogUrl,
             isForceUpdate = isForceUpdate,
             minSupportedVersionCode = minSupportedVersionCode,
             publishedAt = publishedAt

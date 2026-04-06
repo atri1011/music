@@ -1,9 +1,14 @@
 package com.music.myapplication.feature.update
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -382,7 +387,8 @@ fun AppUpdateDialog(
     downloadProgressPercent: Int?,
     stageMessage: String?,
     onPrimaryAction: () -> Unit,
-    onLater: () -> Unit
+    onLater: () -> Unit,
+    onOpenFullChangelog: (() -> Unit)? = null
 ) {
     val confirmText = when (actionState) {
         AppUpdateActionState.DOWNLOADING -> "下载中..."
@@ -394,6 +400,7 @@ fun AppUpdateDialog(
         AppUpdateActionState.IDLE -> "立即更新"
     }
     val confirmEnabled = actionState != AppUpdateActionState.DOWNLOADING
+    val changelogScrollState = rememberScrollState()
 
     AlertDialog(
         onDismissRequest = {
@@ -407,7 +414,16 @@ fun AppUpdateDialog(
                 Text("最新版本：${update.latestVersionName}", style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 update.changelog?.takeIf { it.isNotBlank() }?.let { changelog ->
-                    Text(changelog, style = MaterialTheme.typography.bodyMedium)
+                    Text("更新日志", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = changelog,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp)
+                            .verticalScroll(changelogScrollState)
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 if (!canSkipUpdate) {
@@ -438,9 +454,18 @@ fun AppUpdateDialog(
             }
         },
         dismissButton = {
-            if (canSkipUpdate) {
-                TextButton(onClick = onLater) {
-                    Text("稍后")
+            if (canSkipUpdate || onOpenFullChangelog != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    onOpenFullChangelog?.let { openFullChangelog ->
+                        TextButton(onClick = openFullChangelog) {
+                            Text("Full Changelog")
+                        }
+                    }
+                    if (canSkipUpdate) {
+                        TextButton(onClick = onLater) {
+                            Text("稍后")
+                        }
+                    }
                 }
             }
         }

@@ -290,6 +290,7 @@ class AppUpdateViewModelTest {
             sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             fileSizeBytes = 10_240L,
             changelog = "- 修复：xxx\n- 新增：yyy",
+            fullChangelogUrl = "https://github.com/example/repo/compare/v1.3.0...v1.4.0",
             isForceUpdate = isForceUpdate,
             minSupportedVersionCode = minSupportedVersionCode,
             publishedAt = "2026-03-18T00:00:00Z"

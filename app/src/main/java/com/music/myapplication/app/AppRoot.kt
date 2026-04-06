@@ -304,7 +304,14 @@ fun AppRoot(
                     downloadProgressPercent = updateState.downloadProgressPercent,
                     stageMessage = updateState.stageMessage,
                     onPrimaryAction = updateViewModel::onPrimaryAction,
-                    onLater = updateViewModel::dismissCurrentUpdate
+                    onLater = updateViewModel::dismissCurrentUpdate,
+                    onOpenFullChangelog = update.fullChangelogUrl?.let { url ->
+                        {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
                 )
             }
 

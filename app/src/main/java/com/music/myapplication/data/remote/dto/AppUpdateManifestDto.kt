@@ -11,6 +11,7 @@ data class AppUpdateManifestDto(
     val sha256: String = "",
     val fileSizeBytes: Long = 0L,
     val changelog: String? = null,
+    val fullChangelogUrl: String? = null,
     val isForceUpdate: Boolean = false,
     val minSupportedVersionCode: Int = 0,
     val publishedAt: String? = null

@@ -7,6 +7,7 @@ data class AppUpdateInfo(
     val sha256: String,
     val fileSizeBytes: Long,
     val changelog: String? = null,
+    val fullChangelogUrl: String? = null,
     val isForceUpdate: Boolean = false,
     val minSupportedVersionCode: Int = 0,
     val publishedAt: String? = null
