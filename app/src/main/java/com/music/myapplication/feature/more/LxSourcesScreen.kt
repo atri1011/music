@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.OfflineBolt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
@@ -87,7 +88,7 @@ fun LxSourcesScreen(
             result.onSuccess { imported ->
                 viewModel.loadImportedScript(
                     rawScript = imported.rawScript,
-                    fileName = imported.displayName
+                    sourceLabel = imported.sourceLabel ?: "本地文件"
                 )
             }.onFailure { error ->
                 snackbarHostState.showSnackbar(
@@ -113,7 +114,7 @@ fun LxSourcesScreen(
                     Column {
                         Text("落雪脚本管理")
                         Text(
-                            text = "支持粘贴或导入本地 JS；保存时会立即校验。",
+                            text = "支持粘贴、本地文件导入、链接导入；保存时会立即校验。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -143,6 +144,7 @@ fun LxSourcesScreen(
                 state = state,
                 onTextChange = viewModel::updateEditingScript,
                 onImportFromFile = launchImportPicker,
+                onImportFromUrl = viewModel::showImportUrlDialog,
                 onCancel = viewModel::cancelEditing,
                 onSave = viewModel::saveEditing,
                 isImportingFile = isImportingFile,
@@ -154,7 +156,7 @@ fun LxSourcesScreen(
             EmptyStateView(
                 icon = Icons.Default.Code,
                 title = "还没保存任何脚本",
-                subtitle = "先粘贴一份 LX Music 自定义源原始 JS，或者直接导入本地文件。",
+                subtitle = "先粘贴一份 LX Music 自定义源原始 JS，或者直接导入本地文件、远程链接。",
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -164,16 +166,11 @@ fun LxSourcesScreen(
                             Icon(Icons.Default.Add, contentDescription = null)
                             Text("新增脚本", modifier = Modifier.padding(start = 8.dp))
                         }
-                        FilledTonalButton(
-                            onClick = launchImportPicker,
-                            enabled = !isImportingFile
-                        ) {
-                            Icon(Icons.Default.Code, contentDescription = null)
-                            Text(
-                                text = if (isImportingFile) "导入中…" else "导入本地 JS",
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
+                        LxImportSourceButtons(
+                            onImportFromFile = launchImportPicker,
+                            onImportFromUrl = viewModel::showImportUrlDialog,
+                            isImportingFile = isImportingFile
+                        )
                     }
                 }
             )
@@ -186,21 +183,16 @@ fun LxSourcesScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         FilledTonalButton(onClick = viewModel::startCreate) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Text("新增脚本", modifier = Modifier.padding(start = 8.dp))
                         }
-                        FilledTonalButton(
-                            onClick = launchImportPicker,
-                            enabled = !isImportingFile
-                        ) {
-                            Icon(Icons.Default.Code, contentDescription = null)
-                            Text(
-                                text = if (isImportingFile) "导入中…" else "导入本地 JS",
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
+                        LxImportSourceButtons(
+                            onImportFromFile = launchImportPicker,
+                            onImportFromUrl = viewModel::showImportUrlDialog,
+                            isImportingFile = isImportingFile
+                        )
                     }
                 }
                 items(
@@ -219,6 +211,47 @@ fun LxSourcesScreen(
                 }
             }
         }
+    }
+
+    if (state.isImportUrlDialogVisible) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!state.isImportingUrl) {
+                    viewModel.dismissImportUrlDialog()
+                }
+            },
+            title = { Text("从链接导入") },
+            text = {
+                OutlinedTextField(
+                    value = state.importUrlText,
+                    onValueChange = viewModel::updateImportUrl,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = state.importUrlError != null,
+                    label = { Text("脚本链接") },
+                    placeholder = { Text("https://example.com/source.js") },
+                    supportingText = {
+                        Text(state.importUrlError ?: "仅支持 https 直链 JS")
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = viewModel::importScriptFromUrl,
+                    enabled = !state.isImportingUrl
+                ) {
+                    Text(if (state.isImportingUrl) "导入中…" else "导入")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = viewModel::dismissImportUrlDialog,
+                    enabled = !state.isImportingUrl
+                ) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     state.validationErrorScript?.let { script ->
@@ -263,6 +296,7 @@ private fun LxScriptEditor(
     state: LxSourcesUiState,
     onTextChange: (String) -> Unit,
     onImportFromFile: () -> Unit,
+    onImportFromUrl: () -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
     isImportingFile: Boolean,
@@ -281,20 +315,16 @@ private fun LxScriptEditor(
             style = MaterialTheme.typography.headlineSmall
         )
         Text(
-            text = "直接粘贴原始脚本，或者从本地文件载入。保存后会解析头部元信息并执行一次 inited 校验；即使失败也会作为草稿保存。",
+            text = "直接粘贴原始脚本，或者从本地文件、远程链接载入。保存后会解析头部元信息并执行一次 inited 校验；即使失败也会作为草稿保存。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        FilledTonalButton(
-            onClick = onImportFromFile,
-            enabled = !state.isSaving && !isImportingFile
-        ) {
-            Icon(Icons.Default.Code, contentDescription = null)
-            Text(
-                text = if (isImportingFile) "载入中…" else "从本地文件载入",
-                modifier = Modifier.padding(start = 8.dp)
-            )
-        }
+        LxImportSourceButtons(
+            onImportFromFile = onImportFromFile,
+            onImportFromUrl = onImportFromUrl,
+            isImportingFile = isImportingFile,
+            enabled = !state.isSaving && !state.isImportingUrl
+        )
         OutlinedTextField(
             value = state.editingScriptText,
             onValueChange = onTextChange,
@@ -326,6 +356,34 @@ private fun LxScriptEditor(
             ) {
                 Text("取消")
             }
+        }
+    }
+}
+
+@Composable
+private fun LxImportSourceButtons(
+    onImportFromFile: () -> Unit,
+    onImportFromUrl: () -> Unit,
+    isImportingFile: Boolean,
+    enabled: Boolean = true
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        FilledTonalButton(
+            onClick = onImportFromFile,
+            enabled = enabled && !isImportingFile
+        ) {
+            Icon(Icons.Default.Code, contentDescription = null)
+            Text(
+                text = if (isImportingFile) "导入中…" else "导入本地 JS",
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+        FilledTonalButton(
+            onClick = onImportFromUrl,
+            enabled = enabled
+        ) {
+            Icon(Icons.Default.Link, contentDescription = null)
+            Text("链接导入", modifier = Modifier.padding(start = 8.dp))
         }
     }
 }
@@ -445,7 +503,7 @@ private fun LxScriptCard(
 }
 
 private data class ImportedLxScript(
-    val displayName: String?,
+    val sourceLabel: String?,
     val rawScript: String
 )
 
@@ -475,8 +533,5 @@ private fun readImportedLxScript(
         throw IllegalStateException("所选脚本文件内容为空")
     }
 
-    return ImportedLxScript(
-        displayName = displayName,
-        rawScript = rawScript
-    )
+    return ImportedLxScript(sourceLabel = displayName, rawScript = rawScript)
 }

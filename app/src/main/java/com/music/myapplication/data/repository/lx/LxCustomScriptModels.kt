@@ -62,6 +62,11 @@ data class LxScriptValidationResult(
         get() = validationError.isNullOrBlank()
 }
 
+data class LxImportedScriptContent(
+    val rawScript: String,
+    val sourceLabel: String
+)
+
 @Serializable
 data class LxScriptMetadata(
     val id: String = "",
