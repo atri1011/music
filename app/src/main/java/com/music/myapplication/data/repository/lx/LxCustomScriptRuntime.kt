@@ -6,6 +6,8 @@ import com.dokar.quickjs.binding.asyncFunction
 import com.dokar.quickjs.binding.function
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.security.KeyFactory
 import java.security.MessageDigest
@@ -28,6 +30,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -56,6 +59,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.text.Charsets.UTF_8
 import java.util.concurrent.TimeUnit
+import java.util.zip.DeflaterOutputStream
+import java.util.zip.InflaterInputStream
 
 @Singleton
 class LxCustomScriptRuntime @Inject constructor(
@@ -221,40 +226,47 @@ class LxCustomScriptRuntime @Inject constructor(
     ): ActiveLxSession {
         val buildState = SessionBuildState(metadata = metadata)
         val quickJs = QuickJs.create(jobDispatcher = runtimeDispatcher)
+        buildState.quickJs = quickJs
         bindHostFunctions(quickJs = quickJs, buildState = buildState)
 
-        quickJs.evaluate<Unit>(
-            code = buildPrelude(metadata = metadata),
-            filename = "lx-prelude.js"
-        )
-        quickJs.evaluate<Any?>(
-            code = rawScript,
-            filename = "${metadata.name.ifBlank { scriptId }}.js"
-        )
+        return try {
+            quickJs.evaluate<Unit>(
+                code = buildPrelude(metadata = metadata),
+                filename = "lx-prelude.js"
+            )
+            quickJs.evaluate<Any?>(
+                code = rawScript,
+                filename = "${metadata.name.ifBlank { scriptId }}.js"
+            )
 
-        val initedPayload = buildState.initedPayload
-            ?: throw IllegalStateException("脚本未发送 EVENT_NAMES.inited")
-        val declaredSources = parseDeclaredSources(initedPayload)
-        if (declaredSources.isEmpty()) {
-            throw IllegalStateException("脚本未声明任何可用来源")
+            val initedPayload = awaitInitedPayload(buildState)
+            val declaredSources = parseDeclaredSources(initedPayload)
+            if (declaredSources.isEmpty()) {
+                throw IllegalStateException("脚本未声明任何可用来源")
+            }
+
+            ActiveLxSession(
+                script = LxCustomScript(
+                    id = scriptId,
+                    rawScript = rawScript,
+                    name = metadata.name,
+                    description = metadata.description,
+                    version = metadata.version,
+                    author = metadata.author,
+                    homepage = metadata.homepage,
+                    declaredSources = declaredSources.keys.toList(),
+                    updatedAt = System.currentTimeMillis()
+                ),
+                quickJs = quickJs,
+                declaredSources = declaredSources,
+                updateAlert = buildState.updateAlert,
+                activeCalls = buildState.activeCalls,
+                timerJobs = buildState.timerJobs
+            )
+        } catch (error: Exception) {
+            buildState.close()
+            throw error
         }
-
-        return ActiveLxSession(
-            script = LxCustomScript(
-                id = scriptId,
-                rawScript = rawScript,
-                name = metadata.name,
-                description = metadata.description,
-                version = metadata.version,
-                author = metadata.author,
-                homepage = metadata.homepage,
-                declaredSources = declaredSources.keys.toList(),
-                updatedAt = System.currentTimeMillis()
-            ),
-            quickJs = quickJs,
-            declaredSources = declaredSources,
-            updateAlert = buildState.updateAlert
-        )
     }
 
     private fun bindHostFunctions(
@@ -267,6 +279,8 @@ class LxCustomScriptRuntime @Inject constructor(
             when (eventName) {
                 "inited" -> {
                     buildState.initedPayload = jsonPayload.toJsonObjectOrNull(json)
+                    buildState.didReceiveInited = true
+                    buildState.initedSignal.complete(Unit)
                 }
                 "updateAlert" -> {
                     if (buildState.updateAlert == null) {
@@ -295,23 +309,14 @@ class LxCustomScriptRuntime @Inject constructor(
             val delayMs = max(0, args.intArg(1))
             val job = runtimeScope.launch {
                 delay(delayMs.toLong())
-                fireTimer(timerId)
+                fireTimer(buildState, timerId)
             }
-            runtimeScope.launch {
-                runtimeMutex.withLock {
-                    activeSession?.timerJobs?.set(timerId, job)
-                }
-            }
+            buildState.timerJobs[timerId] = job
         }
 
         quickJs.function("__lxHostClearTimeout") { args ->
             val timerId = args.intArg(0)
-            runtimeScope.launch {
-                runtimeMutex.withLock {
-                    val current = activeSession ?: return@withLock
-                    current.timerJobs.remove(timerId)?.cancel()
-                }
-            }
+            buildState.timerJobs.remove(timerId)?.cancel()
         }
 
         quickJs.function("__lxHostBufferFrom") { args ->
@@ -358,11 +363,20 @@ class LxCustomScriptRuntime @Inject constructor(
             encryptRsa(input = input, publicKeyPem = publicKeyPem)
         }
 
+        quickJs.function("__lxHostZlibInflate") { args ->
+            inflateZlib(args.byteArrayArg(0))
+        }
+
+        quickJs.function("__lxHostZlibDeflate") { args ->
+            deflateZlib(args.byteArrayArg(0))
+        }
+
         quickJs.asyncFunction("__lxHostRequest") { args ->
             val url = args.stringArg(0)
             val optionsJson = args.stringArg(1)
             val requestId = args.intArg(2)
             enqueueRequest(
+                buildState = buildState,
                 requestId = requestId,
                 url = url,
                 optionsJson = optionsJson
@@ -371,11 +385,7 @@ class LxCustomScriptRuntime @Inject constructor(
 
         quickJs.function("__lxHostCancelRequest") { args ->
             val requestId = args.intArg(0)
-            runtimeScope.launch {
-                runtimeMutex.withLock {
-                    activeSession?.activeCalls?.get(requestId)?.cancel()
-                }
-            }
+            buildState.activeCalls[requestId]?.cancel()
         }
         quickJs.function("__lxHostResolveRequestInvocation") { args ->
             completeRequestInvocation(
@@ -435,7 +445,10 @@ class LxCustomScriptRuntime @Inject constructor(
                 filename = "lx-invoke-request.js"
             )
             val completion = deferred.await()
-            completion.error?.let { throw IllegalStateException(it) }
+            completion.error?.let { error ->
+                val summary = "source=${request.source}, action=${request.action}, type=${request.info.type}, musicId=${request.info.musicInfo.id}"
+                throw IllegalStateException("$summary\n$error")
+            }
             completion.value
         } finally {
             pendingRequestInvocations.remove(invocationId)
@@ -443,6 +456,7 @@ class LxCustomScriptRuntime @Inject constructor(
     }
 
     private suspend fun enqueueRequest(
+        buildState: SessionBuildState,
         requestId: Int,
         url: String,
         optionsJson: String
@@ -451,6 +465,7 @@ class LxCustomScriptRuntime @Inject constructor(
         val httpUrl = requestUrl.toHttpUrlOrNull()
             ?: run {
                 deliverRequestResult(
+                    buildState = buildState,
                     requestId = requestId,
                     err = requestError("请求 URL 无效"),
                     response = null,
@@ -481,9 +496,7 @@ class LxCustomScriptRuntime @Inject constructor(
         requestBuilder.method(method, if (method == "GET" || method == "HEAD") null else requestBody ?: ByteArray(0).toRequestBody())
 
         val call = client.newCall(requestBuilder.build())
-        runtimeMutex.withLock {
-            activeSession?.activeCalls?.set(requestId, call)
-        }
+        buildState.activeCalls[requestId] = call
         call.enqueue(
             object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
@@ -494,6 +507,7 @@ class LxCustomScriptRuntime @Inject constructor(
                     }
                     runtimeScope.launch {
                         deliverRequestResult(
+                            buildState = buildState,
                             requestId = requestId,
                             err = requestError(e.message?.ifBlank { "请求失败" } ?: "请求失败", errName),
                             response = null,
@@ -508,6 +522,7 @@ class LxCustomScriptRuntime @Inject constructor(
                         val normalizedBody = parseLxResponseBody(bodyString, json)
                         runtimeScope.launch {
                             deliverRequestResult(
+                                buildState = buildState,
                                 requestId = requestId,
                                 err = null,
                                 response = buildJsonObject {
@@ -532,18 +547,17 @@ class LxCustomScriptRuntime @Inject constructor(
     }
 
     private suspend fun deliverRequestResult(
+        buildState: SessionBuildState,
         requestId: Int,
         err: JsonObject?,
         response: JsonObject?,
         body: String?
     ) {
-        val session = runtimeMutex.withLock {
-            val current = activeSession ?: return
-            current.activeCalls.remove(requestId)
-            current.takeUnless { it.quickJs.isClosed }
-        } ?: return
+        val sessionQuickJs = buildState.quickJs ?: return
+        buildState.activeCalls.remove(requestId)
+        if (sessionQuickJs.isClosed) return
         runCatching {
-            session.quickJs.evaluate<Unit>(
+            sessionQuickJs.evaluate<Unit>(
                 code = """
                     globalThis.__lxInvokeRequestCallback(
                       $requestId,
@@ -573,14 +587,12 @@ class LxCustomScriptRuntime @Inject constructor(
         pendingRequestInvocations.clear()
     }
 
-    private suspend fun fireTimer(timerId: Int) {
-        val session = runtimeMutex.withLock {
-            val current = activeSession ?: return
-            current.timerJobs.remove(timerId)
-            current.takeUnless { it.quickJs.isClosed }
-        } ?: return
+    private suspend fun fireTimer(buildState: SessionBuildState, timerId: Int) {
+        val sessionQuickJs = buildState.quickJs ?: return
+        buildState.timerJobs.remove(timerId)
+        if (sessionQuickJs.isClosed) return
         runCatching {
-            session.quickJs.evaluate<Unit>(
+            sessionQuickJs.evaluate<Unit>(
                 code = "globalThis.__lxFireTimer($timerId);",
                 filename = "lx-fire-timer.js"
             )
@@ -604,7 +616,8 @@ class LxCustomScriptRuntime @Inject constructor(
                     throw IllegalStateException("来源 $sourceId 的 type 必须为 music")
                 }
                 val actions = sourceObject["actions"].stringList()
-                val qualities = (sourceObject["qualitys"] ?: sourceObject["qualities"]).stringList()
+                val declaredQualities = (sourceObject["qualitys"] ?: sourceObject["qualities"]).stringList()
+                val qualities = declaredQualities.toSupportedLxQualities()
 
                 if (knownSource == LxKnownSource.LOCAL) {
                     if (actions.any { it !in LOCAL_ALLOWED_ACTIONS }) {
@@ -614,7 +627,7 @@ class LxCustomScriptRuntime @Inject constructor(
                     if (actions != listOf("musicUrl")) {
                         throw IllegalStateException("$sourceId 仅允许 actions=[musicUrl]")
                     }
-                    if (qualities.isEmpty() || qualities.any { it !in SUPPORTED_QUALITIES }) {
+                    if (qualities.isEmpty()) {
                         throw IllegalStateException(
                             "$sourceId 仅允许音质 ${SUPPORTED_QUALITIES.joinToString("/")}"
                         )
@@ -693,7 +706,7 @@ class LxCustomScriptRuntime @Inject constructor(
                 request: "request",
                 updateAlert: "updateAlert",
               });
-              globalThis.EVENT_NAMES = EVENT_NAMES;
+              ${lxPreludeCompatibilitySnippet()}
               globalThis.__lxHandlers = __lxHandlers;
               globalThis.console = {
                 log: (...args) => __lxHostConsole("log", args.map(String).join(" ")),
@@ -725,8 +738,10 @@ class LxCustomScriptRuntime @Inject constructor(
                 __lxPendingRequests.delete(requestId);
                 callback(err ?? null, resp ?? null, body ?? null);
               };
+              ${lxBufferCompatibilitySnippet()}
               const lx = {
                 EVENT_NAMES,
+                event_names: EVENT_NAMES,
                 env: "mobile",
                 version: "1.2.0",
                 currentScriptInfo: $currentScriptInfoJson,
@@ -745,7 +760,7 @@ class LxCustomScriptRuntime @Inject constructor(
                 utils: {
                   buffer: {
                     from(value, encoding = "utf8") {
-                      return __lxHostBufferFrom(value, String(encoding));
+                      return Buffer.from(value, String(encoding));
                     },
                     bufToString(buf, encoding = "utf8") {
                       return __lxHostBufferToString(buf, String(encoding));
@@ -756,16 +771,23 @@ class LxCustomScriptRuntime @Inject constructor(
                       return __lxHostMd5(value);
                     },
                     randomBytes(size) {
-                      return __lxHostRandomBytes(Number(size) || 0);
+                      return __lxWrapBuffer(__lxHostRandomBytes(Number(size) || 0));
                     },
                     aesEncrypt(buffer, mode, key, iv) {
-                      return __lxHostAesEncrypt(buffer, String(mode ?? ""), key, iv ?? null);
+                      return __lxWrapBuffer(__lxHostAesEncrypt(buffer, String(mode ?? ""), key, iv ?? null));
                     },
                     rsaEncrypt(buffer, key) {
-                      return __lxHostRsaEncrypt(buffer, String(key ?? ""));
+                      return __lxWrapBuffer(__lxHostRsaEncrypt(buffer, String(key ?? "")));
                     },
                   },
-                  zlib: Object.freeze({}),
+                  zlib: Object.freeze({
+                    inflate(buffer) {
+                      return Promise.resolve(__lxWrapBuffer(__lxHostZlibInflate(buffer)));
+                    },
+                    deflate(buffer) {
+                      return Promise.resolve(__lxWrapBuffer(__lxHostZlibDeflate(buffer)));
+                    },
+                  }),
                 },
               };
               globalThis.lx = lx;
@@ -895,8 +917,10 @@ class LxCustomScriptRuntime @Inject constructor(
     ): ByteArray {
         val normalizedMode = mode.lowercase()
         val transformation = when (normalizedMode) {
-            "cbc", "aes-cbc", "aes/cbc/pkcs5padding" -> "AES/CBC/PKCS5Padding"
-            "ecb", "aes-ecb", "aes/ecb/pkcs5padding" -> "AES/ECB/PKCS5Padding"
+            "cbc", "aes-cbc", "aes/cbc/pkcs5padding",
+            "aes-128-cbc", "aes-192-cbc", "aes-256-cbc" -> "AES/CBC/PKCS5Padding"
+            "ecb", "aes-ecb", "aes/ecb/pkcs5padding",
+            "aes-128-ecb", "aes-192-ecb", "aes-256-ecb" -> "AES/ECB/PKCS5Padding"
             else -> throw IllegalArgumentException("仅支持 AES/CBC/PKCS5Padding 与 AES/ECB/PKCS5Padding")
         }
         val cipher = Cipher.getInstance(transformation)
@@ -920,6 +944,23 @@ class LxCustomScriptRuntime @Inject constructor(
         val cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding")
         cipher.init(Cipher.ENCRYPT_MODE, publicKey)
         return cipher.doFinal(input)
+    }
+
+    private fun inflateZlib(input: ByteArray): ByteArray {
+        return ByteArrayInputStream(input).use { source ->
+            InflaterInputStream(source).use { inflater ->
+                inflater.readBytes()
+            }
+        }
+    }
+
+    private fun deflateZlib(input: ByteArray): ByteArray {
+        return ByteArrayOutputStream().use { sink ->
+            DeflaterOutputStream(sink).use { deflater ->
+                deflater.write(input)
+            }
+            sink.toByteArray()
+        }
     }
 
     private fun extractHttpUrl(raw: String?): String? {
@@ -956,10 +997,23 @@ class LxCustomScriptRuntime @Inject constructor(
         put("name", name)
     }
 
+    private suspend fun awaitInitedPayload(buildState: SessionBuildState): JsonObject {
+        if (!buildState.didReceiveInited) {
+            val initialized = withTimeoutOrNull(DEFAULT_TIMEOUT_SECONDS * 1_000L) {
+                buildState.initedSignal.await()
+            } != null
+            if (!initialized) {
+                throw IllegalStateException("脚本未发送 EVENT_NAMES.inited")
+            }
+        }
+        return buildState.initedPayload
+            ?: throw IllegalStateException("脚本发送的 EVENT_NAMES.inited 负载格式不正确")
+    }
+
     companion object {
         private const val TAG = "LxCustomRuntime"
         private val PLAYABLE_URL_KEYS = listOf("url", "musicUrl", "playUrl", "play_url")
-        private val SUPPORTED_QUALITIES = setOf("128k", "320k", "flac", "flac24bit")
+        private val SUPPORTED_QUALITIES = SUPPORTED_LX_QUALITIES
         private val LOCAL_ALLOWED_ACTIONS = setOf("musicUrl", "lyric", "pic")
         private const val DEFAULT_TIMEOUT_SECONDS = 15
         private const val MAX_UPDATE_ALERT_TEXT_LENGTH = 1024
@@ -968,6 +1022,63 @@ class LxCustomScriptRuntime @Inject constructor(
 }
 
 private val HEADER_TAG_REGEX = Regex("""^[*!]?\s*@([A-Za-z][\w-]*)\s*(.*)$""")
+
+internal fun lxPreludeCompatibilitySnippet(): String = """
+    globalThis.window = globalThis;
+    globalThis.self = globalThis;
+    globalThis.global = globalThis;
+    globalThis.EVENT_NAMES = EVENT_NAMES;
+    globalThis.event_names = EVENT_NAMES;
+""".trimIndent()
+
+internal fun lxBufferCompatibilitySnippet(): String = """
+    const __lxWrapBuffer = (value) => {
+      if (value instanceof Buffer) return value;
+      if (value instanceof Uint8Array || value instanceof Int8Array) return new Buffer(value);
+      if (Array.isArray(value)) return new Buffer(value);
+      return new Buffer(0);
+    };
+    class Buffer extends Uint8Array {
+      static from(value, encoding = "utf8") {
+        return __lxWrapBuffer(__lxHostBufferFrom(value, String(encoding)));
+      }
+      static alloc(size) {
+        return new Buffer(Number(size) || 0);
+      }
+      static allocUnsafe(size) {
+        return new Buffer(Number(size) || 0);
+      }
+      static concat(list, totalLength) {
+        const chunks = Array.isArray(list) ? list.map(__lxWrapBuffer) : [];
+        const size = Number.isFinite(totalLength)
+          ? Number(totalLength)
+          : chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const out = new Buffer(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          out.set(chunk, offset);
+          offset += chunk.length;
+        }
+        return out;
+      }
+      static isBuffer(value) {
+        return value instanceof Uint8Array || value instanceof Int8Array;
+      }
+      toString(encoding = "utf8") {
+        return __lxHostBufferToString(this, String(encoding));
+      }
+    }
+    globalThis.Buffer = Buffer;
+""".trimIndent()
+
+internal fun List<String>.toSupportedLxQualities(): List<String> = asSequence()
+    .map(String::trim)
+    .filter(String::isNotBlank)
+    .filter { it in SUPPORTED_LX_QUALITIES }
+    .distinct()
+    .toList()
+
+private val SUPPORTED_LX_QUALITIES = setOf("128k", "320k", "flac", "flac24bit")
 
 internal fun parseLxScriptMetadata(
     scriptId: String,
@@ -1039,8 +1150,8 @@ private data class ActiveLxSession(
     val quickJs: QuickJs,
     val declaredSources: Map<String, LxDeclaredSource>,
     val updateAlert: LxUpdateAlertInfo?,
-    val activeCalls: MutableMap<Int, Call> = mutableMapOf(),
-    val timerJobs: MutableMap<Int, Job> = mutableMapOf(),
+    val activeCalls: MutableMap<Int, Call> = ConcurrentHashMap(),
+    val timerJobs: MutableMap<Int, Job> = ConcurrentHashMap(),
     var didShowUpdateAlert: Boolean = false
 ) {
     fun close() {
@@ -1061,15 +1172,33 @@ private data class ActiveLxSession(
 
 private data class SessionBuildState(
     val metadata: LxScriptMetadata,
+    var quickJs: QuickJs? = null,
+    val activeCalls: MutableMap<Int, Call> = ConcurrentHashMap(),
+    val timerJobs: MutableMap<Int, Job> = ConcurrentHashMap(),
+    val initedSignal: CompletableDeferred<Unit> = CompletableDeferred(),
+    var didReceiveInited: Boolean = false,
     var initedPayload: JsonObject? = null,
     var updateAlert: LxUpdateAlertInfo? = null
-)
+) {
+    fun close() {
+        activeCalls.values.forEach(Call::cancel)
+        timerJobs.values.forEach(Job::cancel)
+        activeCalls.clear()
+        timerJobs.clear()
+        quickJs?.takeUnless { it.isClosed }?.close()
+        quickJs = null
+    }
+}
 
 @Serializable
 private data class LxRuntimeRequest(
     val source: String,
     val action: String,
-    val info: LxMusicRequestPayload
+    val info: LxMusicRequestPayload,
+    val type: String = info.type,
+    val quality: String = info.type,
+    val musicInfo: LxMusicInfo = info.musicInfo,
+    val songInfo: LxMusicInfo = info.musicInfo
 )
 
 private data class ParsedRequestOptions(

@@ -101,7 +101,10 @@ data class LxUpdateAlertInfo(
 @Serializable
 data class LxMusicRequestPayload(
     val type: String,
-    val musicInfo: LxMusicInfo
+    val musicInfo: LxMusicInfo,
+    val quality: String = type,
+    val music: LxMusicInfo = musicInfo,
+    val songInfo: LxMusicInfo = musicInfo
 )
 
 @Serializable
@@ -120,7 +123,23 @@ data class LxMusicInfo(
     val picUrl: String,
     val interval: Int,
     val duration: Int,
-    val source: String
+    val source: String,
+    val quality: String = "128k",
+    val songId: String = id,
+    val musicId: String = id,
+    val trackId: String = id,
+    val songName: String = title,
+    val artistName: String = artist,
+    val author: String = artist,
+    val artists: List<String> = listOf(artist),
+    val album_id: String = albumId,
+    val albumTitle: String = album,
+    val pic_url: String = picUrl,
+    val cover: String = picUrl,
+    val coverUrl: String = picUrl,
+    val sourceId: String = source,
+    val durationMs: Long = duration.toLong() * 1_000L,
+    val intervalMs: Int = interval * 1_000
 )
 
 enum class LxKnownSource(
@@ -185,6 +204,7 @@ internal fun Track.toLxMusicInfo(
         picUrl = coverUrl,
         interval = durationSeconds,
         duration = durationSeconds,
-        source = sourceId
+        source = sourceId,
+        quality = quality
     )
 }
