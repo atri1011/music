@@ -21,6 +21,6 @@
 
     <!-- LX 自定义源脚本当前命中裸 IP 的 http 入口，需单独放行明文请求。 -->
     <domain-config cleartextTrafficPermitted="true">
-        <domain>97.64.37.235</domain>
+        <domain includeSubdomains="false">97.64.37.235</domain>
     </domain-config>
 </network-security-config>
