@@ -11,6 +11,7 @@ import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -84,7 +85,9 @@ class TrackPlaybackResolverTest {
         val staleContentUri = "content://media/external/audio/media/404"
         val track = testTrack(playableUrl = staleContentUri)
         coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success(
+        coEvery { sourceRouter.currentRequestedSource() } returns AudioSource.TUNEHUB
+        coEvery { onlineRepo.search(Platform.NETEASE, "晴天 周杰伦", 1, 20) } returns Result.Success(emptyList())
+        coEvery { sourceRouter.resolve(track, "128k", AudioSource.TUNEHUB) } returns Result.Success(
             sourceResolution("https://example.com/play.mp3")
         )
 
@@ -94,14 +97,17 @@ class TrackPlaybackResolverTest {
         val resolved = (result as Result.Success).data
         assertEquals("https://example.com/play.mp3", resolved.track.playableUrl)
         assertNull(resolved.sourceFallbackMessage)
-        coVerify(exactly = 1) { sourceRouter.resolve(track, "128k") }
+        coVerify(exactly = 1) { sourceRouter.currentRequestedSource() }
+        coVerify(exactly = 1) { sourceRouter.resolve(track, "128k", AudioSource.TUNEHUB) }
     }
 
     @Test
     fun `remote resolving still works when no local copy exists`() = runTest {
         val track = testTrack()
         coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success(
+        coEvery { sourceRouter.currentRequestedSource() } returns AudioSource.TUNEHUB
+        coEvery { onlineRepo.search(Platform.NETEASE, "晴天 周杰伦", 1, 20) } returns Result.Success(emptyList())
+        coEvery { sourceRouter.resolve(track, "128k", AudioSource.TUNEHUB) } returns Result.Success(
             sourceResolution("https://example.com/play.mp3")
         )
 
@@ -111,14 +117,16 @@ class TrackPlaybackResolverTest {
         val resolved = (result as Result.Success).data
         assertEquals("https://example.com/play.mp3", resolved.track.playableUrl)
         assertNull(resolved.sourceFallbackMessage)
-        coVerify(exactly = 1) { sourceRouter.resolve(track, "128k") }
+        coVerify(exactly = 1) { sourceRouter.currentRequestedSource() }
+        coVerify(exactly = 1) { sourceRouter.resolve(track, "128k", AudioSource.TUNEHUB) }
     }
 
     @Test
     fun `source router fallback message is exposed to player layer`() = runTest {
         val track = testTrack(platform = Platform.NETEASE)
         coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Success(
+        coEvery { sourceRouter.currentRequestedSource() } returns AudioSource.JKAPI
+        coEvery { sourceRouter.resolve(track, "128k", AudioSource.JKAPI) } returns Result.Success(
             sourceResolution(
                 url = "https://example.com/play.mp3",
                 requestedSource = AudioSource.JKAPI,
@@ -137,111 +145,55 @@ class TrackPlaybackResolverTest {
     }
 
     @Test
-    fun `NETEASE digit id falls back to qq candidate when primary resolving fails`() = runTest {
-        val track = testTrack(
-            id = "123456",
-            platform = Platform.NETEASE,
-            album = "",
-            coverUrl = "",
-            durationMs = 0L
-        )
-        val candidate = qqCandidateTrack()
-        val sourceError = AppError.Parse(message = "解析播放地址失败")
+    fun `supported platform candidate is preferred over unsupported original track`() = runTest {
+        val track = testTrack(id = "123456", platform = Platform.QQ, album = "", coverUrl = "", durationMs = 0L)
+        val candidate = candidateTrack(platform = Platform.NETEASE, id = "netease-1", album = "候选专辑", coverUrl = "https://example.com/netease-cover.jpg", durationMs = 233000L)
         coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "320k") } returns Result.Error(sourceError)
-        coEvery { onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20) } returns Result.Success(listOf(candidate))
-        coEvery { onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, "320k") } returns Result.Success("https://example.com/qq.mp3")
+        coEvery { sourceRouter.currentRequestedSource() } returns AudioSource.METING_BAKA
+        coEvery { onlineRepo.search(Platform.NETEASE, "晴天 周杰伦", 1, 20) } returns Result.Success(listOf(candidate))
+        coEvery { sourceRouter.resolve(candidate, "320k", AudioSource.METING_BAKA) } returns Result.Success(
+            sourceResolution(
+                url = "https://example.com/netease.mp3",
+                requestedSource = AudioSource.METING_BAKA,
+                resolvedSource = AudioSource.METING_BAKA
+            )
+        )
 
         val result = resolver.resolve(track, "320k")
 
         assertTrue(result is Result.Success)
         val resolvedTrack = (result as Result.Success).data.track
-        assertEquals(Platform.QQ, resolvedTrack.platform)
+        assertEquals(Platform.NETEASE, resolvedTrack.platform)
         assertEquals(candidate.id, resolvedTrack.id)
         assertEquals(track.title, resolvedTrack.title)
         assertEquals(track.artist, resolvedTrack.artist)
         assertEquals(candidate.album, resolvedTrack.album)
         assertEquals(candidate.coverUrl, resolvedTrack.coverUrl)
         assertEquals(candidate.durationMs, resolvedTrack.durationMs)
-        assertEquals("https://example.com/qq.mp3", resolvedTrack.playableUrl)
+        assertEquals("https://example.com/netease.mp3", resolvedTrack.playableUrl)
         assertEquals("320k", resolvedTrack.quality)
-        coVerify(exactly = 1) { onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20) }
-        coVerify(exactly = 1) { onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, "320k") }
+        coVerify(exactly = 1) { onlineRepo.search(Platform.NETEASE, "晴天 周杰伦", 1, 20) }
+        coVerify(exactly = 1) { sourceRouter.resolve(candidate, "320k", AudioSource.METING_BAKA) }
+        coVerify(exactly = 0) { sourceRouter.resolve(track, any(), any()) }
     }
 
     @Test
-    fun `NETEASE digit id keeps original error when no qq candidate found`() = runTest {
-        val track = testTrack(id = "123456", platform = Platform.NETEASE)
-        val sourceError = AppError.Parse(message = "主解析失败")
-        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Error(sourceError)
-        coEvery { onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20) } returns Result.Success(emptyList())
-
-        val result = resolver.resolve(track, "128k")
-
-        assertTrue(result is Result.Error)
-        assertSame(sourceError, (result as Result.Error).error)
-        coVerify(exactly = 1) { onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20) }
-        coVerify(exactly = 0) { onlineRepo.resolvePlayableUrl(any(), any(), any()) }
-    }
-
-    @Test
-    fun `NETEASE digit id returns qq fallback error when playable url resolving fails`() = runTest {
-        val track = testTrack(id = "123456", platform = Platform.NETEASE)
-        val candidate = qqCandidateTrack(id = "003XYZMID")
-        val sourceError = AppError.Parse(message = "主解析失败")
-        val fallbackError = AppError.Api(message = "QQ 解析失败")
-        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Error(sourceError)
-        coEvery { onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20) } returns Result.Success(listOf(candidate))
-        coEvery { onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, "128k") } returns Result.Error(fallbackError)
-
-        val result = resolver.resolve(track, "128k")
-
-        assertTrue(result is Result.Error)
-        assertSame(fallbackError, (result as Result.Error).error)
-        coVerify(exactly = 1) { onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, "128k") }
-    }
-
-    @Test
-    fun `NETEASE with non digit id does not trigger qq fallback`() = runTest {
-        val track = testTrack(id = "netease-mid", platform = Platform.NETEASE)
-        val sourceError = AppError.Parse(message = "主解析失败")
-        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Error(sourceError)
-
-        val result = resolver.resolve(track, "128k")
-
-        assertTrue(result is Result.Error)
-        assertSame(sourceError, (result as Result.Error).error)
-        coVerify(exactly = 0) { onlineRepo.search(any(), any(), any(), any()) }
-        coVerify(exactly = 0) { onlineRepo.resolvePlayableUrl(any(), any(), any()) }
-    }
-
-    @Test
-    fun `NETEASE with missing title or artist does not trigger qq fallback`() = runTest {
-        val track = testTrack(id = "123456", platform = Platform.NETEASE, artist = "")
-        val sourceError = AppError.Parse(message = "主解析失败")
-        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Error(sourceError)
-
-        val result = resolver.resolve(track, "128k")
-
-        assertTrue(result is Result.Error)
-        assertSame(sourceError, (result as Result.Error).error)
-        coVerify(exactly = 0) { onlineRepo.search(any(), any(), any(), any()) }
-        coVerify(exactly = 0) { onlineRepo.resolvePlayableUrl(any(), any(), any()) }
-    }
-
-    @Test
-    fun `QQ digit id fallback remains working`() = runTest {
+    fun `same platform searched candidate is retried after original track fails`() = runTest {
         val track = testTrack(id = "123456", platform = Platform.QQ)
-        val candidate = qqCandidateTrack(id = "004ABCQqMID")
-        val sourceError = AppError.Parse(message = "主解析失败")
+        val candidate = candidateTrack(platform = Platform.QQ, id = "004ABCQqMID")
+        val sourceError = AppError.Parse(message = "QQ songid 无法直接解析")
         coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
-        coEvery { sourceRouter.resolve(track, "128k") } returns Result.Error(sourceError)
+        coEvery { sourceRouter.currentRequestedSource() } returns AudioSource.METING_BAKA
+        coEvery { onlineRepo.search(Platform.NETEASE, "晴天 周杰伦", 1, 20) } returns Result.Success(emptyList())
+        coEvery { sourceRouter.resolve(track, "128k", AudioSource.METING_BAKA) } returns Result.Error(sourceError)
         coEvery { onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20) } returns Result.Success(listOf(candidate))
-        coEvery { onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, "128k") } returns Result.Success("https://example.com/qq-128.mp3")
+        coEvery { sourceRouter.resolve(candidate, "128k", AudioSource.METING_BAKA) } returns Result.Success(
+            sourceResolution(
+                url = "https://example.com/qq-128.mp3",
+                requestedSource = AudioSource.METING_BAKA,
+                resolvedSource = AudioSource.METING_BAKA
+            )
+        )
 
         val result = resolver.resolve(track, "128k")
 
@@ -250,6 +202,61 @@ class TrackPlaybackResolverTest {
         assertEquals(Platform.QQ, resolvedTrack.platform)
         assertEquals(candidate.id, resolvedTrack.id)
         assertEquals("https://example.com/qq-128.mp3", resolvedTrack.playableUrl)
+        coVerifyOrder {
+            onlineRepo.search(Platform.NETEASE, "晴天 周杰伦", 1, 20)
+            sourceRouter.resolve(track, "128k", AudioSource.METING_BAKA)
+            onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20)
+            sourceRouter.resolve(candidate, "128k", AudioSource.METING_BAKA)
+        }
+    }
+
+    @Test
+    fun `unsupported original platform is retried after supported platform candidates miss`() = runTest {
+        val track = testTrack(id = "kuwo-1", platform = Platform.KUWO)
+        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
+        coEvery { sourceRouter.currentRequestedSource() } returns AudioSource.METING_BAKA
+        coEvery { onlineRepo.search(Platform.NETEASE, "晴天 周杰伦", 1, 20) } returns Result.Success(emptyList())
+        coEvery { onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20) } returns Result.Success(emptyList())
+        coEvery { sourceRouter.resolve(track, "128k", AudioSource.METING_BAKA) } returns Result.Success(
+            sourceResolution(
+                url = "https://example.com/kuwo.mp3",
+                requestedSource = AudioSource.METING_BAKA,
+                resolvedSource = AudioSource.TUNEHUB,
+                didFallback = true,
+                fallbackReason = "Meting (baka.plus) 不支持酷我，已自动切到 TuneHub"
+            )
+        )
+
+        val result = resolver.resolve(track, "128k")
+
+        assertTrue(result is Result.Success)
+        val resolved = (result as Result.Success).data
+        assertEquals(Platform.KUWO, resolved.track.platform)
+        assertEquals(track.id, resolved.track.id)
+        assertEquals("https://example.com/kuwo.mp3", resolved.track.playableUrl)
+        assertEquals("Meting (baka.plus) 不支持酷我，已自动切到 TuneHub", resolved.sourceFallbackMessage)
+    }
+
+    @Test
+    fun `last candidate error is returned when every attempt fails`() = runTest {
+        val track = testTrack(id = "123456", platform = Platform.QQ)
+        val neteaseCandidate = candidateTrack(platform = Platform.NETEASE, id = "netease-1")
+        val qqCandidate = candidateTrack(platform = Platform.QQ, id = "004ABCQqMID")
+        val neteaseError = AppError.Api(message = "网易候选解析失败")
+        val originalError = AppError.Parse(message = "原 QQ 曲目解析失败")
+        val candidateError = AppError.Api(message = "QQ 候选解析失败")
+        coEvery { downloadManager.getDownloadedFilePath(track.id, track.platform.id) } returns null
+        coEvery { sourceRouter.currentRequestedSource() } returns AudioSource.METING_BAKA
+        coEvery { onlineRepo.search(Platform.NETEASE, "晴天 周杰伦", 1, 20) } returns Result.Success(listOf(neteaseCandidate))
+        coEvery { sourceRouter.resolve(neteaseCandidate, "128k", AudioSource.METING_BAKA) } returns Result.Error(neteaseError)
+        coEvery { sourceRouter.resolve(track, "128k", AudioSource.METING_BAKA) } returns Result.Error(originalError)
+        coEvery { onlineRepo.search(Platform.QQ, "晴天 周杰伦", 1, 20) } returns Result.Success(listOf(qqCandidate))
+        coEvery { sourceRouter.resolve(qqCandidate, "128k", AudioSource.METING_BAKA) } returns Result.Error(candidateError)
+
+        val result = resolver.resolve(track, "128k")
+
+        assertTrue(result is Result.Error)
+        assertSame(candidateError, (result as Result.Error).error)
     }
 
     private fun sourceResolution(
@@ -286,7 +293,8 @@ class TrackPlaybackResolverTest {
         playableUrl = playableUrl
     )
 
-    private fun qqCandidateTrack(
+    private fun candidateTrack(
+        platform: Platform,
         id: String = "004Z8Ihr0JIu5s",
         title: String = "晴天",
         artist: String = "周杰伦",
@@ -295,7 +303,7 @@ class TrackPlaybackResolverTest {
         durationMs: Long = 258000L
     ) = Track(
         id = id,
-        platform = Platform.QQ,
+        platform = platform,
         title = title,
         artist = artist,
         album = album,

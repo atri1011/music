@@ -18,8 +18,18 @@ class PlaybackSourceRouter @Inject constructor(
     private val jkApiResolver: JkApiPlayableResolver,
     private val neteaseCloudApiResolver: NeteaseCloudApiPlayableResolver
 ) {
+    suspend fun currentRequestedSource(): AudioSource = preferences.audioSource.first()
+
     suspend fun resolve(track: Track, quality: String): Result<PlaybackSourceResolution> {
-        val requestedSource = preferences.audioSource.first()
+        val requestedSource = currentRequestedSource()
+        return resolve(track, quality, requestedSource)
+    }
+
+    suspend fun resolve(
+        track: Track,
+        quality: String,
+        requestedSource: AudioSource
+    ): Result<PlaybackSourceResolution> {
         return when (requestedSource) {
             AudioSource.TUNEHUB -> resolveDirectly(requestedSource) {
                 tuneHubResolver.resolve(track, quality)

@@ -55,6 +55,21 @@ class PlaybackSourceRouterTest {
     }
 
     @Test
+    fun `explicit requested source bypasses preferences lookup`() = runTest {
+        val track = testTrack(Platform.NETEASE)
+        coEvery { jkApiResolver.resolve(track) } returns Result.Success("https://jkapi.com/music.mp3")
+
+        val result = router.resolve(track, "128k", AudioSource.JKAPI)
+
+        assertTrue(result is Result.Success)
+        val resolution = (result as Result.Success).data
+        assertEquals("https://jkapi.com/music.mp3", resolution.playableUrl)
+        assertEquals(AudioSource.JKAPI, resolution.requestedSource)
+        assertEquals(AudioSource.JKAPI, resolution.resolvedSource)
+        assertEquals(false, resolution.didFallback)
+    }
+
+    @Test
     fun `LX custom selected - uses LX resolver`() = runTest {
         val track = testTrack(Platform.QQ)
         every { preferences.audioSource } returns flowOf(AudioSource.LX_CUSTOM)

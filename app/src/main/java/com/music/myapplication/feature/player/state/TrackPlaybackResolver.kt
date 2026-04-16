@@ -1,15 +1,18 @@
 package com.music.myapplication.feature.player.state
 
-import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.common.AppError
+import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.data.repository.PlaybackSourceRouter
+import com.music.myapplication.data.repository.isLikelySameArtist
+import com.music.myapplication.data.repository.isLikelySameTitle
+import com.music.myapplication.domain.model.AudioSource
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.OnlineMusicRepository
-import javax.inject.Inject
 import java.io.File
 import java.net.URI
+import javax.inject.Inject
 
 data class ResolvedTrackPlayback(
     val track: Track,
@@ -26,24 +29,59 @@ class TrackPlaybackResolver @Inject constructor(
             return Result.Success(ResolvedTrackPlayback(track = it))
         }
 
-        when (val result = sourceRouter.resolve(track, quality)) {
-            is Result.Success -> {
-                return Result.Success(
-                    ResolvedTrackPlayback(
-                        track = track.copy(playableUrl = result.data.playableUrl, quality = quality),
-                        sourceFallbackMessage = result.data.fallbackReason
-                            ?.takeIf { result.data.didFallback }
-                    )
-                )
-            }
-            is Result.Error -> {
-                if (!shouldTryQqFallback(track)) {
-                    return Result.Error(result.error)
+        val requestedSource = sourceRouter.currentRequestedSource()
+        val attemptedTrackKeys = LinkedHashSet<String>()
+        var lastError: AppError? = null
+
+        requestedSource.supportedPlatforms.forEach { platform ->
+            if (platform == track.platform) {
+                when (val attempt = tryResolveCandidate(
+                    originalTrack = track,
+                    candidate = track,
+                    quality = quality,
+                    requestedSource = requestedSource,
+                    attemptedTrackKeys = attemptedTrackKeys
+                )) {
+                    is Result.Success -> return attempt
+                    is Result.Error -> lastError = attempt.error
+                    null,
+                    Result.Loading -> Unit
                 }
-                return tryQqFallback(track, quality, result.error)
             }
-            Result.Loading -> return Result.Loading
+            if (shouldSearchCandidate(track, platform)) {
+                findSearchCandidate(track, platform)?.let { candidate ->
+                    when (val attempt = tryResolveCandidate(
+                        originalTrack = track,
+                        candidate = candidate,
+                        quality = quality,
+                        requestedSource = requestedSource,
+                        attemptedTrackKeys = attemptedTrackKeys
+                    )) {
+                        is Result.Success -> return attempt
+                        is Result.Error -> lastError = attempt.error
+                        null,
+                        Result.Loading -> Unit
+                    }
+                }
+            }
         }
+
+        if (!requestedSource.supportedPlatforms.contains(track.platform)) {
+            when (val attempt = tryResolveCandidate(
+                originalTrack = track,
+                candidate = track,
+                quality = quality,
+                requestedSource = requestedSource,
+                attemptedTrackKeys = attemptedTrackKeys
+            )) {
+                is Result.Success -> return attempt
+                is Result.Error -> lastError = attempt.error
+                null,
+                Result.Loading -> Unit
+            }
+        }
+
+        return Result.Error(lastError ?: AppError.Parse(message = "解析播放地址失败"))
     }
 
     private suspend fun resolveLocalPlayableTrack(track: Track): Track? {
@@ -61,65 +99,81 @@ class TrackPlaybackResolver @Inject constructor(
         return track.copy(playableUrl = localUri)
     }
 
-    private suspend fun findQqMidCandidate(track: Track): Track? {
+    private suspend fun findSearchCandidate(track: Track, platform: Platform): Track? {
         val keyword = listOf(track.title, track.artist)
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
+            .map(String::trim)
+            .filter(String::isNotBlank)
             .joinToString(" ")
         if (keyword.isBlank()) return null
 
         val searchResult = onlineRepo.search(
-            platform = Platform.QQ,
+            platform = platform,
             keyword = keyword,
             page = 1,
             pageSize = 20
         )
         val candidates = (searchResult as? Result.Success)?.data.orEmpty()
-            .filter { it.id.isNotBlank() && !it.id.isDigitsOnly() }
+            .filter { it.id.isNotBlank() }
         if (candidates.isEmpty()) return null
 
         return candidates.firstOrNull { candidate ->
-            candidate.title.equals(track.title, ignoreCase = true) &&
+            candidate.title.isLikelySameTitle(track.title) &&
                 candidate.artist.isLikelySameArtist(track.artist)
         } ?: candidates.firstOrNull { candidate ->
-            candidate.title.equals(track.title, ignoreCase = true)
+            candidate.title.isLikelySameTitle(track.title)
         } ?: candidates.firstOrNull()
     }
 
-    private suspend fun tryQqFallback(
-        track: Track,
+    private fun shouldSearchCandidate(track: Track, targetPlatform: Platform): Boolean {
+        val hasKeyword = track.title.isNotBlank() || track.artist.isNotBlank()
+        if (!hasKeyword) return false
+        return targetPlatform != track.platform || track.id.isBlank() || track.id.isDigitsOnly()
+    }
+
+    private suspend fun tryResolveCandidate(
+        originalTrack: Track,
+        candidate: Track,
         quality: String,
-        originalError: AppError
-    ): Result<ResolvedTrackPlayback> {
-        val candidate = findQqMidCandidate(track) ?: return Result.Error(originalError)
-        return when (val retry = onlineRepo.resolvePlayableUrl(Platform.QQ, candidate.id, quality)) {
+        requestedSource: AudioSource,
+        attemptedTrackKeys: MutableSet<String>
+    ): Result<ResolvedTrackPlayback>? {
+        if (!attemptedTrackKeys.add(candidate.trackKey())) return null
+        return when (val result = sourceRouter.resolve(candidate, quality, requestedSource)) {
             is Result.Success -> Result.Success(
                 ResolvedTrackPlayback(
-                    track = track.copy(
-                        platform = Platform.QQ,
-                        id = candidate.id,
-                        title = if (track.title.isBlank()) candidate.title else track.title,
-                        artist = if (track.artist.isBlank()) candidate.artist else track.artist,
-                        album = if (track.album.isBlank()) candidate.album else track.album,
-                        coverUrl = if (track.coverUrl.isBlank()) candidate.coverUrl else track.coverUrl,
-                        durationMs = if (track.durationMs <= 0L) candidate.durationMs else track.durationMs,
-                        playableUrl = retry.data,
+                    track = mergeSessionTrack(
+                        originalTrack = originalTrack,
+                        resolvedTrack = candidate,
+                        playableUrl = result.data.playableUrl,
                         quality = quality
-                    )
+                    ),
+                    sourceFallbackMessage = result.data.fallbackReason
+                        ?.takeIf { result.data.didFallback }
                 )
             )
-            is Result.Error -> Result.Error(retry.error)
-            Result.Loading -> Result.Error(originalError)
+            is Result.Error -> Result.Error(result.error)
+            Result.Loading -> null
         }
     }
 
-    private fun shouldTryQqFallback(track: Track): Boolean {
-        if (!track.id.isDigitsOnly()) return false
-        return when (track.platform) {
-            Platform.QQ -> true
-            Platform.NETEASE -> track.title.isNotBlank() && track.artist.isNotBlank()
-            else -> false
-        }
+    private fun mergeSessionTrack(
+        originalTrack: Track,
+        resolvedTrack: Track,
+        playableUrl: String,
+        quality: String
+    ): Track {
+        return originalTrack.copy(
+            platform = resolvedTrack.platform,
+            id = resolvedTrack.id,
+            title = originalTrack.title.ifBlank { resolvedTrack.title },
+            artist = originalTrack.artist.ifBlank { resolvedTrack.artist },
+            album = originalTrack.album.ifBlank { resolvedTrack.album },
+            albumId = originalTrack.albumId.ifBlank { resolvedTrack.albumId },
+            coverUrl = originalTrack.coverUrl.ifBlank { resolvedTrack.coverUrl },
+            durationMs = originalTrack.durationMs.takeIf { it > 0L } ?: resolvedTrack.durationMs,
+            playableUrl = playableUrl,
+            quality = quality
+        )
     }
 }
 
@@ -147,12 +201,4 @@ private fun String.toLocalPlayableUriOrNull(): String? {
 
 private fun String.isDigitsOnly(): Boolean = isNotBlank() && all { it.isDigit() }
 
-private fun String.isLikelySameArtist(other: String): Boolean {
-    if (isBlank() || other.isBlank()) return true
-    val left = lowercase().replace(" ", "")
-    val right = other.lowercase().replace(" ", "")
-    if (left.contains(right) || right.contains(left)) return true
-    val leftTokens = left.split(Regex("[,，/&、]")).map { it.trim() }.filter { it.isNotBlank() }
-    val rightTokens = right.split(Regex("[,，/&、]")).map { it.trim() }.filter { it.isNotBlank() }
-    return leftTokens.any { token -> rightTokens.any { it == token || it.contains(token) || token.contains(it) } }
-}
+private fun Track.trackKey(): String = "${platform.id}:$id"
