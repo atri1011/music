@@ -24,13 +24,13 @@ import com.music.myapplication.core.common.normalizeCoverUrl
 internal fun BlurredCoverBackground(coverUrl: String) {
     val context = LocalContext.current
     val normalizedUrl = remember(coverUrl) { normalizeCoverUrl(coverUrl) }
-    val useNativeBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val useNativeBlur = shouldUseNativeBlur(Build.VERSION.SDK_INT)
 
     Box(modifier = Modifier.fillMaxSize()) {
         val imageRequest = remember(normalizedUrl, useNativeBlur) {
             ImageRequest.Builder(context)
                 .data(normalizedUrl.ifEmpty { null })
-                .size(if (useNativeBlur) 256 else 32)
+                .size(blurredCoverRequestSize(useNativeBlur))
                 .scale(Scale.FILL)
                 .crossfade(800)
                 .memoryCachePolicy(CachePolicy.ENABLED)
@@ -56,11 +56,7 @@ internal fun BlurredCoverBackground(coverUrl: String) {
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.15f),
-                            Color.Black.copy(alpha = 0.40f),
-                            Color.Black.copy(alpha = 0.65f)
-                        )
+                        colors = blurredCoverOverlayColors()
                     )
                 )
         )

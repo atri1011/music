@@ -19,8 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-private val SPEED_PRESETS = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SpeedPickerSheet(
@@ -55,14 +53,14 @@ fun SpeedPickerSheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                SPEED_PRESETS.forEach { speed ->
+                speedPickerPresets.forEach { speed ->
                     FilterChip(
                         selected = speed == currentSpeed,
                         onClick = {
                             onSpeedSelected(speed)
                             onDismiss()
                         },
-                        label = { Text("${speed}x") }
+                        label = { Text(formatSpeedLabel(speed)) }
                     )
                 }
             }

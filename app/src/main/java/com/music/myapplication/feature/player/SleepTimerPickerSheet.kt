@@ -27,7 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.music.myapplication.feature.player.state.SleepTimerMode
+import com.music.myapplication.feature.player.state.sleepTimerCountdownOptions
+import com.music.myapplication.feature.player.state.statusText
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -38,8 +39,6 @@ fun SleepTimerPickerSheet(
 ) {
     val timerState by playerViewModel.sleepTimerState.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    val countdownOptions = listOf(15, 30, 45, 60, 90)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -76,13 +75,8 @@ fun SleepTimerPickerSheet(
 
             if (timerState.isActive) {
                 Spacer(modifier = Modifier.height(8.dp))
-                val statusText = when (timerState.mode) {
-                    SleepTimerMode.COUNTDOWN -> "剩余 ${timerState.remainingMinutes} 分钟后暂停"
-                    SleepTimerMode.AFTER_CURRENT_TRACK -> "播完当前歌曲后暂停"
-                    SleepTimerMode.OFF -> ""
-                }
                 Text(
-                    text = statusText,
+                    text = timerState.statusText(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -100,7 +94,7 @@ fun SleepTimerPickerSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    countdownOptions.forEach { minutes ->
+                    sleepTimerCountdownOptions.forEach { minutes ->
                         FilterChip(
                             selected = false,
                             onClick = {

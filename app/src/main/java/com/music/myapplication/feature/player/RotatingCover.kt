@@ -32,44 +32,44 @@ fun RotatingCover(
     // Breathing scale animation
     val infiniteTransition = rememberInfiniteTransition(label = "breathing")
     val breathingScale by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = 1.02f,
+        initialValue = ROTATING_COVER_IDLE_SCALE,
+        targetValue = ROTATING_COVER_ACTIVE_SCALE,
         animationSpec = infiniteRepeatable(
-            animation = tween(3000),
+            animation = tween(ROTATING_COVER_BREATHING_DURATION_MS),
             repeatMode = RepeatMode.Reverse
         ),
         label = "breathingScale"
     )
     val breathingGlowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.55f,
+        initialValue = ROTATING_COVER_IDLE_GLOW_ALPHA,
+        targetValue = ROTATING_COVER_ACTIVE_GLOW_ALPHA,
         animationSpec = infiniteRepeatable(
-            animation = tween(3000),
+            animation = tween(ROTATING_COVER_BREATHING_DURATION_MS),
             repeatMode = RepeatMode.Reverse
         ),
         label = "breathingGlow"
     )
 
-    val scale = if (isPlaying) breathingScale else 1.0f
-    val glowAlpha = if (isPlaying) breathingGlowAlpha else 0.35f
+    val scale = rotatingCoverScale(isPlaying, breathingScale)
+    val glowAlpha = rotatingCoverGlowAlpha(isPlaying, breathingGlowAlpha)
 
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
         // Glow effect behind cover
-        if (glowColor != Color.Transparent) {
+        if (shouldShowRotatingCoverGlow(glowColor)) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .graphicsLayer {
-                        scaleX = 1.15f
-                        scaleY = 1.15f
+                        scaleX = ROTATING_COVER_GLOW_SCALE
+                        scaleY = ROTATING_COVER_GLOW_SCALE
                         alpha = glowAlpha
                     }
                     .clip(RoundedCornerShape(32.dp))
                     .drawBehind {
-                        drawRect(color = glowColor.copy(alpha = 0.45f))
+                        drawRect(color = rotatingCoverGlowDrawColor(glowColor))
                     }
             )
         }

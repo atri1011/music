@@ -76,106 +76,32 @@ import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.glassSurface
 
 @Composable
-fun VideoPlayerScreen(
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: VideoPlayerViewModel = hiltViewModel()
-) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    var fullscreenMode by rememberSaveable { mutableStateOf(false) }
-    val isFullscreenActive = fullscreenMode && isLandscape
-    val videoPlayerManager = remember(context) { VideoPlayerManager(context) }
-    val player = videoPlayerManager.player
-    var playbackError by remember { mutableStateOf<String?>(null) }
+fun VideoWindowEffect(fullscreenMode: Boolean) {
+    val view = LocalView.current
+    val activity = view.context.findActivity() ?: return
 
-    VideoWindowEffect(fullscreenMode = fullscreenMode)
+    DisposableEffect(activity, view, fullscreenMode) {
+        val previousOrientation = activity.requestedOrientation
+        val controller = WindowCompat.getInsetsController(activity.window, view)
 
-    BackHandler(enabled = fullscreenMode) {
-        fullscreenMode = false
-    }
-
-    DisposableEffect(player, videoPlayerManager) {
-        val listener = object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                playbackError = error.errorCodeName.ifBlank { error.message ?: "视频播放失败" }
-            }
-        }
-        player.addListener(listener)
-        onDispose {
-            player.removeListener(listener)
-            videoPlayerManager.release()
-        }
-    }
-
-    LaunchedEffect(state.playUrl) {
-        playbackError = null
-        videoPlayerManager.prepare(state.playUrl)
-    }
-
-    val platformLabel = state.platformName.ifBlank { state.platformId }
-    val displayError = playbackError ?: state.error
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        if (state.coverUrl.isNotBlank()) {
-            AsyncImage(
-                model = state.coverUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(if (isFullscreenActive) 28.dp else 44.dp),
-                contentScale = ContentScale.Crop,
-                alpha = if (isFullscreenActive) 0.18f else 0.28f
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = if (isFullscreenActive) 0.18f else 0.35f),
-                            Color.Black.copy(alpha = if (isFullscreenActive) 0.48f else 0.78f),
-                            Color.Black
-                        )
-                    )
-                )
-        )
-
-        if (isFullscreenActive) {
-            FullscreenLandscapeVideoLayout(
-                player = player,
-                title = state.title,
-                artist = state.artist,
-                coverUrl = state.coverUrl,
-                hasPlayableVideo = state.hasPlayableVideo,
-                isLoading = state.isLoading,
-                errorMessage = displayError,
-                onRetry = viewModel::retry,
-                onBack = onBack,
-                onExitFullscreen = { fullscreenMode = false }
-            )
+        if (fullscreenMode) {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
         } else {
-            PortraitVideoLayout(
-                player = player,
-                title = state.title,
-                artist = state.artist,
-                platformLabel = platformLabel,
-                coverUrl = state.coverUrl,
-                hasPlayableVideo = state.hasPlayableVideo,
-                isLoading = state.isLoading,
-                errorMessage = displayError,
-                onRetry = viewModel::retry,
-                onBack = onBack,
-                onEnterFullscreen = { fullscreenMode = true }
-            )
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+
+        onDispose {
+            activity.requestedOrientation = previousOrientation
+            controller.show(WindowInsetsCompat.Type.systemBars())
         }
     }
+}
+
+private fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

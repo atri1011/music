@@ -54,8 +54,11 @@ fun FullScreenPlayer(
         animationSpec = tween(800),
         label = "dominant"
     )
-    val baseColor = if (isDark) Color.Black else Color(0xFF1A1A2E)
-    val tintedBase = lerp(baseColor, animatedDominant, 0.05f)
+    val baseColor = fullScreenPlayerBaseColor(isDark)
+    val tintedBase = fullScreenPlayerTintedBaseColor(
+        baseColor = baseColor,
+        dominantColor = animatedDominant
+    )
 
     Box(
         modifier = modifier
@@ -67,11 +70,7 @@ fun FullScreenPlayer(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            tintedBase.copy(alpha = 0.4f),
-                            tintedBase.copy(alpha = 0.75f),
-                            tintedBase.copy(alpha = 0.9f)
-                        )
+                        colors = fullScreenPlayerOverlayColors(tintedBase)
                     )
                 )
         )

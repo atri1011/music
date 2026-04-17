@@ -78,25 +78,23 @@ fun PlayerControlsSection(
     val favoritePopTrigger = rememberRisingEdgeTrigger(value = track.isFavorite, resetKey = trackKey)
     val modeRotation = rememberDelightSpinRotation(key = staticState.playbackMode)
 
-    val progressFraction = if (progress.durationMs > 0) {
-        if (sliderDragging) sliderPosition else progress.positionMs.toFloat() / progress.durationMs
-    } else {
-        0f
-    }
+    val progressFraction = playerControlsProgressFraction(
+        durationMs = progress.durationMs,
+        positionMs = progress.positionMs,
+        sliderDragging = sliderDragging,
+        sliderPosition = sliderPosition
+    )
 
-    val contentColor = if (useLightContent) Color.White else MaterialTheme.colorScheme.onSurface
-    val subtleColor = if (useLightContent) Color.White.copy(alpha = 0.64f) else MaterialTheme.colorScheme.onSurfaceVariant
-    val activeAccent = if (useLightContent) accentColor else MaterialTheme.colorScheme.primary
-    val toolBackground = if (useLightContent) {
-        Color.White.copy(alpha = 0.10f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
-    }
-    val toolBorder = if (useLightContent) {
-        Color.White.copy(alpha = 0.12f)
-    } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)
-    }
+    val colors = playerControlsPalette(
+        useLightContent = useLightContent,
+        accentColor = accentColor,
+        colorScheme = MaterialTheme.colorScheme
+    )
+    val contentColor = colors.contentColor
+    val subtleColor = colors.subtleColor
+    val activeAccent = colors.activeAccent
+    val toolBackground = colors.toolBackground
+    val toolBorder = colors.toolBorder
 
     Column(modifier = modifier) {
         Row(
@@ -119,14 +117,10 @@ fun PlayerControlsSection(
                     borderColor = toolBorder
                 ) {
                     Icon(
-                        imageVector = when (staticState.playbackMode) {
-                            PlaybackMode.SEQUENTIAL -> Icons.Default.Repeat
-                            PlaybackMode.SHUFFLE -> Icons.Default.Shuffle
-                            PlaybackMode.REPEAT_ONE -> Icons.Default.RepeatOne
-                        },
+                        imageVector = playerControlsModeIcon(staticState.playbackMode),
                         contentDescription = "播放模式",
                         modifier = Modifier
-                            .size(22.dp)
+                            .size(playerControlsUtilityIconSize())
                             .graphicsLayer { rotationZ = modeRotation },
                         tint = subtleColor
                     )
@@ -146,17 +140,21 @@ fun PlayerControlsSection(
                             trigger = favoritePopTrigger,
                             imageVector = Icons.Default.Favorite,
                             tint = activeAccent,
-                            size = 22.dp
+                            size = playerControlsUtilityIconSize()
                         )
                         Crossfade(
                             targetState = track.isFavorite,
                             label = "favoriteCrossfade"
                         ) { isFavorite ->
                             Icon(
-                                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                imageVector = playerControlsFavoriteIcon(isFavorite),
                                 contentDescription = "收藏",
-                                modifier = Modifier.size(22.dp),
-                                tint = if (isFavorite) activeAccent else subtleColor
+                                modifier = Modifier.size(playerControlsUtilityIconSize()),
+                                tint = playerControlsFavoriteTint(
+                                    isFavorite = isFavorite,
+                                    activeAccent = activeAccent,
+                                    subtleColor = subtleColor
+                                )
                             )
                         }
                     }
@@ -167,9 +165,10 @@ fun PlayerControlsSection(
         Spacer(modifier = Modifier.height(AppSpacing.Medium))
 
         val density = LocalDensity.current
-        val trackHeightPx = with(density) { 4.dp.toPx() }
+        val trackHeight = playerControlsTrackHeight()
+        val trackHeightPx = with(density) { trackHeight.toPx() }
         val thumbRadius by animateDpAsState(
-            targetValue = if (sliderDragging) 8.dp else 6.dp,
+            targetValue = playerControlsThumbRadius(sliderDragging),
             animationSpec = spring(),
             label = "thumbRadius"
         )
@@ -180,26 +179,36 @@ fun PlayerControlsSection(
                 .height(32.dp)
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
-                        val fraction = (offset.x / size.width).coerceIn(0f, 1f)
+                        val fraction = playerControlsFractionFromOffset(
+                            offsetX = offset.x,
+                            width = size.width.toFloat()
+                        )
                         sliderPosition = fraction
-                        onSeek((fraction * progress.durationMs).toLong())
+                        onSeek(playerControlsSeekPositionMs(progress.durationMs, fraction))
                     }
                 }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
                         onDragStart = { offset ->
                             sliderDragging = true
-                            sliderPosition = (offset.x / size.width).coerceIn(0f, 1f)
+                            sliderPosition = playerControlsFractionFromOffset(
+                                offsetX = offset.x,
+                                width = size.width.toFloat()
+                            )
                         },
                         onDragEnd = {
                             sliderDragging = false
-                            onSeek((sliderPosition * progress.durationMs).toLong())
+                            onSeek(playerControlsSeekPositionMs(progress.durationMs, sliderPosition))
                         },
                         onDragCancel = {
                             sliderDragging = false
                         },
                         onHorizontalDrag = { _, dragAmount ->
-                            sliderPosition = (sliderPosition + dragAmount / size.width).coerceIn(0f, 1f)
+                            sliderPosition = playerControlsDraggedSliderPosition(
+                                sliderPosition = sliderPosition,
+                                dragAmount = dragAmount,
+                                width = size.width.toFloat()
+                            )
                         }
                     )
                 }
@@ -229,8 +238,8 @@ fun PlayerControlsSection(
             val thumbX = canvasWidth * currentFraction
             if (sliderDragging) {
                 drawCircle(
-                    color = Color.Black.copy(alpha = 0.15f),
-                    radius = thumbRadiusPx + 2.dp.toPx(),
+                    color = Color.Black.copy(alpha = playerControlsThumbHaloAlpha()),
+                    radius = playerControlsThumbHaloRadius(thumbRadius).toPx(),
                     center = Offset(thumbX, centerY)
                 )
             }
@@ -247,14 +256,19 @@ fun PlayerControlsSection(
         ) {
             Text(
                 text = formatDuration(
-                    if (sliderDragging) (sliderPosition * progress.durationMs).toLong() else progress.positionMs
+                    playerControlsDisplayedPositionMs(
+                        durationMs = progress.durationMs,
+                        positionMs = progress.positionMs,
+                        sliderDragging = sliderDragging,
+                        sliderPosition = sliderPosition
+                    )
                 ),
-                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                style = playerControlsDurationTextStyle(MaterialTheme.typography),
                 color = subtleColor
             )
             Text(
                 text = formatDuration(progress.durationMs),
-                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                style = playerControlsDurationTextStyle(MaterialTheme.typography),
                 color = subtleColor
             )
         }
@@ -271,14 +285,14 @@ fun PlayerControlsSection(
             ) {
                 PlayerTransportButton(
                     onClick = onPrevious,
-                    size = 52.dp,
+                    size = playerControlsTransportButtonSize(primary = false),
                     backgroundColor = toolBackground,
                     borderColor = toolBorder
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipPrevious,
                         contentDescription = "上一首",
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(playerControlsTransportIconSize(primary = false)),
                         tint = contentColor
                     )
                 }
@@ -288,11 +302,11 @@ fun PlayerControlsSection(
                         playPulseTrigger += 1
                         onPlayPause()
                     },
-                    size = 72.dp,
+                    size = playerControlsTransportButtonSize(primary = true),
                     backgroundColor = activeAccent,
                     borderColor = Color.Transparent,
                     hapticFeedbackType = HapticFeedbackType.LongPress,
-                    pressedScale = 0.92f
+                    pressedScale = playerControlsPrimaryPressedScale()
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -308,9 +322,9 @@ fun PlayerControlsSection(
                             label = "playPauseCrossfade"
                         ) { isPlaying ->
                             Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "暂停" else "播放",
-                                modifier = Modifier.size(34.dp),
+                                imageVector = playerControlsPlayPauseIcon(isPlaying),
+                                contentDescription = playerControlsPlayPauseContentDescription(isPlaying),
+                                modifier = Modifier.size(playerControlsTransportIconSize(primary = true)),
                                 tint = Color.White
                             )
                         }
@@ -319,14 +333,14 @@ fun PlayerControlsSection(
 
                 PlayerTransportButton(
                     onClick = onNext,
-                    size = 52.dp,
+                    size = playerControlsTransportButtonSize(primary = false),
                     backgroundColor = toolBackground,
                     borderColor = toolBorder
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "下一首",
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(playerControlsTransportIconSize(primary = false)),
                         tint = contentColor
                     )
                 }
@@ -341,7 +355,7 @@ private fun PlayerUtilityButton(
     backgroundColor: Color,
     borderColor: Color,
     hapticFeedbackType: HapticFeedbackType? = HapticFeedbackType.TextHandleMove,
-    pressedScale: Float = 0.94f,
+    pressedScale: Float = playerControlsDefaultPressedScale(),
     content: @Composable () -> Unit
 ) {
     DelightIconButton(
@@ -349,7 +363,7 @@ private fun PlayerUtilityButton(
         pressedScale = pressedScale,
         hapticFeedbackType = hapticFeedbackType,
         modifier = Modifier
-            .size(44.dp)
+            .size(playerControlsUtilityButtonSize())
             .clip(CircleShape)
             .background(backgroundColor)
             .border(1.dp, borderColor, CircleShape)
@@ -365,7 +379,7 @@ private fun PlayerTransportButton(
     backgroundColor: Color,
     borderColor: Color,
     hapticFeedbackType: HapticFeedbackType? = HapticFeedbackType.TextHandleMove,
-    pressedScale: Float = 0.94f,
+    pressedScale: Float = playerControlsDefaultPressedScale(),
     content: @Composable () -> Unit
 ) {
     DelightIconButton(

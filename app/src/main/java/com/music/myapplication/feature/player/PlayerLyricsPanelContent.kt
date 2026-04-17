@@ -17,16 +17,15 @@ internal fun LyricsPanelContent(
     onLyricLongPress: (LyricLine) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    when {
-        lyricsState.isLoading && lyricsState.lyrics.isEmpty() -> StatusHint(
-            text = "歌词加载中...",
+    val statusText = lyricsPanelStatusText(lyricsState)
+
+    if (statusText != null) {
+        StatusHint(
+            text = statusText,
             modifier = modifier
         )
-        !lyricsState.errorMessage.isNullOrBlank() && lyricsState.lyrics.isEmpty() -> StatusHint(
-            text = lyricsState.errorMessage,
-            modifier = modifier
-        )
-        else -> LyricsView(
+    } else {
+        LyricsView(
             lyrics = lyricsState.lyrics,
             currentIndex = currentIndex,
             onLineLongPress = onLyricLongPress,
@@ -42,7 +41,7 @@ private fun StatusHint(text: String?, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = text.orEmpty().ifBlank { "暂无歌词" },
+            text = normalizeLyricsStatusHint(text),
             style = MaterialTheme.typography.bodyLarge,
             color = Color.White.copy(alpha = 0.5f),
             textAlign = TextAlign.Center

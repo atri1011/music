@@ -76,106 +76,95 @@ import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.glassSurface
 
 @Composable
-fun VideoPlayerScreen(
+fun PortraitVideoLayout(
+    player: Player,
+    title: String,
+    artist: String,
+    platformLabel: String,
+    coverUrl: String,
+    hasPlayableVideo: Boolean,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: VideoPlayerViewModel = hiltViewModel()
+    onEnterFullscreen: () -> Unit
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    var fullscreenMode by rememberSaveable { mutableStateOf(false) }
-    val isFullscreenActive = fullscreenMode && isLandscape
-    val videoPlayerManager = remember(context) { VideoPlayerManager(context) }
-    val player = videoPlayerManager.player
-    var playbackError by remember { mutableStateOf<String?>(null) }
-
-    VideoWindowEffect(fullscreenMode = fullscreenMode)
-
-    BackHandler(enabled = fullscreenMode) {
-        fullscreenMode = false
-    }
-
-    DisposableEffect(player, videoPlayerManager) {
-        val listener = object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                playbackError = error.errorCodeName.ifBlank { error.message ?: "视频播放失败" }
-            }
-        }
-        player.addListener(listener)
-        onDispose {
-            player.removeListener(listener)
-            videoPlayerManager.release()
-        }
-    }
-
-    LaunchedEffect(state.playUrl) {
-        playbackError = null
-        videoPlayerManager.prepare(state.playUrl)
-    }
-
-    val platformLabel = state.platformName.ifBlank { state.platformId }
-    val displayError = playbackError ?: state.error
-
-    Box(
-        modifier = modifier
+    Column(
+        modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        if (state.coverUrl.isNotBlank()) {
-            AsyncImage(
-                model = state.coverUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(if (isFullscreenActive) 28.dp else 44.dp),
-                contentScale = ContentScale.Crop,
-                alpha = if (isFullscreenActive) 0.18f else 0.28f
-            )
-        }
-
-        Box(
+        VideoTopBar(
+            title = title.ifBlank { "MV" },
+            subtitle = artist.ifBlank { "视频播放" },
+            onBack = onBack,
+            actionIcon = Icons.Default.Fullscreen,
+            actionDescription = "全屏横屏播放",
+            onAction = onEnterFullscreen
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        VideoSurface(
+            player = player,
+            coverUrl = coverUrl,
+            hasPlayableVideo = hasPlayableVideo,
+            isLoading = isLoading,
+            errorMessage = errorMessage,
+            onRetry = onRetry,
+            isFullscreen = false,
             modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = if (isFullscreenActive) 0.18f else 0.35f),
-                            Color.Black.copy(alpha = if (isFullscreenActive) 0.48f else 0.78f),
-                            Color.Black
-                        )
-                    )
-                )
+                .fillMaxWidth()
+                .aspectRatio(1f)
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        VideoInfoCard(
+            title = title,
+            artist = artist,
+            platformLabel = platformLabel,
+            hasPlayableVideo = hasPlayableVideo,
+            isLoading = isLoading,
+            errorMessage = errorMessage
+        )
+    }
+}
+
+@Composable
+fun FullscreenLandscapeVideoLayout(
+    player: Player,
+    title: String,
+    artist: String,
+    coverUrl: String,
+    hasPlayableVideo: Boolean,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    onExitFullscreen: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        VideoSurface(
+            player = player,
+            coverUrl = coverUrl,
+            hasPlayableVideo = hasPlayableVideo,
+            isLoading = isLoading,
+            errorMessage = errorMessage,
+            onRetry = onRetry,
+            isFullscreen = true,
+            modifier = Modifier.fillMaxSize()
         )
 
-        if (isFullscreenActive) {
-            FullscreenLandscapeVideoLayout(
-                player = player,
-                title = state.title,
-                artist = state.artist,
-                coverUrl = state.coverUrl,
-                hasPlayableVideo = state.hasPlayableVideo,
-                isLoading = state.isLoading,
-                errorMessage = displayError,
-                onRetry = viewModel::retry,
-                onBack = onBack,
-                onExitFullscreen = { fullscreenMode = false }
-            )
-        } else {
-            PortraitVideoLayout(
-                player = player,
-                title = state.title,
-                artist = state.artist,
-                platformLabel = platformLabel,
-                coverUrl = state.coverUrl,
-                hasPlayableVideo = state.hasPlayableVideo,
-                isLoading = state.isLoading,
-                errorMessage = displayError,
-                onRetry = viewModel::retry,
-                onBack = onBack,
-                onEnterFullscreen = { fullscreenMode = true }
-            )
-        }
+        VideoTopBar(
+            title = title.ifBlank { "当前歌曲" },
+            subtitle = artist.ifBlank { "MV / 视频页" },
+            onBack = onBack,
+            actionIcon = Icons.Default.FullscreenExit,
+            actionDescription = "退出全屏",
+            onAction = onExitFullscreen,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 16.dp)
+        )
     }
 }

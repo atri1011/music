@@ -24,11 +24,10 @@ fun PlayerBottomSheet(
     onExpandClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val miniProgress = if (progress.durationMs > 0L) {
-        (progress.positionMs.toFloat() / progress.durationMs).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
+    val miniProgress = calculateMiniPlayerProgress(
+        positionMs = progress.positionMs,
+        durationMs = progress.durationMs
+    )
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -36,7 +35,7 @@ fun PlayerBottomSheet(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // MiniPlayerBar: visible when sheet is mostly collapsed
-            if (sheetFraction < 0.5f) {
+            if (shouldShowMiniPlayer(sheetFraction)) {
                 MiniPlayerBar(
                     track = staticState.currentTrack,
                     isPlaying = staticState.isPlaying,
@@ -45,12 +44,12 @@ fun PlayerBottomSheet(
                     onNext = onNext,
                     onClick = onExpandClick,
                     progressFraction = miniProgress,
-                    modifier = Modifier.alpha(1f - sheetFraction * 2)
+                    modifier = Modifier.alpha(miniPlayerAlpha(sheetFraction))
                 )
             }
 
             // FullScreenPlayer: visible when sheet is expanding
-            if (sheetFraction > 0.0f) {
+            if (shouldShowFullScreenPlayer(sheetFraction)) {
                 FullScreenPlayer(
                     staticState = staticState,
                     progress = progress,
@@ -61,7 +60,7 @@ fun PlayerBottomSheet(
                     onToggleMode = onToggleMode,
                     onToggleFavorite = onToggleFavorite,
                     onQualityChange = onQualityChange,
-                    modifier = Modifier.alpha((sheetFraction * 2).coerceAtMost(1f))
+                    modifier = Modifier.alpha(fullScreenPlayerAlpha(sheetFraction))
                 )
             }
         }
