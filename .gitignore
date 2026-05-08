@@ -27,3 +27,7 @@ release-keystore.jks
 .codex-tasks/
 .superpowers/
 .codex
+CLAUDE.md
+app/src/main/java/com/music/myapplication/core/CLAUDE.md
+app/src/main/java/com/music/myapplication/data/CLAUDE.md
+app/src/main/java/com/music/myapplication/feature/CLAUDE.md

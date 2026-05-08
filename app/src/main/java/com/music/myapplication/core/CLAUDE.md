@@ -6,6 +6,14 @@
 
 提供应用基础设施层，包括通用工具类、数据库抽象、DataStore 偏好设置、网络层（Retrofit API + Dispatch 引擎）。
 
+## 开发规范
+
+- **必须模块化。** `common`、`database`、`datastore`、`network` 下的能力按职责拆分，避免把渲染、请求、校验、转换、缓存、持久化逻辑混进同一个大文件。
+- **一个职责一个文件。** 工具类、拦截器、validator、mapper、store、parser、cache 默认独立成文件；不要把多个无关基础设施实现塞进同一文件。
+- **控制文件体量。** 手写源码建议优先控制在 **300 行以内**；超过后先评估拆分；接近或超过 **500 行** 时原则上必须重构，除非确有必要。
+- **数据库分层清晰。** Entity、DAO、Mapper、Database 定义各自独立，避免 DAO 直接承载映射、业务规则或缓存策略。
+- **网络层严禁“万能工具类”。** Dispatch、Retrofit、拦截器、请求校验、响应转换应保持边界明确，复杂流程优先拆成 executor / renderer / validator / transformer 等协作者。
+
 ## 子模块概览
 
 ### core/common
@@ -87,3 +95,4 @@ app/src/main/java/com/music/myapplication/core/
 | 日期 | 操作 | 说明 |
 |------|------|------|
 | 2026-03-08 | 初始化 | 初次生成文档 |
+| 2026-04-30 | 更新 | 补充 Core 模块开发规范，强调模块化、单一职责文件与文件体量控制 |
