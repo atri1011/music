@@ -8,8 +8,11 @@ import com.music.myapplication.core.datastore.DarkModeOption
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.data.repository.lx.LxCustomScriptRepository
 import com.music.myapplication.data.repository.lx.toLxSourceDisplayText
-import com.music.myapplication.domain.model.AudioSource
+import com.music.myapplication.data.repository.recipe.RecipeRegistry
+import com.music.myapplication.domain.model.AudioSourceDescriptor
+import com.music.myapplication.domain.model.AudioSourceId
 import com.music.myapplication.domain.model.PlaybackMode
+import com.music.myapplication.domain.model.PlayableUrlRecipe
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +34,8 @@ data class MoreUiState(
     val cacheLimitMb: Int = PlayerPreferences.DEFAULT_CACHE_LIMIT_MB,
     val quality: String = "128k",
     val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
-    val audioSource: AudioSource = AudioSource.TUNEHUB,
+    val audioSource: AudioSourceDescriptor = AudioSourceDescriptor.Native.TuneHub(),
+    val audioSourceId: String = AudioSourceId.TUNEHUB.value,
     val jkapiKey: String = "",
     val showJkapiKeyDialog: Boolean = false,
     val neteaseCloudApiBaseUrl: String = "",
@@ -82,7 +86,8 @@ private data class CacheUiState(
 class MoreViewModel @Inject constructor(
     private val preferences: PlayerPreferences,
     private val cacheManager: CacheManager,
-    private val lxCustomScriptRepository: LxCustomScriptRepository
+    private val lxCustomScriptRepository: LxCustomScriptRepository,
+    private val recipeRegistry: RecipeRegistry
 ) : ViewModel() {
 
     private val dialogVisible = MutableStateFlow(false)
@@ -101,7 +106,8 @@ class MoreViewModel @Inject constructor(
         preferences.cacheLimitMb,
         preferences.quality,
         preferences.playbackMode,
-        preferences.audioSource,
+        preferences.audioSourceId,
+        recipeRegistry.recipes,
         preferences.jkapiKey,
         jkapiDialogVisible,
         preferences.neteaseCloudApiBaseUrl,
@@ -109,8 +115,10 @@ class MoreViewModel @Inject constructor(
         lxCustomScriptRepository.summary,
         cacheUiState
     ) { values ->
-        val lxSummary = values[15] as com.music.myapplication.data.repository.lx.LxScriptCatalogSummary
-        val cacheState = values[16] as CacheUiState
+        val sourceId = values[10] as String
+        val recipes = values[11] as List<PlayableUrlRecipe>
+        val lxSummary = values[16] as com.music.myapplication.data.repository.lx.LxScriptCatalogSummary
+        val cacheState = values[17] as CacheUiState
         MoreUiState(
             apiKey = values[0] as String,
             showApiKeyDialog = values[1] as Boolean,
@@ -122,11 +130,12 @@ class MoreViewModel @Inject constructor(
             cacheLimitMb = values[7] as Int,
             quality = values[8] as String,
             playbackMode = values[9] as PlaybackMode,
-            audioSource = values[10] as AudioSource,
-            jkapiKey = values[11] as String,
-            showJkapiKeyDialog = values[12] as Boolean,
-            neteaseCloudApiBaseUrl = values[13] as String,
-            showNeteaseCloudApiBaseUrlDialog = values[14] as Boolean,
+            audioSource = resolveAudioSource(sourceId, recipes),
+            audioSourceId = sourceId,
+            jkapiKey = values[12] as String,
+            showJkapiKeyDialog = values[13] as Boolean,
+            neteaseCloudApiBaseUrl = values[14] as String,
+            showNeteaseCloudApiBaseUrlDialog = values[15] as Boolean,
             lxScriptCount = lxSummary.scriptCount,
             lxValidScriptCount = lxSummary.validScriptCount,
             lxActiveScriptName = lxSummary.activeScriptName,
@@ -146,6 +155,9 @@ class MoreViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MoreUiState())
 
     init {
+        viewModelScope.launch {
+            recipeRegistry.initialize()
+        }
         refreshCacheUsage()
     }
 
@@ -182,8 +194,8 @@ class MoreViewModel @Inject constructor(
         }
     }
 
-    fun setAudioSource(source: AudioSource) {
-        viewModelScope.launch { preferences.setAudioSource(source) }
+    fun setAudioSource(sourceId: String) {
+        viewModelScope.launch { preferences.setAudioSource(sourceId) }
     }
 
     fun setDarkMode(option: DarkModeOption) {
@@ -276,6 +288,19 @@ class MoreViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    private fun resolveAudioSource(
+        sourceId: String,
+        recipes: List<PlayableUrlRecipe>
+    ): AudioSourceDescriptor {
+        return when (sourceId) {
+            AudioSourceId.TUNEHUB.value -> AudioSourceDescriptor.Native.TuneHub()
+            AudioSourceId.LX_CUSTOM.value -> AudioSourceDescriptor.Native.LxCustom()
+            else -> recipes.firstOrNull { it.id == sourceId }
+                ?.let(AudioSourceDescriptor::Recipe)
+                ?: AudioSourceDescriptor.fromId(sourceId)
         }
     }
 }

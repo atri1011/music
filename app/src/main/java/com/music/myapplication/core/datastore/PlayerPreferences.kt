@@ -8,7 +8,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.music.myapplication.domain.model.AudioSource
+import com.music.myapplication.domain.model.AudioSourceDescriptor
+import com.music.myapplication.domain.model.AudioSourceId
 import com.music.myapplication.domain.model.PlaybackMode
 import com.music.myapplication.domain.model.PlaybackState
 import com.music.myapplication.domain.model.Track
@@ -107,8 +108,12 @@ class PlayerPreferences @Inject constructor(
         (prefs[Keys.PLAYBACK_SPEED] ?: 1.0f).coerceIn(0.5f, 2.0f)
     }
 
-    val audioSource: Flow<AudioSource> = context.dataStore.data.map { prefs ->
-        AudioSource.fromId(prefs[Keys.AUDIO_SOURCE] ?: AudioSource.TUNEHUB.id)
+    val audioSourceId: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[Keys.AUDIO_SOURCE] ?: AudioSourceId.TUNEHUB.value
+    }
+
+    val audioSource: Flow<AudioSourceDescriptor> = audioSourceId.map { sourceId ->
+        AudioSourceDescriptor.fromId(sourceId)
     }
 
     val apiKey: Flow<String> = context.dataStore.data.map { prefs ->
@@ -199,8 +204,8 @@ class PlayerPreferences @Inject constructor(
         context.dataStore.edit { it[Keys.PLATFORM] = platform }
     }
 
-    suspend fun setAudioSource(source: AudioSource) {
-        context.dataStore.edit { it[Keys.AUDIO_SOURCE] = source.id }
+    suspend fun setAudioSource(sourceId: String) {
+        context.dataStore.edit { it[Keys.AUDIO_SOURCE] = sourceId }
     }
 
     suspend fun setPlaybackSpeed(speed: Float) {

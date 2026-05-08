@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "netease_cloud_api_enhanced",
+  "displayName": "网易云增强版 API",
+  "version": "1.0.0",
+  "supportedPlatforms": ["NETEASE"],
+
+  "auth": [
+    { "key": "baseUrl", "label": "接口地址", "required": true, "type": "text" }
+  ],
+
+  "platformVars": {
+    "NETEASE": {}
+  },
+
+  "qualityMap": {
+    "128k": "standard",
+    "320k": "exhigh",
+    "flac": "lossless"
+  },
+
+  "request": {
+    "method": "GET",
+    "url": "{{auth.baseUrl}}song/url/v1?id={{trackId}}&level={{qualityMapped}}",
+    "headers": {},
+    "body": null,
+    "timeoutSeconds": 15,
+    "followRedirects": true
+  },
+
+  "extract": {
+    "kind": "json_path",
+    "successCondition": { "path": "code", "equals": 200 },
+    "playableUrlPath": "data.0.url",
+    "errorMessagePath": null
+  },
+
+  "validate": null
+}

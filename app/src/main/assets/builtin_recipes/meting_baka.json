@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "meting_baka",
+  "displayName": "Meting (baka.plus)",
+  "version": "1.0.0",
+  "supportedPlatforms": ["NETEASE", "QQ"],
+
+  "auth": [],
+
+  "platformVars": {
+    "NETEASE": { "server": "netease" },
+    "QQ": { "server": "tencent" }
+  },
+
+  "qualityMap": {
+    "128k": "128",
+    "320k": "320",
+    "flac": "380"
+  },
+
+  "request": {
+    "method": "HEAD",
+    "url": "https://api.baka.plus/meting/?server={{platformVars.server}}&type=url&id={{trackId}}&br={{qualityMapped}}",
+    "headers": {},
+    "body": null,
+    "timeoutSeconds": 15,
+    "followRedirects": false
+  },
+
+  "extract": {
+    "kind": "redirect_location",
+    "successCondition": null,
+    "playableUrlPath": null,
+    "errorMessagePath": null
+  },
+
+  "validate": null
+}

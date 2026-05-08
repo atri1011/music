@@ -23,6 +23,7 @@ import com.music.myapplication.feature.library.LocalMusicScreen
 import com.music.myapplication.feature.library.PlayRankingScreen
 import com.music.myapplication.feature.more.LxSourcesScreen
 import com.music.myapplication.feature.more.MoreScreen
+import com.music.myapplication.feature.more.audiosource.AudioSourceManagementScreen
 import com.music.myapplication.feature.playlist.PlaylistDetailScreen
 import com.music.myapplication.feature.player.EqualizerScreen
 import com.music.myapplication.feature.player.PlayerLyricsScreen
@@ -102,6 +103,9 @@ fun AppNavGraph(
             MoreScreen(
                 onNavigateToLxSources = {
                     navController.navigate(Routes.LxSources)
+                },
+                onNavigateToAudioSourceManagement = {
+                    navController.navigate(Routes.AudioSourceManagement)
                 }
             )
         }
@@ -127,6 +131,32 @@ fun AppNavGraph(
         ) {
             LxSourcesScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<Routes.AudioSourceManagement>(
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(350)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200))
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(250))
+            }
+        ) {
+            AudioSourceManagementScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToLxSources = { navController.navigate(Routes.LxSources) }
             )
         }
 

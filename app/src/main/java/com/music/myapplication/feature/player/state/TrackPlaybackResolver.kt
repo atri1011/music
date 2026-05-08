@@ -6,7 +6,7 @@ import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.data.repository.PlaybackSourceRouter
 import com.music.myapplication.data.repository.isLikelySameArtist
 import com.music.myapplication.data.repository.isLikelySameTitle
-import com.music.myapplication.domain.model.AudioSource
+import com.music.myapplication.domain.model.AudioSourceDescriptor
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.OnlineMusicRepository
@@ -134,7 +134,7 @@ class TrackPlaybackResolver @Inject constructor(
         originalTrack: Track,
         candidate: Track,
         quality: String,
-        requestedSource: AudioSource,
+        requestedSource: AudioSourceDescriptor,
         attemptedTrackKeys: MutableSet<String>
     ): Result<ResolvedTrackPlayback>? {
         if (!attemptedTrackKeys.add(candidate.trackKey())) return null

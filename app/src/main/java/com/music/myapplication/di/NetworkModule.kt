@@ -3,7 +3,6 @@ package com.music.myapplication.di
 import com.music.myapplication.BuildConfig
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.network.interceptor.ApiKeyInterceptor
-import com.music.myapplication.core.network.retrofit.JkApi
 import com.music.myapplication.core.network.retrofit.NeteaseCloudApiEnhancedApi
 import com.music.myapplication.core.network.interceptor.UserAgentInterceptor
 import com.music.myapplication.core.network.retrofit.TuneHubApi
@@ -23,10 +22,6 @@ import javax.inject.Singleton
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
-annotation class JkApiRetrofit
-
-@Qualifier
-@Retention(AnnotationRetention.BINARY)
 annotation class NeteaseCloudApiEnhancedRetrofit
 
 @Module
@@ -34,7 +29,6 @@ annotation class NeteaseCloudApiEnhancedRetrofit
 object NetworkModule {
 
     private const val BASE_URL = "https://tunehub.sayqz.com/api/"
-    private const val JKAPI_BASE_URL = "https://jkapi.com/"
     private const val NETEASE_CLOUD_API_ENHANCED_BASE_URL = "https://localhost/"
     private const val TIMEOUT_SECONDS = 15L
 
@@ -75,20 +69,6 @@ object NetworkModule {
     @Singleton
     fun provideTuneHubApi(retrofit: Retrofit): TuneHubApi =
         retrofit.create(TuneHubApi::class.java)
-
-    @Provides
-    @Singleton
-    @JkApiRetrofit
-    fun provideJkApiRetrofit(okHttpClient: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
-        .baseUrl(JKAPI_BASE_URL)
-        .client(okHttpClient)
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
-
-    @Provides
-    @Singleton
-    fun provideJkApi(@JkApiRetrofit retrofit: Retrofit): JkApi =
-        retrofit.create(JkApi::class.java)
 
     @Provides
     @Singleton

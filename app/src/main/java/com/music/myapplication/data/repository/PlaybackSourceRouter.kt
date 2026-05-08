@@ -2,7 +2,10 @@ package com.music.myapplication.data.repository
 
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlayerPreferences
-import com.music.myapplication.domain.model.AudioSource
+import com.music.myapplication.data.repository.recipe.RecipePlayableResolver
+import com.music.myapplication.data.repository.recipe.RecipeRegistry
+import com.music.myapplication.domain.model.AudioSourceDescriptor
+import com.music.myapplication.domain.model.AudioSourceId
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import kotlinx.coroutines.flow.first
@@ -14,11 +17,15 @@ class PlaybackSourceRouter @Inject constructor(
     private val preferences: PlayerPreferences,
     private val tuneHubResolver: TuneHubPlayableResolver,
     private val lxCustomSourcePlayableResolver: LxCustomSourcePlayableResolver,
-    private val metingPlayableResolver: MetingPlayableResolver,
-    private val jkApiResolver: JkApiPlayableResolver,
-    private val neteaseCloudApiResolver: NeteaseCloudApiPlayableResolver
+    private val recipeRegistry: RecipeRegistry,
+    private val recipeResolver: RecipePlayableResolver
 ) {
-    suspend fun currentRequestedSource(): AudioSource = preferences.audioSource.first()
+    suspend fun currentRequestedSource(): AudioSourceDescriptor {
+        recipeRegistry.initialize()
+        val sourceId = preferences.audioSourceId.first()
+        return recipeRegistry.find(AudioSourceId(sourceId))
+            ?: AudioSourceDescriptor.fromId(sourceId)
+    }
 
     suspend fun resolve(track: Track, quality: String): Result<PlaybackSourceResolution> {
         val requestedSource = currentRequestedSource()
@@ -28,41 +35,41 @@ class PlaybackSourceRouter @Inject constructor(
     suspend fun resolve(
         track: Track,
         quality: String,
-        requestedSource: AudioSource
+        requestedSource: AudioSourceDescriptor
     ): Result<PlaybackSourceResolution> {
         return when (requestedSource) {
-            AudioSource.TUNEHUB -> resolveDirectly(requestedSource) {
-                tuneHubResolver.resolve(track, quality)
+            is AudioSourceDescriptor.Native -> when (requestedSource.kind) {
+                AudioSourceDescriptor.NativeKind.TUNEHUB -> resolveDirectly(requestedSource) {
+                    tuneHubResolver.resolve(track, quality)
+                }
+                AudioSourceDescriptor.NativeKind.LX_CUSTOM -> resolveWithTuneHubFallback(
+                    track = track,
+                    quality = quality,
+                    requestedSource = requestedSource,
+                    resolveRequested = { lxCustomSourcePlayableResolver.resolve(track, quality) }
+                )
             }
-            AudioSource.LX_CUSTOM -> resolveWithTuneHubFallback(
+            is AudioSourceDescriptor.Recipe -> resolveWithTuneHubFallback(
                 track = track,
                 quality = quality,
                 requestedSource = requestedSource,
-                resolveRequested = { lxCustomSourcePlayableResolver.resolve(track, quality) }
-            )
-            AudioSource.METING_BAKA -> resolveWithTuneHubFallback(
-                track = track,
-                quality = quality,
-                requestedSource = requestedSource,
-                resolveRequested = { metingPlayableResolver.resolve(track, quality) }
-            )
-            AudioSource.JKAPI -> resolveWithTuneHubFallback(
-                track = track,
-                quality = quality,
-                requestedSource = requestedSource,
-                resolveRequested = { jkApiResolver.resolve(track) }
-            )
-            AudioSource.NETEASE_CLOUD_API_ENHANCED -> resolveWithTuneHubFallback(
-                track = track,
-                quality = quality,
-                requestedSource = requestedSource,
-                resolveRequested = { neteaseCloudApiResolver.resolve(track, quality) }
+                resolveRequested = {
+                    if (!requestedSource.supports(track.platform)) {
+                        Result.Error(
+                            com.music.myapplication.core.common.AppError.Api(
+                                message = "${requestedSource.displayName} 不支持${track.platform.displayName}"
+                            )
+                        )
+                    } else {
+                        recipeResolver.resolve(track, quality, requestedSource.recipe)
+                    }
+                }
             )
         }
     }
 
     private suspend fun resolveDirectly(
-        requestedSource: AudioSource,
+        requestedSource: AudioSourceDescriptor,
         resolveRequested: suspend () -> Result<String>
     ): Result<PlaybackSourceResolution> {
         return when (val result = resolveRequested()) {
@@ -82,7 +89,7 @@ class PlaybackSourceRouter @Inject constructor(
     private suspend fun resolveWithTuneHubFallback(
         track: Track,
         quality: String,
-        requestedSource: AudioSource,
+        requestedSource: AudioSourceDescriptor,
         resolveRequested: suspend () -> Result<String>
     ): Result<PlaybackSourceResolution> {
         if (!requestedSource.supports(track.platform)) {
@@ -121,15 +128,16 @@ class PlaybackSourceRouter @Inject constructor(
     private suspend fun resolveTuneHubFallback(
         track: Track,
         quality: String,
-        requestedSource: AudioSource,
+        requestedSource: AudioSourceDescriptor,
         fallbackReason: String
     ): Result<PlaybackSourceResolution> {
+        val tuneHub = AudioSourceDescriptor.Native.TuneHub()
         return when (val tuneHubResult = tuneHubResolver.resolve(track, quality)) {
             is Result.Success -> Result.Success(
                 PlaybackSourceResolution(
                     playableUrl = tuneHubResult.data,
                     requestedSource = requestedSource,
-                    resolvedSource = AudioSource.TUNEHUB,
+                    resolvedSource = tuneHub,
                     didFallback = true,
                     fallbackReason = fallbackReason
                 )
@@ -139,16 +147,11 @@ class PlaybackSourceRouter @Inject constructor(
         }
     }
 
-    private fun buildUnsupportedFallbackReason(source: AudioSource, platform: Platform): String {
-        return when (source) {
-            AudioSource.LX_CUSTOM -> "${source.displayName} 不支持${platform.displayName}，已自动切到 TuneHub"
-            AudioSource.METING_BAKA,
-            AudioSource.JKAPI -> "${source.displayName} 不支持${platform.displayName}，已自动切到 TuneHub"
-            AudioSource.NETEASE_CLOUD_API_ENHANCED -> {
-                "${source.displayName} 仅支持网易云歌曲，已自动切到 TuneHub"
-            }
-            AudioSource.TUNEHUB -> "${source.displayName} 已继续使用"
-        }
+    private fun buildUnsupportedFallbackReason(
+        source: AudioSourceDescriptor,
+        platform: Platform
+    ): String {
+        return "${source.displayName} 不支持${platform.displayName}，已自动切到 TuneHub"
     }
 }
 

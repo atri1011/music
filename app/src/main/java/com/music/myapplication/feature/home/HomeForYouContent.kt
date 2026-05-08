@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -306,11 +308,11 @@ private fun RecommendedPlaylistRow(
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             modifier = Modifier.padding(start = AppSpacing.Large, bottom = AppSpacing.Small)
         )
-        androidx.compose.foundation.lazy.LazyRow(
+        LazyRow(
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small),
             contentPadding = PaddingValues(horizontal = AppSpacing.Large)
         ) {
-            androidx.compose.foundation.lazy.items(playlists, key = { it.id }) { playlist ->
+            items(items = playlists, key = { it.id }) { playlist ->
                 PlaylistCard(
                     name = playlist.name,
                     coverUrl = playlist.coverUrl,
