@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "karpov",
+  "displayName": "Karpov 音乐网关",
+  "version": "1.0.0",
+  "supportedPlatforms": ["NETEASE", "QQ", "KUWO"],
+
+  "auth": [
+    { "key": "apiKey", "label": "API 密钥", "required": true, "type": "password" }
+  ],
+
+  "platformVars": {
+    "NETEASE": { "provider": "netease" },
+    "QQ": { "provider": "qqmusic" },
+    "KUWO": { "provider": "kugou" }
+  },
+
+  "qualityMap": {
+    "128k": "MP3_128",
+    "320k": "MP3_320",
+    "flac": "FLAC"
+  },
+
+  "request": {
+    "method": "GET",
+    "url": "https://gateway.karpov.cn/api/docs-proxy/v1/{{platformVars.provider}}/songs/{{trackId}}/url?quality={{qualityMapped}}",
+    "headers": {
+      "Authorization": "Bearer {{auth.apiKey}}"
+    },
+    "body": null,
+    "timeoutSeconds": 15,
+    "followRedirects": true
+  },
+
+  "extract": {
+    "kind": "json_path",
+    "successCondition": { "path": "code", "equals": 200 },
+    "playableUrlPath": "data.audio.url",
+    "errorMessagePath": "message"
+  },
+
+  "validate": null
+}

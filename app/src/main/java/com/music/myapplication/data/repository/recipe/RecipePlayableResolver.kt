@@ -84,16 +84,9 @@ class RecipePlayableResolver @Inject constructor(
     }
 
     private suspend fun collectAuthValues(recipe: PlayableUrlRecipe): Map<String, String> {
-        val values = mutableMapOf<String, String>()
-        if (recipe.id == "jkapi") {
-            preferences.jkapiKey.firstOrNull()?.let { if (it.isNotBlank()) values["apiKey"] = it }
-        }
-        if (recipe.id == "netease_cloud_api_enhanced") {
-            preferences.neteaseCloudApiBaseUrl.firstOrNull()?.let {
-                if (it.isNotBlank()) values["baseUrl"] = it
-            }
-        }
-        return values
+        return preferences.recipeAuthValues.firstOrNull()
+            ?.get(recipe.id)
+            ?: emptyMap()
     }
 
     fun isReasonableMatch(track: Track, responseName: String?): Boolean {

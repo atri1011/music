@@ -84,6 +84,7 @@ class PlayerPreferences @Inject constructor(
         val PLAYBACK_SNAPSHOT = stringPreferencesKey("playback_snapshot")
         val APP_UPDATE_LAST_CHECK_AT_MS = longPreferencesKey("app_update_last_check_at_ms")
         val APP_UPDATE_LAST_NOTIFIED_VERSION_CODE = intPreferencesKey("app_update_last_notified_version_code")
+        val RECIPE_AUTH_VALUES = stringPreferencesKey("recipe_auth_values")
     }
 
     @Volatile
@@ -91,6 +92,9 @@ class PlayerPreferences @Inject constructor(
 
     @Volatile
     private var jkapiKeyCache: String = ""
+
+    @Volatile
+    private var recipeAuthValuesCache: Map<String, Map<String, String>> = emptyMap()
 
     val playbackMode: Flow<PlaybackMode> = context.dataStore.data.map { prefs ->
         prefs[Keys.PLAYBACK_MODE]?.let { PlaybackMode.valueOf(it) } ?: PlaybackMode.SEQUENTIAL
@@ -126,6 +130,13 @@ class PlayerPreferences @Inject constructor(
 
     val neteaseCloudApiBaseUrl: Flow<String> = context.dataStore.data.map { prefs ->
         normalizeBaseUrl(prefs[Keys.NETEASE_CLOUD_API_BASE_URL] ?: "")
+    }
+
+    val recipeAuthValues: Flow<Map<String, Map<String, String>>> = context.dataStore.data.map { prefs ->
+        prefs[Keys.RECIPE_AUTH_VALUES]
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { json.decodeFromString<Map<String, Map<String, String>>>(it) }.getOrNull() }
+            ?: emptyMap()
     }
 
     val darkMode: Flow<DarkModeOption> = context.dataStore.data.map { prefs ->
@@ -190,6 +201,11 @@ class PlayerPreferences @Inject constructor(
                 .catch { emit("") }
                 .collect { key -> jkapiKeyCache = key }
         }
+        scope.launch {
+            recipeAuthValues
+                .catch { emit(emptyMap()) }
+                .collect { values -> recipeAuthValuesCache = values }
+        }
     }
 
     suspend fun setPlaybackMode(mode: PlaybackMode) {
@@ -222,6 +238,21 @@ class PlayerPreferences @Inject constructor(
         val normalized = normalizeKey(key)
         jkapiKeyCache = normalized
         context.dataStore.edit { it[Keys.JKAPI_KEY] = normalized }
+    }
+
+    suspend fun saveRecipeAuthValues(recipeId: String, values: Map<String, String>) {
+        val current = recipeAuthValuesCache.toMutableMap()
+        if (values.isEmpty()) {
+            current.remove(recipeId)
+        } else {
+            current[recipeId] = values
+        }
+        recipeAuthValuesCache = current
+        context.dataStore.edit { it[Keys.RECIPE_AUTH_VALUES] = json.encodeToString(current) }
+    }
+
+    fun getRecipeAuthValue(recipeId: String, key: String): String {
+        return recipeAuthValuesCache[recipeId]?.get(key) ?: ""
     }
 
     suspend fun setNeteaseCloudApiBaseUrl(url: String) {

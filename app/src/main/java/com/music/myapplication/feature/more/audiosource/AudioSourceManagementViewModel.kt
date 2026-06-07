@@ -184,20 +184,12 @@ class AudioSourceManagementViewModel @Inject constructor(
     }
 
     private fun loadAuthFromPreferences(recipeId: String, key: String): String {
-        return when {
-            recipeId == "jkapi" && key == "apiKey" -> preferences.currentJkapiKey
-            else -> ""
-        }
+        return preferences.getRecipeAuthValue(recipeId, key)
     }
 
     private fun saveAuthToPreferences(recipeId: String, values: Map<String, String>) {
         viewModelScope.launch {
-            if (recipeId == "jkapi") {
-                values["apiKey"]?.let { preferences.setJkapiKey(it) }
-            }
-            if (recipeId == "netease_cloud_api_enhanced") {
-                values["baseUrl"]?.let { preferences.setNeteaseCloudApiBaseUrl(it) }
-            }
+            preferences.saveRecipeAuthValues(recipeId, values)
         }
     }
 }
