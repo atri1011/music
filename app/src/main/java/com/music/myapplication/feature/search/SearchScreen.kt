@@ -610,6 +610,7 @@ private fun SearchCategoryShortcut(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HotKeywordCloud(
     keywords: List<String>,
