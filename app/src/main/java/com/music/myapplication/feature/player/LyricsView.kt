@@ -188,32 +188,38 @@ fun LyricsView(
                     label = "lyricPadding_$index"
                 )
 
-                // Glow effect behind current line text
-                val glowModifier = if (isCurrent) {
-                    val glowColor = activeLineColor.copy(alpha = 0.3f)
-                    Modifier.drawBehind {
-                        drawIntoCanvas { canvas ->
-                            val paint = Paint().asFrameworkPaint().apply {
-                                isAntiAlias = true
-                                color = glowColor.toArgb()
-                                maskFilter = android.graphics.BlurMaskFilter(
-                                    48f,
-                                    android.graphics.BlurMaskFilter.Blur.NORMAL
-                                )
-                            }
-                            canvas.nativeCanvas.drawRoundRect(
-                                0f,
-                                size.height * 0.2f,
-                                size.width,
-                                size.height * 0.8f,
-                                size.height / 2f,
-                                size.height / 2f,
-                                paint
+                val animatedGlowAlpha by animateFloatAsState(
+                    targetValue = if (isCurrent) 1f else 0f,
+                    animationSpec = spring(stiffness = Spring.StiffnessLow),
+                    label = "lyricGlow_$index"
+                )
+
+                val glowModifier = Modifier.drawBehind {
+                    if (animatedGlowAlpha <= 0.01f) return@drawBehind
+
+                    val glowWidth = minOf(size.width * 0.68f, 320.dp.toPx())
+                    val glowHeight = size.height * 0.58f
+                    val left = (size.width - glowWidth) / 2f
+                    val top = (size.height - glowHeight) / 2f
+                    val glowColor = activeLineColor.copy(alpha = 0.18f * animatedGlowAlpha)
+
+                    drawIntoCanvas { canvas ->
+                        val paint = Paint().asFrameworkPaint().apply {
+                            isAntiAlias = true
+                            color = glowColor.toArgb()
+                            maskFilter = android.graphics.BlurMaskFilter(
+                                36f,
+                                android.graphics.BlurMaskFilter.Blur.NORMAL
                             )
                         }
+                        canvas.nativeCanvas.drawOval(
+                            left,
+                            top,
+                            left + glowWidth,
+                            top + glowHeight,
+                            paint
+                        )
                     }
-                } else {
-                    Modifier
                 }
 
                 Column(
