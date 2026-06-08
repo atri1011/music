@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Music Player</string>
+    <string name="music_playback_widget_label">Music Player 播放控件</string>
+    <string name="music_playback_widget_description">显示当前播放歌曲，并提供播放、暂停和下一首控制。</string>
 </resources>

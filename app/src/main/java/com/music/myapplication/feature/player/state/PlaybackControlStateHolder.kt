@@ -2,6 +2,7 @@ package com.music.myapplication.feature.player.state
 
 import com.music.myapplication.core.common.DispatchersProvider
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.database.entity.DownloadedTrackEntity
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.download.DownloadManager
 import com.music.myapplication.domain.model.PlaybackMode
@@ -55,6 +56,7 @@ class PlaybackControlStateHolder @Inject constructor(
     private var nextTrackActionInfoId = 0L
     private var nextDownloadPermissionRequestId = 0L
     private var lastTrackActionInfoMessage: String? = null
+    private var knownSuccessfulDownloadKeys: Set<String>? = null
 
     @Volatile
     private var currentQuality: String = "128k"
@@ -152,6 +154,28 @@ class PlaybackControlStateHolder @Inject constructor(
                 connector.setPlaybackSpeed(speed)
             }
         }
+        scope.launch {
+            downloadManager.getAllTracks()
+                .map { tracks ->
+                    tracks
+                        .filter { it.downloadStatus == DownloadedTrackEntity.DownloadStatus.SUCCESS }
+                        .associateBy { it.downloadKey() }
+                }
+                .distinctUntilChanged()
+                .collect { successfulTracks ->
+                    val previousKeys = knownSuccessfulDownloadKeys
+                    knownSuccessfulDownloadKeys = successfulTracks.keys
+                    if (previousKeys == null) return@collect
+
+                    val completed = successfulTracks
+                        .filterKeys { it !in previousKeys }
+                        .values
+                        .toList()
+                    if (completed.isNotEmpty()) {
+                        publishTrackActionInfo(completed.downloadCompletionMessage())
+                    }
+                }
+        }
     }
 
     fun unbind() {
@@ -209,6 +233,13 @@ class PlaybackControlStateHolder @Inject constructor(
     fun pausePlayback() {
         if (playbackState.value.isPlaying) {
             connector.pause()
+            persistPlaybackSnapshot()
+        }
+    }
+
+    fun fadeOutPausePlayback(durationMs: Int = SLEEP_TIMER_FADE_OUT_MS) {
+        if (playbackState.value.isPlaying) {
+            connector.fadeOutPause(durationMs)
             persistPlaybackSnapshot()
         }
     }
@@ -298,6 +329,8 @@ class PlaybackControlStateHolder @Inject constructor(
                 }
                 if (!enqueued) {
                     publishTrackActionError("该歌曲已在下载列表中")
+                } else {
+                    publishTrackActionInfo("已加入下载队列")
                 }
             }
         }
@@ -485,9 +518,20 @@ class PlaybackControlStateHolder @Inject constructor(
             shuffleSnapshot = modeManager.buildPersistableShuffleSnapshot()
         )
     }
+
+    private companion object {
+        const val SLEEP_TIMER_FADE_OUT_MS = 5_000
+    }
 }
 
 internal fun Track.songKey(): String = "${platform.id}:$id"
+
+private fun DownloadedTrackEntity.downloadKey(): String = "$platform:$songId"
+
+private fun List<DownloadedTrackEntity>.downloadCompletionMessage(): String = when (size) {
+    1 -> "下载完成：${first().title}"
+    else -> "${size} 首歌曲下载完成"
+}
 
 private fun String.isRemoteHttpUrl(): Boolean =
     startsWith("http://", ignoreCase = true) || startsWith("https://", ignoreCase = true)

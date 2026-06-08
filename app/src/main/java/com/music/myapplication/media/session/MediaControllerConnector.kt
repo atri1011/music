@@ -111,6 +111,15 @@ class MediaControllerConnector internal constructor(
     fun play() = withController { play() }
     fun pause() = withController { pause() }
 
+    fun fadeOutPause(durationMs: Int) {
+        withController {
+            sendCustomCommand(
+                fadeOutPauseSessionCommand,
+                PlaybackFadeOutPauseRequest(durationMs = durationMs.coerceAtLeast(0)).toCommandExtras()
+            )
+        }
+    }
+
     fun seekTo(positionMs: Long) {
         withController { seekTo(positionMs) }
     }

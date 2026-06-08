@@ -1,9 +1,13 @@
 package com.music.myapplication.feature.player
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,20 +53,27 @@ import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.glassSurface
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MiniPlayerBar(
     track: Track?,
     isPlaying: Boolean,
     quality: String,
     onPlayPause: () -> Unit,
+    onPrevious: () -> Unit = {},
     onNext: () -> Unit,
     onToggleFavorite: () -> Unit = {},
     onClick: () -> Unit,
+    onSwipeExpand: () -> Unit = onClick,
+    onLongPress: () -> Unit = {},
     showResolvingIndicator: Boolean = false,
     progressFraction: Float = 0f,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    sharedArtworkVisible: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val currentTrack = track ?: return
+    val haptics = LocalHapticFeedback.current
     var playPulseTrigger by remember { mutableStateOf(0) }
     val trackKey = "${currentTrack.platform.id}:${currentTrack.id}"
     val favoritePopTrigger = rememberRisingEdgeTrigger(value = currentTrack.isFavorite, resetKey = trackKey)
@@ -69,6 +82,20 @@ fun MiniPlayerBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .miniPlayerGestureLayer(
+                onSwipeUp = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSwipeExpand()
+                },
+                onSwipePrevious = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onPrevious()
+                },
+                onSwipeNext = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onNext()
+                }
+            )
             .glassSurface(shape = shape)
     ) {
         if (showResolvingIndicator) {
@@ -98,7 +125,15 @@ fun MiniPlayerBar(
                     .weight(1f)
                     .defaultMinSize(minHeight = 44.dp)
                     .clip(RoundedCornerShape(AppShapes.Medium))
-                    .clickable(onClick = onClick)
+                    .pointerInput(trackKey, onClick, onLongPress) {
+                        detectTapGestures(
+                            onTap = { onClick() },
+                            onLongPress = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onLongPress()
+                            }
+                        )
+                    }
                     .padding(end = AppSpacing.XSmall),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -106,6 +141,11 @@ fun MiniPlayerBar(
                     url = currentTrack.coverUrl,
                     contentDescription = currentTrack.title,
                     modifier = Modifier
+                        .sharedTrackArtwork(
+                            sharedTransitionScope = sharedTransitionScope,
+                            track = currentTrack,
+                            visible = sharedArtworkVisible
+                        )
                         .size(48.dp)
                         .clip(RoundedCornerShape(AppShapes.Small))
                 )
@@ -133,8 +173,12 @@ fun MiniPlayerBar(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        if (isVipTrack(quality)) {
-                            MiniQualityBadge(quality = quality)
+                        if (isPremiumAudioQuality(quality)) {
+                            AudioQualityBadge(
+                                quality = quality,
+                                platform = currentTrack.platform,
+                                compact = true
+                            )
                         }
                     }
                 }
@@ -242,24 +286,41 @@ fun MiniPlayerBar(
     }
 }
 
-@Composable
-private fun MiniQualityBadge(
-    quality: String,
-    modifier: Modifier = Modifier
-) {
-    Text(
-        text = quality.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = modifier
-            .clip(RoundedCornerShape(AppShapes.Small))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-            .padding(horizontal = AppSpacing.XXSmall, vertical = AppSpacing.XXSmall)
+private fun Modifier.miniPlayerGestureLayer(
+    onSwipeUp: () -> Unit,
+    onSwipePrevious: () -> Unit,
+    onSwipeNext: () -> Unit
+): Modifier = pointerInput(onSwipeUp, onSwipePrevious, onSwipeNext) {
+    var totalDragX = 0f
+    var totalDragY = 0f
+    detectDragGestures(
+        onDragStart = {
+            totalDragX = 0f
+            totalDragY = 0f
+        },
+        onDrag = { change, dragAmount ->
+            totalDragX += dragAmount.x
+            totalDragY += dragAmount.y
+            if (kotlin.math.abs(totalDragX) > 10f || kotlin.math.abs(totalDragY) > 10f) {
+                change.consume()
+            }
+        },
+        onDragEnd = {
+            val horizontalThreshold = size.width * 0.22f
+            val verticalThreshold = size.height * 0.46f
+            val absX = kotlin.math.abs(totalDragX)
+            val absY = kotlin.math.abs(totalDragY)
+            when {
+                totalDragY < -verticalThreshold && absY > absX -> onSwipeUp()
+                totalDragX > horizontalThreshold && absX > absY -> onSwipePrevious()
+                totalDragX < -horizontalThreshold && absX > absY -> onSwipeNext()
+            }
+            totalDragX = 0f
+            totalDragY = 0f
+        },
+        onDragCancel = {
+            totalDragX = 0f
+            totalDragY = 0f
+        }
     )
-}
-
-private fun isVipTrack(trackQuality: String): Boolean {
-    return trackQuality.equals("320k", ignoreCase = true) ||
-        trackQuality.equals("flac", ignoreCase = true) ||
-        trackQuality.equals("flac24bit", ignoreCase = true)
 }

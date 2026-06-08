@@ -2,6 +2,8 @@ package com.music.myapplication.feature.player
 
 import android.graphics.Bitmap
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -55,22 +57,34 @@ fun LyricsPosterDialog(
     var selectedTemplate by remember(track.id, lyricLine.text, lyricLine.translation) {
         mutableStateOf(LyricsPosterTemplate.AURORA)
     }
-    var posterBitmap by remember(track.id, lyricLine.text, lyricLine.translation, selectedTemplate) {
+    var customBackgroundUri by remember(track.id, lyricLine.text, lyricLine.translation) {
+        mutableStateOf<String?>(null)
+    }
+    val backgroundPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            customBackgroundUri = uri.toString()
+            selectedTemplate = LyricsPosterTemplate.CUSTOM
+        }
+    }
+    var posterBitmap by remember(track.id, lyricLine.text, lyricLine.translation, selectedTemplate, customBackgroundUri) {
         mutableStateOf<Bitmap?>(null)
     }
-    var isGenerating by remember(track.id, lyricLine.text, lyricLine.translation, selectedTemplate) {
+    var isGenerating by remember(track.id, lyricLine.text, lyricLine.translation, selectedTemplate, customBackgroundUri) {
         mutableStateOf(true)
     }
     var isWorking by remember { mutableStateOf(false) }
 
-    LaunchedEffect(track.id, lyricLine.text, lyricLine.translation, selectedTemplate) {
+    LaunchedEffect(track.id, lyricLine.text, lyricLine.translation, selectedTemplate, customBackgroundUri) {
         isGenerating = true
         posterBitmap = runCatching {
             LyricsPosterGenerator.generate(
                 context = context,
                 track = track,
                 lyricLine = lyricLine,
-                template = selectedTemplate
+                template = selectedTemplate,
+                customBackgroundUri = customBackgroundUri
             )
         }.getOrNull()
         isGenerating = false
@@ -134,19 +148,71 @@ fun LyricsPosterDialog(
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LyricsPosterTemplate.entries.forEach { template ->
-                        if (template == selectedTemplate) {
-                            FilledTonalButton(onClick = { selectedTemplate = template }) {
-                                Text(template.displayName)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LyricsPosterTemplate.entries.chunked(3).forEach { rowTemplates ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowTemplates.forEach { template ->
+                                val buttonModifier = Modifier.weight(1f)
+                                if (template == selectedTemplate) {
+                                    FilledTonalButton(
+                                        onClick = { selectedTemplate = template },
+                                        modifier = buttonModifier
+                                    ) {
+                                        Text(template.displayName, maxLines = 1)
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { selectedTemplate = template },
+                                        modifier = buttonModifier
+                                    ) {
+                                        Text(template.displayName, maxLines = 1)
+                                    }
+                                }
                             }
-                        } else {
-                            OutlinedButton(onClick = { selectedTemplate = template }) {
-                                Text(template.displayName)
+                            repeat(3 - rowTemplates.size) {
+                                Spacer(modifier = Modifier.weight(1f))
                             }
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "自定义背景",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { backgroundPicker.launch("image/*") },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (customBackgroundUri == null) "选择图片" else "更换图片")
+                    }
+                    TextButton(
+                        onClick = { customBackgroundUri = null },
+                        enabled = customBackgroundUri != null
+                    ) {
+                        Text("清除")
+                    }
+                }
+                Text(
+                    text = if (customBackgroundUri == null) {
+                        "选择图片后会自动切到“自定义”模板。"
+                    } else {
+                        "已选择背景图，生成时会叠加暗色遮罩保证歌词可读。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
 
                 Spacer(modifier = Modifier.height(20.dp))
                 Row(

@@ -15,6 +15,7 @@ object LyricsPosterGenerator {
         track: Track,
         lyricLine: LyricLine,
         template: LyricsPosterTemplate,
+        customBackgroundUri: String? = null,
         width: Int = DEFAULT_WIDTH,
         height: Int = DEFAULT_HEIGHT
     ): Bitmap = withContext(Dispatchers.Default) {
@@ -25,10 +26,34 @@ object LyricsPosterGenerator {
             coverUrl = track.coverUrl,
             sizePx = width / 3
         )
+        val customBackgroundBitmap = loadLyricsPosterBackgroundBitmap(
+            context = context,
+            backgroundUri = customBackgroundUri,
+            width = width,
+            height = height
+        )
 
         when (template) {
             LyricsPosterTemplate.AURORA -> drawAuroraLyricsPoster(canvas, track, lyricLine, coverBitmap)
             LyricsPosterTemplate.PAPER -> drawPaperLyricsPoster(canvas, track, lyricLine, coverBitmap)
+            LyricsPosterTemplate.VINYL,
+            LyricsPosterTemplate.MIDNIGHT,
+            LyricsPosterTemplate.SUNSET,
+            LyricsPosterTemplate.NEON,
+            LyricsPosterTemplate.MONO,
+            LyricsPosterTemplate.FILM,
+            LyricsPosterTemplate.OCEAN,
+            LyricsPosterTemplate.FOREST,
+            LyricsPosterTemplate.CLASSIC,
+            LyricsPosterTemplate.MINIMAL,
+            LyricsPosterTemplate.CUSTOM -> drawStyledLyricsPoster(
+                canvas = canvas,
+                track = track,
+                lyricLine = lyricLine,
+                coverBitmap = coverBitmap,
+                customBackgroundBitmap = customBackgroundBitmap,
+                template = template
+            )
         }
 
         bitmap

@@ -229,6 +229,72 @@ class PlaylistDetailViewModelTest {
         }
     }
 
+    @Test
+    fun playlistSortCanSwitchBetweenTitleAndOriginalOrder() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val originalTracks = listOf(
+                Track(id = "2", platform = Platform.LOCAL, title = "Beta", artist = "BB"),
+                Track(id = "1", platform = Platform.LOCAL, title = "Alpha", artist = "AA")
+            )
+            everyLocalPlaylist(localRepo, originalTracks)
+
+            val viewModel = PlaylistDetailViewModel(onlineRepo, localRepo)
+
+            viewModel.loadPlaylist(
+                id = "local-playlist",
+                platform = Platform.LOCAL.id,
+                title = "本地歌单",
+                source = "local"
+            )
+            advanceUntilIdle()
+
+            viewModel.selectSort(PlaylistTrackSort.TITLE)
+            assertEquals(listOf("Alpha", "Beta"), viewModel.state.value.tracks.map { it.title })
+
+            viewModel.selectSort(PlaylistTrackSort.ORIGINAL)
+            assertEquals(listOf("Beta", "Alpha"), viewModel.state.value.tracks.map { it.title })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun playlistEditModeUsesOriginalOrderAfterViewSorting() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val onlineRepo = mockk<OnlineMusicRepository>()
+            val localRepo = mockk<LocalLibraryRepository>()
+            val originalTracks = listOf(
+                Track(id = "2", platform = Platform.LOCAL, title = "Beta", artist = "BB"),
+                Track(id = "1", platform = Platform.LOCAL, title = "Alpha", artist = "AA")
+            )
+            everyLocalPlaylist(localRepo, originalTracks)
+
+            val viewModel = PlaylistDetailViewModel(onlineRepo, localRepo)
+
+            viewModel.loadPlaylist(
+                id = "local-playlist",
+                platform = Platform.LOCAL.id,
+                title = "本地歌单",
+                source = "local"
+            )
+            advanceUntilIdle()
+
+            viewModel.selectSort(PlaylistTrackSort.TITLE)
+            viewModel.enterEditMode()
+
+            assertEquals(listOf("Beta", "Alpha"), viewModel.state.value.editingTracks.map { it.title })
+            assertEquals(true, viewModel.state.value.isEditMode)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     private fun everyLocalPlaylist(localRepo: LocalLibraryRepository, tracks: List<Track>) {
         coEvery { localRepo.replacePlaylistSongs(any(), any()) } returns Unit
         coEvery { localRepo.getPlaylistById(any()) } answers {

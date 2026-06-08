@@ -1304,6 +1304,10 @@ class OnlineMusicRepositoryImplTest {
                 """.trimIndent()
             )
         )
+        coEvery { api.getQqLyrics("track-1", any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns
+            json.parseToJsonElement("""{"code":0,"lyric":"","trans":""}""")
+        coEvery { api.postQqMusicu(any(), any()) } returns
+            json.parseToJsonElement("""{"code":0,"req":{"code":0,"data":{"lyric":"","trans":""}}}""")
 
         val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
 
@@ -1312,6 +1316,37 @@ class OnlineMusicRepositoryImplTest {
         val data = (result as Result.Success).data
         assertEquals("", data.lyric)
         assertEquals("副歌重复一遍", data.translation)
+    }
+
+    @Test
+    fun getLyrics_fallsBackToOfficialNeteaseLyricsWhenTuneHubFails() = runTest {
+        val api = mockk<TuneHubApi>()
+        val dispatchExecutor = mockk<DispatchExecutor>(relaxed = true)
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val okHttpClient = mockk<OkHttpClient>(relaxed = true)
+        coEvery {
+            api.parse(any(), any())
+        } returns ParseResponseDto(code = 503, message = "TuneHub unavailable")
+        coEvery {
+            api.getNeteaseLyrics("1901371647", any(), any(), any(), any())
+        } returns json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "lrc": { "lyric": "[00:01.00]爱你孤身走暗巷" },
+              "tlyric": { "lyric": "[00:01.00]Love your lonely walk" }
+            }
+            """.trimIndent()
+        )
+
+        val repository = OnlineMusicRepositoryImpl(api, okHttpClient, dispatchExecutor, json, cacheStore)
+
+        val result = repository.getLyrics(Platform.NETEASE, "1901371647")
+
+        val data = (result as Result.Success).data
+        assertEquals("[00:01.00]爱你孤身走暗巷", data.lyric)
+        assertEquals("[00:01.00]Love your lonely walk", data.translation)
+        coVerify(exactly = 1) { api.getNeteaseLyrics("1901371647", any(), any(), any(), any()) }
     }
 
     @Test

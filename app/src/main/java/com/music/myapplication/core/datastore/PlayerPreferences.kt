@@ -45,6 +45,14 @@ data class PlaybackSnapshot(
     val shuffleSession: PlaybackShuffleSnapshot? = null
 )
 
+@Serializable
+data class PlaybackAlarmSchedule(
+    val playlistId: String,
+    val playlistName: String,
+    val triggerAtMs: Long,
+    val enabled: Boolean = true
+)
+
 private val Context.dataStore by preferencesDataStore("player_preferences")
 
 @Singleton
@@ -85,6 +93,7 @@ class PlayerPreferences @Inject constructor(
         val APP_UPDATE_LAST_CHECK_AT_MS = longPreferencesKey("app_update_last_check_at_ms")
         val APP_UPDATE_LAST_NOTIFIED_VERSION_CODE = intPreferencesKey("app_update_last_notified_version_code")
         val RECIPE_AUTH_VALUES = stringPreferencesKey("recipe_auth_values")
+        val PLAYBACK_ALARM_SCHEDULE = stringPreferencesKey("playback_alarm_schedule")
     }
 
     @Volatile
@@ -182,6 +191,15 @@ class PlayerPreferences @Inject constructor(
             ?.let { payload ->
                 runCatching { json.decodeFromString<PlaybackSnapshot>(payload) }.getOrNull()
             }
+    }
+
+    val playbackAlarmSchedule: Flow<PlaybackAlarmSchedule?> = context.dataStore.data.map { prefs ->
+        prefs[Keys.PLAYBACK_ALARM_SCHEDULE]
+            ?.takeIf { it.isNotBlank() }
+            ?.let { payload ->
+                runCatching { json.decodeFromString<PlaybackAlarmSchedule>(payload) }.getOrNull()
+            }
+            ?.takeIf { it.enabled && it.playlistId.isNotBlank() && it.triggerAtMs > 0L }
     }
 
     val currentApiKey: String
@@ -310,6 +328,18 @@ class PlayerPreferences @Inject constructor(
             } else {
                 prefs[Keys.PLAYBACK_SNAPSHOT] = json.encodeToString(snapshot)
             }
+        }
+    }
+
+    suspend fun savePlaybackAlarmSchedule(schedule: PlaybackAlarmSchedule) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.PLAYBACK_ALARM_SCHEDULE] = json.encodeToString(schedule)
+        }
+    }
+
+    suspend fun clearPlaybackAlarmSchedule() {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.PLAYBACK_ALARM_SCHEDULE] = ""
         }
     }
 

@@ -22,10 +22,14 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 internal class OnlineMusicMediaResolver(
     private val api: TuneHubApi,
@@ -113,6 +117,25 @@ internal class OnlineMusicMediaResolver(
     }
 
     suspend fun getLyrics(platform: Platform, songId: String): Result<LyricsResult> {
+        val tuneHubResult = getTuneHubLyrics(platform, songId)
+        if (tuneHubResult is Result.Success && tuneHubResult.data.lyric.isNotBlank()) {
+            return tuneHubResult
+        }
+
+        val officialResult = getOfficialLyrics(platform, songId)
+        if (officialResult is Result.Success && officialResult.data.lyric.isNotBlank()) {
+            val tuneHubTranslation = (tuneHubResult as? Result.Success)?.data?.translation
+            return Result.Success(
+                officialResult.data.copy(
+                    translation = officialResult.data.translation?.ifBlank { null } ?: tuneHubTranslation
+                )
+            )
+        }
+
+        return tuneHubResult
+    }
+
+    private suspend fun getTuneHubLyrics(platform: Platform, songId: String): Result<LyricsResult> {
         return try {
             val response = api.parse(
                 apiKey = "",
@@ -131,6 +154,62 @@ internal class OnlineMusicMediaResolver(
                 Result.Success(LyricsResult(lyric = lyric.orEmpty(), translation = translation))
             }
         } catch (e: Exception) {
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun getOfficialLyrics(platform: Platform, songId: String): Result<LyricsResult>? {
+        val normalizedSongId = songId.trim()
+        if (normalizedSongId.isBlank()) return null
+
+        return when (platform) {
+            Platform.NETEASE -> getOfficialNeteaseLyrics(normalizedSongId)
+            Platform.QQ -> getOfficialQqLyrics(normalizedSongId)
+            Platform.KUWO, Platform.LOCAL -> null
+        }
+    }
+
+    private suspend fun getOfficialNeteaseLyrics(songId: String): Result<LyricsResult>? {
+        if (!songId.isDigitsOnly()) return null
+
+        return runCatching {
+            val response = api.getNeteaseLyrics(id = songId)
+            Result.Success(
+                LyricsResult(
+                    lyric = extractNestedText(response, listOf("lrc"), listOf("lyric")).orEmpty(),
+                    translation = extractNestedText(response, listOf("tlyric"), listOf("lyric"))
+                )
+            )
+        }.getOrElse { e ->
+            Result.Error(AppError.Network(cause = e))
+        }
+    }
+
+    private suspend fun getOfficialQqLyrics(songId: String): Result<LyricsResult>? {
+        val plainLyrics = if (!songId.isDigitsOnly()) {
+            runCatching {
+                val response = api.getQqLyrics(songMid = songId)
+                LyricsResult(
+                    lyric = extractLyric(response).orEmpty(),
+                    translation = extractTranslation(response)
+                )
+            }.getOrNull()
+        } else {
+            null
+        }
+        if (!plainLyrics?.lyric.isNullOrBlank()) {
+            return Result.Success(plainLyrics)
+        }
+
+        return runCatching {
+            val response = api.postQqMusicu(body = buildQqLyricsRequestBody(songId))
+            Result.Success(
+                LyricsResult(
+                    lyric = extractQqMusicuLyric(response, "lyric").orEmpty(),
+                    translation = extractQqMusicuLyric(response, "trans")
+                )
+            )
+        }.getOrElse { e ->
             Result.Error(AppError.Network(cause = e))
         }
     }
@@ -233,6 +312,48 @@ internal class OnlineMusicMediaResolver(
 
     private fun extractTranslation(data: JsonElement?): String? {
         return findFirstMatch(data, listOf("tlyric", "trans", "translation", "translateLyric", "transLyric"))
+    }
+
+    private fun extractNestedText(data: JsonElement?, path: List<String>, keys: List<String>): String? {
+        val target = path.fold(data) { current, key ->
+            (current as? JsonObject)?.let { obj ->
+                obj[key] ?: obj.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+            }
+        }
+        return findFirstMatch(target, keys)
+    }
+
+    private fun extractQqMusicuLyric(data: JsonElement?, key: String): String? {
+        val encoded = extractNestedText(data, listOf("req", "data"), listOf(key))
+            ?.takeIf(String::isNotBlank)
+            ?: return null
+
+        return runCatching {
+            String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8)
+        }.getOrNull()?.takeIf(String::isNotBlank)
+    }
+
+    private fun buildQqLyricsRequestBody(songId: String): JsonElement = buildJsonObject {
+        put("comm", buildJsonObject {
+            put("ct", 24)
+            put("cv", 0)
+            put("format", "json")
+            put("inCharset", "utf-8")
+            put("outCharset", "utf-8")
+        })
+        put("req", buildJsonObject {
+            put("module", "music.musichallSong.PlayLyricInfo")
+            put("method", "GetPlayLyricInfo")
+            put("param", buildJsonObject {
+                if (songId.isDigitsOnly()) {
+                    put("songID", songId.toLongOrNull() ?: 0L)
+                    put("songMID", "")
+                } else {
+                    put("songID", 0)
+                    put("songMID", songId)
+                }
+            })
+        })
     }
 
     private fun findFirstMatch(element: JsonElement?, keys: List<String>): String? {

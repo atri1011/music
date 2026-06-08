@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -53,13 +55,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +72,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.core.common.ShareUtils
+import com.music.myapplication.core.datastore.SearchHistoryResultEntry
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.SearchResultItem
 import com.music.myapplication.domain.model.SearchType
@@ -77,6 +82,7 @@ import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.components.PlatformFilterChips
+import com.music.myapplication.feature.components.RefreshablePagedLazyColumn
 import com.music.myapplication.feature.components.SegmentedChoiceRow
 import com.music.myapplication.feature.components.ShimmerMediaListItem
 import com.music.myapplication.feature.player.AddTrackToPlaylistSheet
@@ -85,9 +91,7 @@ import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.glassSurface
-import kotlinx.coroutines.flow.distinctUntilChanged
-
-private const val LoadMoreBufferSize = 5
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -96,19 +100,21 @@ fun SearchScreen(
     playerViewModel: PlayerViewModel,
     onNavigateToArtist: ((String, String, String) -> Unit)? = null,
     onNavigateToAlbum: ((String, String, String, String, String) -> Unit)? = null,
-    onNavigateToPlaylist: ((String, String, String) -> Unit)? = null
+    onNavigateToPlaylist: ((String, String, String) -> Unit)? = null,
+    autoFocus: Boolean = true
 ) {
     val state by searchViewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     var selectedTrackForMenu by remember { mutableStateOf<Track?>(null) }
     var trackPendingPlaylistAddition by remember { mutableStateOf<Track?>(null) }
-    var lastLoadMoreTriggerIndex by remember(state.query, state.platform, state.searchType) {
-        mutableStateOf(-1)
-    }
 
     val resultCount = if (state.searchType == SearchType.SONG) state.tracks.size else state.genericResults.size
+    val isRefreshingResults = state.isLoading && state.page == 1 && resultCount > 0 && state.query.isNotBlank()
+    val isLoadingMoreResults = state.isLoading && state.page > 1 && resultCount > 0
 
     val dismissSuggestions = remember(focusManager, searchViewModel) {
         {
@@ -121,28 +127,12 @@ fun SearchScreen(
         dismissSuggestions()
     }
 
-    LaunchedEffect(
-        listState,
-        state.query,
-        state.platform,
-        state.searchType,
-        state.isLoading,
-        state.hasMore,
-        state.page,
-        resultCount
-    ) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
-            .distinctUntilChanged()
-            .collect { lastVisibleItem ->
-                if (state.query.isBlank() || resultCount == 0 || state.isLoading || !state.hasMore) {
-                    return@collect
-                }
-                val triggerIndex = (resultCount - LoadMoreBufferSize).coerceAtLeast(0)
-                if (lastVisibleItem >= triggerIndex && lastVisibleItem > lastLoadMoreTriggerIndex) {
-                    lastLoadMoreTriggerIndex = lastVisibleItem
-                    searchViewModel.loadMore()
-                }
-            }
+    LaunchedEffect(autoFocus) {
+        if (autoFocus) {
+            delay(120)
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
     }
 
     Column(
@@ -198,6 +188,7 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall)
+                .focusRequester(focusRequester)
                 .glassSurface(shape = searchFieldShape)
         )
 
@@ -237,6 +228,27 @@ fun SearchScreen(
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall)
                     ) {
+                        SearchCategoryShortcuts(
+                            selectedType = state.searchType,
+                            onTypeSelected = searchViewModel::onSearchTypeChange
+                        )
+                        Spacer(modifier = Modifier.height(AppSpacing.Large))
+
+                        if (state.recentResultEntries.isNotEmpty()) {
+                            RecentSearchResultsSection(
+                                entries = state.recentResultEntries,
+                                onOpen = { item ->
+                                    searchViewModel.recordResultOpen(item)
+                                    when (item.type) {
+                                        SearchType.ARTIST -> onNavigateToArtist?.invoke(item.id, item.platform.id, item.title)
+                                        SearchType.ALBUM -> onNavigateToAlbum?.invoke(item.id, item.platform.id, item.title, item.subtitle, item.coverUrl)
+                                        else -> Unit
+                                    }
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(AppSpacing.Large))
+                        }
+
                         // Search History
                         if (state.searchHistory.isNotEmpty()) {
                             Row(
@@ -292,6 +304,11 @@ fun SearchScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(AppSpacing.Small))
+                            HotKeywordCloud(
+                                keywords = state.hotKeywords,
+                                onKeywordClick = searchViewModel::onHotKeywordClick
+                            )
+                            Spacer(modifier = Modifier.height(AppSpacing.Medium))
                             state.hotKeywords.take(20).forEachIndexed { index, keyword ->
                                 Row(
                                     modifier = Modifier
@@ -364,7 +381,16 @@ fun SearchScreen(
                 else -> {
                     if (state.searchType == SearchType.SONG) {
                         // Song results
-                        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                        RefreshablePagedLazyColumn(
+                            itemCount = state.tracks.size,
+                            isRefreshing = isRefreshingResults,
+                            onRefresh = searchViewModel::refreshCurrentSearch,
+                            canLoadMore = state.query.isNotBlank() && state.hasMore,
+                            isLoadingMore = isLoadingMoreResults,
+                            onLoadMore = searchViewModel::loadMore,
+                            state = listState,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
                             itemsIndexed(
                                 state.tracks,
                                 key = { _, t -> "${t.platform.id}:${t.id}" },
@@ -386,15 +412,19 @@ fun SearchScreen(
                                     } else null
                                 )
                             }
-                            if (state.isLoading) {
-                                item(contentType = "loading") {
-                                    ShimmerMediaListItem(modifier = Modifier.padding(AppSpacing.Medium))
-                                }
-                            }
                         }
                     } else {
                         // Generic results (artist/album/playlist)
-                        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                        RefreshablePagedLazyColumn(
+                            itemCount = state.genericResults.size,
+                            isRefreshing = isRefreshingResults,
+                            onRefresh = searchViewModel::refreshCurrentSearch,
+                            canLoadMore = state.query.isNotBlank() && state.hasMore,
+                            isLoadingMore = isLoadingMoreResults,
+                            onLoadMore = searchViewModel::loadMore,
+                            state = listState,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
                             items(
                                 state.genericResults,
                                 key = { "${it.platform.id}:${it.type.name}:${it.id}" },
@@ -405,9 +435,11 @@ fun SearchScreen(
                                     onClick = {
                                         when (item.type) {
                                             SearchType.ARTIST -> {
+                                                searchViewModel.recordResultOpen(item)
                                                 onNavigateToArtist?.invoke(item.id, item.platform.id, item.title)
                                             }
                                             SearchType.ALBUM -> {
+                                                searchViewModel.recordResultOpen(item)
                                                 onNavigateToAlbum?.invoke(item.id, item.platform.id, item.title, item.subtitle, item.coverUrl)
                                             }
                                             SearchType.PLAYLIST -> {
@@ -417,11 +449,6 @@ fun SearchScreen(
                                         }
                                     }
                                 )
-                            }
-                            if (state.isLoading) {
-                                item(contentType = "loading") {
-                                    ShimmerMediaListItem(modifier = Modifier.padding(AppSpacing.Medium))
-                                }
                             }
                         }
                     }
@@ -525,6 +552,168 @@ private fun SearchTypeTabRow(
 }
 
 @Composable
+private fun SearchCategoryShortcuts(
+    selectedType: SearchType,
+    onTypeSelected: (SearchType) -> Unit
+) {
+    Column {
+        Text(
+            text = "搜索分类",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(AppSpacing.Small))
+        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+            SearchType.entries.forEach { type ->
+                SearchCategoryShortcut(
+                    type = type,
+                    selected = type == selectedType,
+                    onClick = { onTypeSelected(type) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchCategoryShortcut(
+    type: SearchType,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Column(
+        modifier = modifier
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Medium), pressScale = true)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = type.discoveryIcon(),
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = type.displayName,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+            ),
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun HotKeywordCloud(
+    keywords: List<String>,
+    onKeywordClick: (String) -> Unit
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)
+    ) {
+        keywords.take(12).forEachIndexed { index, keyword ->
+            AssistChip(
+                onClick = { onKeywordClick(keyword) },
+                label = {
+                    Text(
+                        text = keyword,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                leadingIcon = if (index < 3) {
+                    {
+                        Icon(
+                            imageVector = Icons.Outlined.LocalFireDepartment,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                } else {
+                    null
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecentSearchResultsSection(
+    entries: List<SearchHistoryResultEntry>,
+    onOpen: (SearchResultItem) -> Unit
+) {
+    val recentItems = entries.mapNotNull { it.toSearchResultItem() }
+    if (recentItems.isEmpty()) return
+
+    Column {
+        Text(
+            text = "最近打开",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(AppSpacing.Small))
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small),
+            contentPadding = PaddingValues(end = AppSpacing.Medium)
+        ) {
+            items(recentItems, key = { "recent:${it.type.name}:${it.platform.id}:${it.id}" }) { item ->
+                RecentSearchResultCard(
+                    item = item,
+                    onClick = { onOpen(item) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentSearchResultCard(
+    item: SearchResultItem,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .width(188.dp)
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Medium), pressScale = true)
+            .clickable(onClick = onClick)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CoverImage(
+            url = item.coverUrl,
+            contentDescription = item.title,
+            modifier = Modifier
+                .size(44.dp)
+                .clip(if (item.type == SearchType.ARTIST) CircleShape else RoundedCornerShape(AppShapes.ExtraSmall))
+        )
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = item.recentLabel(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
 private fun SearchResultListItem(
     item: SearchResultItem,
     onClick: () -> Unit,
@@ -578,6 +767,36 @@ private fun SearchResultListItem(
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         )
     }
+}
+
+private fun SearchType.discoveryIcon() = when (this) {
+    SearchType.SONG -> Icons.Outlined.MusicNote
+    SearchType.ARTIST -> Icons.Outlined.Person
+    SearchType.ALBUM -> Icons.Outlined.Album
+    SearchType.PLAYLIST -> Icons.AutoMirrored.Outlined.QueueMusic
+}
+
+private fun SearchHistoryResultEntry.toSearchResultItem(): SearchResultItem? {
+    val resultType = runCatching { SearchType.valueOf(type) }.getOrNull() ?: return null
+    if (resultType != SearchType.ARTIST && resultType != SearchType.ALBUM) return null
+    return SearchResultItem(
+        id = id,
+        title = title,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
+        platform = Platform.fromId(platformId),
+        type = resultType,
+        trackCount = trackCount
+    )
+}
+
+private fun SearchResultItem.recentLabel(): String = when (type) {
+    SearchType.ARTIST -> buildString {
+        append("歌手")
+        if (trackCount > 0) append(" · ${trackCount}首")
+    }
+    SearchType.ALBUM -> subtitle.ifBlank { "专辑" }
+    else -> type.displayName
 }
 
 private fun buildSubtitle(item: SearchResultItem): String {

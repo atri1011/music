@@ -5,11 +5,15 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
+import android.view.ViewConfiguration
 import androidx.annotation.OptIn
 import androidx.annotation.VisibleForTesting
 import androidx.core.graphics.drawable.toBitmap
+import androidx.glance.appwidget.updateAll
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
@@ -29,12 +33,16 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import coil.imageLoader
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.size.Scale
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.common.coverImageCacheKey
+import com.music.myapplication.core.common.normalizeNotificationArtworkUrl
 import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.core.datastore.EqualizerPreferences
 import com.music.myapplication.core.datastore.PlayerPreferences
@@ -45,15 +53,22 @@ import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.feature.player.state.ResolvedTrackPlayback
 import com.music.myapplication.feature.player.state.SleepTimerStateHolder
 import com.music.myapplication.feature.player.state.TrackPlaybackResolver
+import com.music.myapplication.feature.widget.MusicPlaybackWidget
+import com.music.myapplication.feature.widget.MusicPlaybackWidgetSnapshot
+import com.music.myapplication.feature.widget.MusicPlaybackWidgetStateStore
 import com.music.myapplication.media.equalizer.EqualizerManager
+import com.music.myapplication.media.equalizer.LoudnessNormalizationManager
 import com.music.myapplication.media.playback.CacheAwarePlaybackMediaSourceFactory
 import com.music.myapplication.media.playback.normalizePlaybackUrl
 import com.music.myapplication.media.player.PlaybackModeManager
 import com.music.myapplication.media.player.QueueManager
+import com.music.myapplication.media.session.PlaybackFadeOutPauseRequest
 import com.music.myapplication.media.session.PlaybackLoadRequest
 import com.music.myapplication.media.session.PlaybackQueueRefreshRequest
+import com.music.myapplication.media.session.fadeOutPauseSessionCommand
 import com.music.myapplication.media.session.loadTrackSessionCommand
 import com.music.myapplication.media.session.refreshQueueSessionCommand
+import com.music.myapplication.media.session.toPlaybackFadeOutPauseRequestOrNull
 import com.music.myapplication.media.session.toPlaybackLoadRequestOrNull
 import com.music.myapplication.media.session.toPlaybackQueueRefreshRequestOrNull
 import com.music.myapplication.media.state.applyPlaybackRestorePlan
@@ -72,7 +87,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -89,6 +106,7 @@ class MusicPlaybackService : MediaLibraryService() {
     @Inject lateinit var modeManager: PlaybackModeManager
     @Inject lateinit var sleepTimer: SleepTimerStateHolder
     @Inject lateinit var equalizerManager: EqualizerManager
+    @Inject lateinit var loudnessNormalizationManager: LoudnessNormalizationManager
     @Inject lateinit var equalizerPreferences: EqualizerPreferences
     @Inject lateinit var playerPreferences: PlayerPreferences
     @Inject lateinit var trackPlaybackResolver: TrackPlaybackResolver
@@ -103,8 +121,12 @@ class MusicPlaybackService : MediaLibraryService() {
     private var positionUpdateJob: Job? = null
     private var equalizerSettingsJob: Job? = null
     private var playerSettingsJob: Job? = null
+    private var widgetUpdateJob: Job? = null
     private var transitionJob: Job? = null
+    private var fadeOutPauseJob: Job? = null
     private var gaplessPreloadJob: Job? = null
+    private var headsetClickJob: Job? = null
+    private var headsetClickCount = 0
     private val libraryTrackCache = LinkedHashMap<String, Track>()
     private val searchResultCache =
         object : LinkedHashMap<String, List<AndroidAutoSearchEntry>>(16, 0.75f, true) {
@@ -125,6 +147,8 @@ class MusicPlaybackService : MediaLibraryService() {
     private companion object {
         const val TAG = "MusicPlaybackService"
         const val SEARCH_CACHE_LIMIT = 8
+        const val HEADSET_MAX_CLICK_COUNT = 3
+        const val NOTIFICATION_ARTWORK_SIZE = 800
     }
 
     @OptIn(UnstableApi::class)
@@ -149,6 +173,7 @@ class MusicPlaybackService : MediaLibraryService() {
         bindEqualizerToAudioSession(exoPlayer.audioSessionId)
         observeEqualizerSettings()
         observePlayerSettings()
+        observePlaybackWidgetState()
     }
 
     override fun onGetSession(
@@ -167,8 +192,12 @@ class MusicPlaybackService : MediaLibraryService() {
         positionUpdateJob?.cancel()
         equalizerSettingsJob?.cancel()
         playerSettingsJob?.cancel()
+        widgetUpdateJob?.cancel()
         transitionJob?.cancel()
+        fadeOutPauseJob?.cancel()
         gaplessPreloadJob?.cancel()
+        headsetClickJob?.cancel()
+        loudnessNormalizationManager.release()
         equalizerManager.release()
         setPlayerVolume(1f)
         exoPlayer.removeListener(playerListener)
@@ -193,6 +222,19 @@ class MusicPlaybackService : MediaLibraryService() {
     private fun stopPositionUpdates() {
         positionUpdateJob?.cancel()
         positionUpdateJob = null
+    }
+
+    private fun observePlaybackWidgetState() {
+        widgetUpdateJob?.cancel()
+        widgetUpdateJob = serviceScope.launch {
+            stateStore.state
+                .map(MusicPlaybackWidgetSnapshot::from)
+                .distinctUntilChanged()
+                .collect { snapshot ->
+                    MusicPlaybackWidgetStateStore.save(this@MusicPlaybackService, snapshot)
+                    MusicPlaybackWidget().updateAll(this@MusicPlaybackService)
+                }
+        }
     }
 
     private fun observePlayerSettings() {
@@ -229,8 +271,10 @@ class MusicPlaybackService : MediaLibraryService() {
     private fun bindEqualizerToAudioSession(audioSessionId: Int) {
         if (audioSessionId == C.AUDIO_SESSION_ID_UNSET || audioSessionId <= 0) {
             equalizerManager.release()
+            loudnessNormalizationManager.release()
             return
         }
+        loudnessNormalizationManager.bindToAudioSession(audioSessionId)
         equalizerManager.bindToAudioSession(audioSessionId)
         applyEqualizerSettings()
     }
@@ -274,6 +318,7 @@ class MusicPlaybackService : MediaLibraryService() {
                 .buildUpon()
                 .add(loadTrackSessionCommand)
                 .add(refreshQueueSessionCommand)
+                .add(fadeOutPauseSessionCommand)
                 .build()
             return MediaSession.ConnectionResult.accept(
                 sessionCommands,
@@ -366,8 +411,36 @@ class MusicPlaybackService : MediaLibraryService() {
                         Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                     }
                 }
+                fadeOutPauseSessionCommand.customAction -> {
+                    val request = args.toPlaybackFadeOutPauseRequestOrNull()
+                    if (request == null) {
+                        Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+                    } else {
+                        handleFadeOutPauseRequest(request)
+                        Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
+                }
                 else -> super.onCustomCommand(session, controller, customCommand, args)
             }
+        }
+
+        @OptIn(UnstableApi::class)
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            intent: Intent
+        ): Boolean {
+            val keyEvent = intent.mediaButtonKeyEvent() ?: return false
+            if (intent.action != Intent.ACTION_MEDIA_BUTTON ||
+                keyEvent.action != KeyEvent.ACTION_DOWN ||
+                keyEvent.repeatCount != 0 ||
+                !keyEvent.isHeadsetClickKey()
+            ) {
+                return false
+            }
+
+            queueHeadsetClickAction()
+            return true
         }
     }
 
@@ -858,6 +931,59 @@ class MusicPlaybackService : MediaLibraryService() {
         syncGaplessPlaybackWindow(autoPlay = exoPlayer.playWhenReady)
     }
 
+    private fun handleFadeOutPauseRequest(request: PlaybackFadeOutPauseRequest) {
+        fadeOutPauseJob?.cancel()
+        fadeOutPauseJob = serviceScope.launch {
+            val restoreVolume = exoPlayer.volume.takeIf { it > 0f } ?: 1f
+            runCatching {
+                fadePlayerVolumeTo(
+                    targetVolume = 0f,
+                    durationMs = request.durationMs.coerceAtLeast(0)
+                )
+                exoPlayer.pause()
+                stateStore.updatePlaying(false)
+            }.also {
+                setPlayerVolume(restoreVolume)
+            }
+        }
+    }
+
+    private fun queueHeadsetClickAction() {
+        headsetClickCount = (headsetClickCount + 1).coerceAtMost(HEADSET_MAX_CLICK_COUNT)
+        headsetClickJob?.cancel()
+        headsetClickJob = serviceScope.launch {
+            delay(ViewConfiguration.getDoubleTapTimeout().toLong())
+            val clickCount = headsetClickCount
+            headsetClickCount = 0
+            headsetClickJob = null
+            when (clickCount) {
+                1 -> togglePlaybackFromHeadset()
+                2 -> handleSkipToNextCommand()
+                else -> toggleFavoriteFromHeadset()
+            }
+        }
+    }
+
+    private fun togglePlaybackFromHeadset() {
+        if (exoPlayer.isPlaying) {
+            exoPlayer.pause()
+            stateStore.updatePlaying(false)
+            return
+        }
+
+        if (restorePlaybackOnServicePlayIfNeeded()) return
+        exoPlayer.play()
+        stateStore.updatePlaying(true)
+    }
+
+    private fun toggleFavoriteFromHeadset() {
+        val track = stateStore.state.value.currentTrack ?: return
+        serviceScope.launch(Dispatchers.IO) {
+            localLibraryRepository.toggleFavorite(track)
+            stateStore.updateTrack(track.copy(isFavorite = !track.isFavorite))
+        }
+    }
+
     private fun handleSkipToNextCommand() {
         handleSkipCommand(
             moveToTarget = { modeManager.getNextTrack() }
@@ -1099,7 +1225,7 @@ private fun PlaybackException.describeForLog(): String {
     }
 
     private fun buildTrackMetadata(track: Track): MediaMetadata.Builder {
-        val normalizedCoverUrl = normalizeCoverUrl(track.coverUrl)
+        val normalizedCoverUrl = normalizeNotificationArtworkUrl(track.coverUrl)
         return MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artist)
@@ -1134,9 +1260,22 @@ private fun PlaybackException.describeForLog(): String {
             val future = SettableFuture.create<Bitmap>()
             serviceScope.launch(Dispatchers.IO) {
                 runCatching {
+                    val artworkUrl = normalizeNotificationArtworkUrl(uri.toString()).ifBlank { uri.toString() }
+                    val cacheKey = coverImageCacheKey(artworkUrl)
                     val request = ImageRequest.Builder(this@MusicPlaybackService)
-                        .data(uri.toString())
+                        .data(artworkUrl)
+                        .size(NOTIFICATION_ARTWORK_SIZE)
+                        .scale(Scale.FILL)
                         .allowHardware(false)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .networkCachePolicy(CachePolicy.ENABLED)
+                        .apply {
+                            if (cacheKey.isNotBlank()) {
+                                memoryCacheKey(cacheKey)
+                                diskCacheKey(cacheKey)
+                            }
+                        }
                         .build()
                     val result = imageLoader.execute(request)
                     val drawable = (result as? SuccessResult)?.drawable
@@ -1388,3 +1527,15 @@ private fun PlaybackException.describeForLog(): String {
 internal fun shouldPublishPositionFromDiscontinuity(reason: Int): Boolean =
     reason == Player.DISCONTINUITY_REASON_SEEK ||
         reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+
+private fun KeyEvent.isHeadsetClickKey(): Boolean =
+    keyCode == KeyEvent.KEYCODE_HEADSETHOOK ||
+        keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+
+@Suppress("DEPRECATION")
+private fun Intent.mediaButtonKeyEvent(): KeyEvent? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+    } else {
+        getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+    }

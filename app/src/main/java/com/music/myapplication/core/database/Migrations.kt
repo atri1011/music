@@ -137,3 +137,59 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         )
     }
 }
+
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `playback_events` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `song_id` TEXT NOT NULL,
+                `platform` TEXT NOT NULL,
+                `title` TEXT NOT NULL,
+                `artist` TEXT NOT NULL,
+                `cover_url` TEXT NOT NULL DEFAULT '',
+                `duration_ms` INTEGER NOT NULL DEFAULT 0,
+                `played_at` INTEGER NOT NULL,
+                `listen_duration_ms` INTEGER NOT NULL DEFAULT 0,
+                `play_count` INTEGER NOT NULL DEFAULT 1
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `idx_playback_events_played_at` ON `playback_events` (`played_at`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `idx_playback_events_artist` ON `playback_events` (`artist`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `idx_playback_events_track` ON `playback_events` (`song_id`, `platform`)")
+        db.execSQL(
+            """
+            INSERT INTO `playback_events` (
+                `song_id`, `platform`, `title`, `artist`, `cover_url`, `duration_ms`,
+                `played_at`, `listen_duration_ms`, `play_count`
+            )
+            SELECT
+                `song_id`, `platform`, `title`, `artist`, `cover_url`, `duration_ms`,
+                `played_at`, CAST(`duration_ms` AS INTEGER) * CAST(`play_count` AS INTEGER), `play_count`
+            FROM `recent_plays`
+            WHERE `played_at` > 0
+            """.trimIndent()
+        )
+    }
+}
+
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `playlist_folders` (
+                `folder_id` TEXT NOT NULL,
+                `name` TEXT NOT NULL,
+                `created_at` INTEGER NOT NULL,
+                `updated_at` INTEGER NOT NULL,
+                PRIMARY KEY(`folder_id`)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `idx_playlist_folders_updated_at` ON `playlist_folders` (`updated_at`)")
+        db.execSQL("ALTER TABLE `playlists` ADD COLUMN `folder_id` TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `idx_playlists_folder` ON `playlists` (`folder_id`)")
+    }
+}

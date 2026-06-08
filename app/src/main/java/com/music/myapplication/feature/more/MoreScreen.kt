@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
@@ -76,6 +77,8 @@ fun MoreScreen(
     viewModel: MoreViewModel = hiltViewModel(),
     onNavigateToLxSources: () -> Unit = {},
     onNavigateToAudioSourceManagement: () -> Unit = {},
+    onNavigateToCarMode: () -> Unit = {},
+    onNavigateToPlaybackAlarm: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -105,6 +108,20 @@ fun MoreScreen(
 
         // ── 播放 ──
         SettingsGroup(title = "播放") {
+            SettingsItem(
+                icon = Icons.Default.DirectionsCar,
+                title = "车载模式",
+                subtitle = "手机端大按钮驾驶界面",
+                onClick = onNavigateToCarMode,
+                showChevron = true
+            )
+            SettingsItem(
+                icon = Icons.Default.Timer,
+                title = "定时播放",
+                subtitle = "到点播放本地歌单",
+                onClick = onNavigateToPlaybackAlarm,
+                showChevron = true
+            )
             SettingsItem(
                 icon = Icons.Default.GraphicEq,
                 title = "音质",

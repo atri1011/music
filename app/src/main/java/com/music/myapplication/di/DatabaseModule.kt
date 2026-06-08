@@ -10,6 +10,8 @@ import com.music.myapplication.core.database.MIGRATION_4_5
 import com.music.myapplication.core.database.MIGRATION_5_6
 import com.music.myapplication.core.database.MIGRATION_6_7
 import com.music.myapplication.core.database.MIGRATION_7_8
+import com.music.myapplication.core.database.MIGRATION_8_9
+import com.music.myapplication.core.database.MIGRATION_9_10
 import com.music.myapplication.core.database.dao.*
 import dagger.Module
 import dagger.Provides
@@ -33,7 +35,9 @@ object DatabaseModule {
                 MIGRATION_4_5,
                 MIGRATION_5_6,
                 MIGRATION_6_7,
-                MIGRATION_7_8
+                MIGRATION_7_8,
+                MIGRATION_8_9,
+                MIGRATION_9_10
             )
             .build()
 
@@ -42,6 +46,9 @@ object DatabaseModule {
 
     @Provides
     fun provideRecentPlaysDao(db: AppDatabase): RecentPlaysDao = db.recentPlaysDao()
+
+    @Provides
+    fun providePlaylistFoldersDao(db: AppDatabase): PlaylistFoldersDao = db.playlistFoldersDao()
 
     @Provides
     fun providePlaylistsDao(db: AppDatabase): PlaylistsDao = db.playlistsDao()
@@ -60,4 +67,7 @@ object DatabaseModule {
 
     @Provides
     fun provideLocalTracksDao(db: AppDatabase): LocalTracksDao = db.localTracksDao()
+
+    @Provides
+    fun providePlaybackEventsDao(db: AppDatabase): PlaybackEventsDao = db.playbackEventsDao()
 }

@@ -12,3 +12,9 @@ internal fun blurredCoverOverlayColors(): List<Color> = listOf(
     Color.Black.copy(alpha = 0.40f),
     Color.Black.copy(alpha = 0.65f)
 )
+
+internal fun blurredCoverTintColors(dominantColor: Color): List<Color> = listOf(
+    dominantColor.copy(alpha = 0.34f),
+    dominantColor.copy(alpha = 0.12f),
+    Color.Transparent
+)

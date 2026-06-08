@@ -4,6 +4,8 @@ import com.music.myapplication.core.cache.CacheManager
 import com.music.myapplication.core.database.dao.FavoritesDao
 import com.music.myapplication.core.database.dao.LocalTracksDao
 import com.music.myapplication.core.database.dao.LyricsCacheDao
+import com.music.myapplication.core.database.dao.PlaybackEventsDao
+import com.music.myapplication.core.database.dao.PlaylistFoldersDao
 import com.music.myapplication.core.database.dao.PlaylistSongsDao
 import com.music.myapplication.core.database.dao.PlaylistsDao
 import com.music.myapplication.core.database.dao.RecentPlaysDao
@@ -31,6 +33,8 @@ class LocalLibraryRepositoryImplTest {
     private val context = mockk<android.content.Context>(relaxed = true)
     private val favoritesDao = mockk<FavoritesDao>(relaxed = true)
     private val recentPlaysDao = mockk<RecentPlaysDao>(relaxed = true)
+    private val playbackEventsDao = mockk<PlaybackEventsDao>(relaxed = true)
+    private val playlistFoldersDao = mockk<PlaylistFoldersDao>(relaxed = true)
     private val playlistsDao = mockk<PlaylistsDao>(relaxed = true)
     private val playlistSongsDao = mockk<PlaylistSongsDao>(relaxed = true)
     private val lyricsCacheDao = mockk<LyricsCacheDao>(relaxed = true)
@@ -44,6 +48,8 @@ class LocalLibraryRepositoryImplTest {
         context = context,
         favoritesDao = favoritesDao,
         recentPlaysDao = recentPlaysDao,
+        playbackEventsDao = playbackEventsDao,
+        playlistFoldersDao = playlistFoldersDao,
         playlistsDao = playlistsDao,
         playlistSongsDao = playlistSongsDao,
         lyricsCacheDao = lyricsCacheDao,

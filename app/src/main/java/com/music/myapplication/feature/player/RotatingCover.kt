@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -15,7 +16,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.ui.theme.AppShapes
@@ -25,9 +29,11 @@ fun RotatingCover(
     coverUrl: String,
     isPlaying: Boolean,
     glowColor: Color = Color.Transparent,
+    onLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val coverShape = RoundedCornerShape(AppShapes.Large)
+    val haptics = LocalHapticFeedback.current
 
     // Breathing scale animation
     val infiniteTransition = rememberInfiniteTransition(label = "breathing")
@@ -79,6 +85,20 @@ fun RotatingCover(
             contentDescription = "专辑封面",
             modifier = Modifier
                 .matchParentSize()
+                .then(
+                    if (onLongPress != null) {
+                        Modifier.pointerInput(onLongPress) {
+                            detectTapGestures(
+                                onLongPress = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onLongPress()
+                                }
+                            )
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale

@@ -39,3 +39,32 @@ internal suspend fun loadLyricsPosterCoverBitmap(
     drawable.draw(canvas)
     bitmap
 }
+
+internal suspend fun loadLyricsPosterBackgroundBitmap(
+    context: Context,
+    backgroundUri: String?,
+    width: Int,
+    height: Int
+): Bitmap? = withContext(Dispatchers.IO) {
+    val uri = backgroundUri?.trim()?.takeIf { it.isNotBlank() } ?: return@withContext null
+    val imageLoader = ImageLoader.Builder(context).build()
+    val request = ImageRequest.Builder(context)
+        .data(uri)
+        .size(width, height)
+        .allowHardware(false)
+        .build()
+    val result = imageLoader.execute(request)
+    val drawable = (result as? SuccessResult)?.drawable ?: return@withContext null
+    drawable.intrinsicWidth.takeIf { it > 0 } ?: return@withContext null
+    drawable.intrinsicHeight.takeIf { it > 0 } ?: return@withContext null
+
+    val bitmap = Bitmap.createBitmap(
+        drawable.intrinsicWidth,
+        drawable.intrinsicHeight,
+        Bitmap.Config.ARGB_8888
+    )
+    val canvas = Canvas(bitmap)
+    drawable.setBounds(0, 0, canvas.width, canvas.height)
+    drawable.draw(canvas)
+    bitmap
+}

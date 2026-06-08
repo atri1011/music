@@ -18,7 +18,9 @@ import javax.inject.Inject
 
 data class PlaylistDetailUiState(
     val tracks: List<Track> = emptyList(),
+    val sourceTracks: List<Track> = emptyList(),
     val editingTracks: List<Track> = emptyList(),
+    val sortOrder: PlaylistTrackSort = PlaylistTrackSort.ORIGINAL,
     val isLoading: Boolean = false,
     val isSavingEdits: Boolean = false,
     val isDeletingFavorites: Boolean = false,
@@ -33,6 +35,14 @@ data class PlaylistDetailUiState(
     val coverUrl: String = ""
 )
 
+enum class PlaylistTrackSort {
+    ORIGINAL,
+    TITLE,
+    ARTIST,
+    ALBUM,
+    DURATION
+}
+
 @HiltViewModel
 class PlaylistDetailViewModel @Inject constructor(
     private val onlineRepo: OnlineMusicRepository,
@@ -41,6 +51,7 @@ class PlaylistDetailViewModel @Inject constructor(
 
     private companion object {
         const val SOURCE_FAVORITES = "favorites"
+        const val SOURCE_SMART = "smart"
     }
 
     private val _state = MutableStateFlow(PlaylistDetailUiState())
@@ -62,6 +73,9 @@ class PlaylistDetailViewModel @Inject constructor(
                 isEditMode = false,
                 isFavoritesSelectionMode = false,
                 selectedFavoriteKeys = emptySet(),
+                tracks = emptyList(),
+                sourceTracks = emptyList(),
+                sortOrder = PlaylistTrackSort.ORIGINAL,
                 editingTracks = emptyList(),
                 error = null,
                 editMessage = null,
@@ -78,7 +92,8 @@ class PlaylistDetailViewModel @Inject constructor(
                         current.copy(
                             title = title.ifBlank { "收藏" },
                             coverUrl = tracks.firstOrNull()?.coverUrl.orEmpty(),
-                            tracks = tracks,
+                            sourceTracks = tracks,
+                            tracks = tracks.sortedByPlaylist(current.sortOrder),
                             editingTracks = emptyList(),
                             isLoading = false,
                             isLocalPlaylist = false,
@@ -86,6 +101,28 @@ class PlaylistDetailViewModel @Inject constructor(
                             isEditMode = false,
                             isFavoritesSelectionMode = keepSelectionMode,
                             selectedFavoriteKeys = selectedKeys
+                        )
+                    }
+                }
+            } else if (source == SOURCE_SMART) {
+                localRepo.getSmartPlaylistTracks(id).collect { tracks ->
+                    val trackKeys = tracks.map(::favoriteTrackKey).toHashSet()
+                    _state.update { current ->
+                        val selectedKeys = current.selectedFavoriteKeys.filterTo(linkedSetOf()) { it in trackKeys }
+                        val keepSelectionMode = current.isFavoritesSelectionMode && tracks.isNotEmpty()
+                        current.copy(
+                            title = title.ifBlank { current.title.ifBlank { "智能歌单" } },
+                            coverUrl = tracks.firstOrNull()?.coverUrl.orEmpty(),
+                            sourceTracks = tracks,
+                            tracks = tracks.sortedByPlaylist(current.sortOrder),
+                            editingTracks = emptyList(),
+                            isLoading = false,
+                            isLocalPlaylist = false,
+                            isFavoritesCollection = false,
+                            isEditMode = false,
+                            isFavoritesSelectionMode = keepSelectionMode,
+                            selectedFavoriteKeys = selectedKeys,
+                            isDeletingFavorites = false
                         )
                     }
                 }
@@ -102,14 +139,18 @@ class PlaylistDetailViewModel @Inject constructor(
                 }
                 localRepo.getPlaylistSongs(id).collect { tracks ->
                     _state.update { current ->
+                        val trackKeys = tracks.map(::favoriteTrackKey).toHashSet()
+                        val selectedKeys = current.selectedFavoriteKeys.filterTo(linkedSetOf()) { it in trackKeys }
+                        val keepSelectionMode = current.isFavoritesSelectionMode && tracks.isNotEmpty()
                         current.copy(
-                            tracks = tracks,
+                            sourceTracks = tracks,
+                            tracks = tracks.sortedByPlaylist(current.sortOrder),
                             editingTracks = if (current.isEditMode) current.editingTracks else tracks,
                             isLoading = false,
                             isLocalPlaylist = true,
                             isFavoritesCollection = false,
-                            isFavoritesSelectionMode = false,
-                            selectedFavoriteKeys = emptySet(),
+                            isFavoritesSelectionMode = keepSelectionMode,
+                            selectedFavoriteKeys = selectedKeys,
                             isDeletingFavorites = false,
                             coverUrl = current.coverUrl.ifBlank { playlist?.coverUrl.orEmpty() }
                         )
@@ -124,7 +165,8 @@ class PlaylistDetailViewModel @Inject constructor(
                                 val enriched = localRepo.applyFavoriteState(result.data)
                                 _state.update {
                                     it.copy(
-                                        tracks = enriched,
+                                        sourceTracks = enriched,
+                                        tracks = enriched.sortedByPlaylist(it.sortOrder),
                                         editingTracks = emptyList(),
                                         isLoading = false,
                                         isLocalPlaylist = false,
@@ -157,7 +199,8 @@ class PlaylistDetailViewModel @Inject constructor(
                                 val baseTracks = localRepo.applyFavoriteState(result.data)
                                 _state.update {
                                     it.copy(
-                                        tracks = baseTracks,
+                                        sourceTracks = baseTracks,
+                                        tracks = baseTracks.sortedByPlaylist(it.sortOrder),
                                         editingTracks = emptyList(),
                                         isLoading = false,
                                         isLocalPlaylist = false,
@@ -173,7 +216,12 @@ class PlaylistDetailViewModel @Inject constructor(
                                         val hydrated = onlineRepo.enrichToplistTracks(p, id, result.data)
                                         val hydratedTracks = localRepo.applyFavoriteState(hydrated)
                                         if (hydratedTracks != baseTracks) {
-                                            _state.update { it.copy(tracks = hydratedTracks) }
+                                            _state.update {
+                                                it.copy(
+                                                    sourceTracks = hydratedTracks,
+                                                    tracks = hydratedTracks.sortedByPlaylist(it.sortOrder)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -208,7 +256,7 @@ class PlaylistDetailViewModel @Inject constructor(
                     isEditMode = true,
                     isFavoritesSelectionMode = false,
                     selectedFavoriteKeys = emptySet(),
-                    editingTracks = current.tracks,
+                    editingTracks = current.sourceTracks,
                     error = null,
                     editMessage = null
                 )
@@ -221,7 +269,7 @@ class PlaylistDetailViewModel @Inject constructor(
             current.copy(
                 isEditMode = false,
                 isSavingEdits = false,
-                editingTracks = current.tracks,
+                editingTracks = current.sourceTracks,
                 editMessage = null,
                 isFavoritesSelectionMode = false,
                 selectedFavoriteKeys = emptySet(),
@@ -237,6 +285,8 @@ class PlaylistDetailViewModel @Inject constructor(
             } else {
                 current.copy(
                     isFavoritesSelectionMode = true,
+                    isEditMode = false,
+                    editingTracks = current.sourceTracks,
                     selectedFavoriteKeys = emptySet(),
                     isDeletingFavorites = false,
                     editMessage = null
@@ -373,7 +423,8 @@ class PlaylistDetailViewModel @Inject constructor(
             }.onSuccess {
                 _state.update {
                     it.copy(
-                        tracks = editingTracks,
+                        sourceTracks = editingTracks,
+                        tracks = editingTracks.sortedByPlaylist(it.sortOrder),
                         editingTracks = editingTracks,
                         isEditMode = false,
                         isSavingEdits = false,
@@ -391,5 +442,38 @@ class PlaylistDetailViewModel @Inject constructor(
         }
     }
 
+    fun selectSort(sortOrder: PlaylistTrackSort) {
+        _state.update { current ->
+            if (current.sortOrder == sortOrder) {
+                current
+            } else {
+                current.copy(
+                    sortOrder = sortOrder,
+                    tracks = current.sourceTracks.sortedByPlaylist(sortOrder),
+                    isEditMode = false,
+                    editingTracks = current.sourceTracks
+                )
+            }
+        }
+    }
+
     private fun favoriteTrackKey(track: Track): String = "${track.platform.id}:${track.id}"
 }
+
+private fun List<Track>.sortedByPlaylist(sortOrder: PlaylistTrackSort): List<Track> = when (sortOrder) {
+    PlaylistTrackSort.ORIGINAL -> this
+    PlaylistTrackSort.TITLE -> sortedWith(compareBy<Track> { it.title.normalizedSortKey() }
+        .thenBy { it.artist.normalizedSortKey() })
+    PlaylistTrackSort.ARTIST -> sortedWith(compareBy<Track> { it.artist.normalizedSortKey() }
+        .thenBy { it.title.normalizedSortKey() })
+    PlaylistTrackSort.ALBUM -> sortedWith(compareBy<Track> { it.album.blankLastSortKey() }
+        .thenBy { it.title.normalizedSortKey() })
+    PlaylistTrackSort.DURATION -> sortedWith(compareBy<Track> { if (it.durationMs > 0L) it.durationMs else Long.MAX_VALUE }
+        .thenBy { it.title.normalizedSortKey() })
+}
+
+private fun String.normalizedSortKey(): String = trim().lowercase()
+
+private fun String.blankLastSortKey(): String = trim()
+    .ifBlank { "\uffff" }
+    .lowercase()

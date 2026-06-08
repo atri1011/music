@@ -11,15 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,12 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.myapplication.domain.model.Track
-import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.formatDuration
 import com.music.myapplication.ui.theme.AppShapes
 import java.text.SimpleDateFormat
@@ -173,17 +164,23 @@ internal fun SongInfoPage(
         if (trackInfoState.similarTracks.isNotEmpty()) {
             SectionHeader("相似歌曲")
             Spacer(modifier = Modifier.height(8.dp))
-            trackInfoState.similarTracks.forEach { similarTrack ->
-                SimilarTrackItem(
+            trackInfoState.similarTracks.forEachIndexed { index, similarTrack ->
+                SimilarTrackCompactRow(
                     track = similarTrack,
+                    index = index + 1,
                     onClick = {
                         playerViewModel.playTrack(
                             similarTrack,
                             trackInfoState.similarTracks,
-                            trackInfoState.similarTracks.indexOf(similarTrack)
+                            index
                         )
-                    }
+                    },
+                    containerColor = Color.White.copy(alpha = 0.10f),
+                    titleColor = Color.White,
+                    subtitleColor = Color.White.copy(alpha = 0.6f),
+                    playIconColor = Color.White
                 )
+                Spacer(modifier = Modifier.height(6.dp))
             }
         }
 
@@ -214,54 +211,4 @@ private fun InfoChip(text: String) {
             color = Color.White.copy(alpha = 0.8f)
         )
     }
-}
-
-@Composable
-private fun SimilarTrackItem(
-    track: Track,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(AppShapes.Small))
-            .background(Color.White.copy(alpha = 0.10f))
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        CoverImage(
-            url = track.coverUrl,
-            contentDescription = track.title,
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(AppShapes.ExtraSmall)),
-            contentScale = ContentScale.Crop
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "播放",
-                tint = Color.White.copy(alpha = 0.7f),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-    Spacer(modifier = Modifier.height(6.dp))
 }

@@ -7,11 +7,15 @@ sealed interface Routes {
     @Serializable data object Search : Routes
     @Serializable data object Library : Routes
     @Serializable data object More : Routes
+    @Serializable data object CarMode : Routes
+    @Serializable data object PlaybackAlarm : Routes
     @Serializable data object EcosystemExpansion : Routes
     @Serializable data object PlayerLyrics : Routes
     @Serializable data object Downloaded : Routes
     @Serializable data object LocalMusic : Routes
     @Serializable data object PlayRanking : Routes
+    @Serializable data object PlayHistory : Routes
+    @Serializable data object MusicYearReport : Routes
     @Serializable data object LxSources : Routes
     @Serializable data object AudioSourceManagement : Routes
     @Serializable data object Equalizer : Routes

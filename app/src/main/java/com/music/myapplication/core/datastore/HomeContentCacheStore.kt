@@ -14,6 +14,7 @@ import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -25,6 +26,21 @@ class HomeContentCacheStore @Inject constructor(
     @ApplicationContext private val context: Context,
     private val json: Json
 ) {
+
+    suspend fun getCachedFirstPaint(): HomeFirstPaintCache? =
+        getDailyValue(
+            dateKey = stringPreferencesKey("first_paint_date"),
+            dataKey = stringPreferencesKey("first_paint_data")
+        )
+
+    suspend fun cacheFirstPaint(cache: HomeFirstPaintCache) {
+        if (!cache.hasContent()) return
+        putDailyValue(
+            dateKey = stringPreferencesKey("first_paint_date"),
+            dataKey = stringPreferencesKey("first_paint_data"),
+            value = cache
+        )
+    }
 
     suspend fun getCachedToplists(platform: Platform): List<ToplistInfo>? =
         getDailyValue(
@@ -118,3 +134,21 @@ private fun String.asPreferenceKeyPart(): String =
             }
         }
     }
+
+@Serializable
+data class HomeFirstPaintCache(
+    val platform: Platform = Platform.NETEASE,
+    val toplists: List<ToplistInfo> = emptyList(),
+    val dailyTracks: List<Track> = emptyList(),
+    val fmTrack: Track? = null,
+    val recommendedPlaylists: List<ToplistInfo> = emptyList(),
+    val guessYouLikeLabel: String = "",
+    val guessYouLikeTracks: List<Track> = emptyList()
+) {
+    fun hasContent(): Boolean =
+        toplists.isNotEmpty() ||
+            dailyTracks.isNotEmpty() ||
+            fmTrack != null ||
+            recommendedPlaylists.isNotEmpty() ||
+            guessYouLikeTracks.isNotEmpty()
+}

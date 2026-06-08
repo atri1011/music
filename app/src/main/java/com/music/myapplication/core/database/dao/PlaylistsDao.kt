@@ -12,6 +12,7 @@ data class PlaylistSummaryRow(
     val playlistId: String,
     val name: String,
     val coverUrl: String,
+    val folderId: String?,
     val createdAt: Long,
     val updatedAt: Long,
     val trackCount: Int
@@ -29,6 +30,7 @@ interface PlaylistsDao {
             p.playlist_id AS playlistId,
             p.name AS name,
             COALESCE(NULLIF(p.cover_url, ''), MAX(NULLIF(ps.cover_url, '')), '') AS coverUrl,
+            p.folder_id AS folderId,
             p.created_at AS createdAt,
             p.updated_at AS updatedAt,
             COUNT(ps.song_id) AS trackCount
@@ -55,4 +57,10 @@ interface PlaylistsDao {
 
     @Query("DELETE FROM playlists WHERE playlist_id = :playlistId")
     suspend fun delete(playlistId: String)
+
+    @Query("UPDATE playlists SET folder_id = :folderId, updated_at = :updatedAt WHERE playlist_id = :playlistId")
+    suspend fun updateFolder(playlistId: String, folderId: String?, updatedAt: Long)
+
+    @Query("UPDATE playlists SET folder_id = NULL, updated_at = :updatedAt WHERE folder_id = :folderId")
+    suspend fun clearFolder(folderId: String, updatedAt: Long)
 }

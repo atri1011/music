@@ -46,6 +46,15 @@ interface TuneHubApi {
         @Header("Referer") referer: String = "https://music.163.com/"
     ): JsonElement
 
+    @GET("https://music.163.com/api/song/lyric")
+    suspend fun getNeteaseLyrics(
+        @Query("id") id: String,
+        @Query("lv") lyricVersion: Int = 1,
+        @Query("kv") karaokeVersion: Int = 1,
+        @Query("tv") translationVersion: Int = -1,
+        @Header("Referer") referer: String = "https://music.163.com/"
+    ): JsonElement
+
     @GET("https://music.163.com/api/personalized/playlist")
     suspend fun getNeteaseRecommendedPlaylists(
         @Query("limit") limit: Int,
@@ -89,6 +98,22 @@ interface TuneHubApi {
         @Query("songmid") songMid: String,
         @Query("tpl") tpl: String = "yqq_song_detail",
         @Query("format") format: String = "json",
+        @Query("platform") platform: String = "yqq.json",
+        @Query("needNewCode") needNewCode: Int = 0,
+        @Header("Referer") referer: String = "https://y.qq.com/"
+    ): JsonElement
+
+    @GET("https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg")
+    suspend fun getQqLyrics(
+        @Query("songmid") songMid: String,
+        @Query("format") format: String = "json",
+        @Query("nobase64") noBase64: Int = 1,
+        @Query("g_tk") gtk: Int = 5381,
+        @Query("loginUin") loginUin: Int = 0,
+        @Query("hostUin") hostUin: Int = 0,
+        @Query("inCharset") inCharset: String = "utf8",
+        @Query("outCharset") outCharset: String = "utf-8",
+        @Query("notice") notice: Int = 0,
         @Query("platform") platform: String = "yqq.json",
         @Query("needNewCode") needNewCode: Int = 0,
         @Header("Referer") referer: String = "https://y.qq.com/"

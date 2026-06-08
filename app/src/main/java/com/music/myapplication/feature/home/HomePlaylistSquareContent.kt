@@ -18,9 +18,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +28,7 @@ import com.music.myapplication.feature.components.ChoicePill
 import com.music.myapplication.feature.components.ErrorView
 import com.music.myapplication.feature.components.PlatformFilterChips
 import com.music.myapplication.feature.components.PlaylistCard
+import com.music.myapplication.feature.components.RefreshablePagedLazyVerticalGrid
 import com.music.myapplication.feature.components.ShimmerGridCard
 import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.AppSpacing
@@ -40,6 +38,7 @@ fun PlaylistSquareContent(
     state: HomeUiState,
     onPlatformChange: (Platform) -> Unit,
     onCategoryChange: (String) -> Unit,
+    onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onRetry: () -> Unit,
     onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit
@@ -48,19 +47,6 @@ fun PlaylistSquareContent(
 
     LaunchedEffect(state.playlistSquarePlatform, state.selectedPlaylistCategory) {
         gridState.scrollToItem(0)
-    }
-
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisible >= state.playlistItems.size - 6
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && state.playlistItems.isNotEmpty()) {
-            onLoadMore()
-        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -122,9 +108,15 @@ fun PlaylistSquareContent(
                 }
             }
             else -> {
-                LazyVerticalGrid(
+                RefreshablePagedLazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 110.dp),
                     state = gridState,
+                    itemCount = state.playlistItems.size,
+                    isRefreshing = state.isPlaylistSquareRefreshing,
+                    onRefresh = onRefresh,
+                    canLoadMore = state.playlistSquareHasMore,
+                    isLoadingMore = state.isPlaylistSquareLoadingMore,
+                    onLoadMore = onLoadMore,
                     contentPadding = PaddingValues(horizontal = AppSpacing.Medium, vertical = AppSpacing.XSmall),
                     horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
                     verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),

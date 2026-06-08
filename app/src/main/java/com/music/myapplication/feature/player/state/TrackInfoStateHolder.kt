@@ -7,6 +7,7 @@ import com.music.myapplication.domain.repository.RecommendationRepository
 import com.music.myapplication.feature.player.TrackInfoUiState
 import com.music.myapplication.media.state.PlaybackStateStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +45,7 @@ class TrackInfoStateHolder @Inject constructor(
 
     private suspend fun loadTrackInfo(track: Track) {
         val trackKey = track.songKey()
+        _uiState.value = TrackInfoUiState(isLoadingSimilarTracks = true)
         val playCount = withContext(dispatchers.io) {
             localRepo.getTrackPlayCount(track.id, track.platform.id)
         }
@@ -54,12 +56,26 @@ class TrackInfoStateHolder @Inject constructor(
         if (stateStore.state.value.currentTrack?.songKey() != trackKey) return
         _uiState.value = TrackInfoUiState(
             firstPlayDate = firstPlayDate,
-            totalPlayCount = playCount
+            totalPlayCount = playCount,
+            isLoadingSimilarTracks = true
         )
-        val similar = withContext(dispatchers.io) {
-            recommendationRepo.getSimilarTracks(track)
+        val similarResult = try {
+            withContext(dispatchers.io) {
+                recommendationRepo.getSimilarTracks(track)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
         }
         if (stateStore.state.value.currentTrack?.songKey() != trackKey) return
-        _uiState.update { it.copy(similarTracks = similar) }
+        _uiState.update {
+            it.copy(
+                similarTracks = similarResult.orEmpty(),
+                isLoadingSimilarTracks = false,
+                hasLoadedSimilarTracks = true,
+                similarTracksErrorMessage = if (similarResult == null) "相似歌曲暂时不可用" else null
+            )
+        }
     }
 }

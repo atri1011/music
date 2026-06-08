@@ -6,12 +6,20 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -25,6 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -43,8 +54,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -54,10 +68,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.music.myapplication.app.navigation.AppNavGraph
 import com.music.myapplication.app.navigation.Routes
+import com.music.myapplication.core.common.ShareUtils
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.feature.player.AddTrackToPlaylistSheet
 import com.music.myapplication.feature.player.MiniPlayerBar
 import com.music.myapplication.feature.player.MiniPlayerUiState
 import com.music.myapplication.feature.player.PlayerViewModel
+import com.music.myapplication.feature.player.TrackMoreMenu
 import com.music.myapplication.feature.more.LxCustomUpdateAlertViewModel
 import com.music.myapplication.feature.update.AppUpdateDialog
 import com.music.myapplication.feature.update.AppUpdateViewModel
@@ -68,6 +85,8 @@ import com.music.myapplication.ui.theme.AppSurfaceTone
 import com.music.myapplication.ui.theme.appSurfaceBorderColor
 import com.music.myapplication.ui.theme.appSurfaceColor
 
+private val TABLET_NAV_RAIL_MIN_WIDTH = 720.dp
+
 data class BottomNavItem(
     val route: Routes,
     val label: String,
@@ -75,11 +94,13 @@ data class BottomNavItem(
     val unselectedIcon: ImageVector
 )
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppRoot(
     playerViewModel: PlayerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val navController = rememberNavController()
     val updateViewModel: AppUpdateViewModel = hiltViewModel()
     val lxAlertViewModel: LxCustomUpdateAlertViewModel = hiltViewModel()
@@ -155,6 +176,7 @@ fun AppRoot(
 
     LaunchedEffect(trackActionState.infoId) {
         val message = trackActionState.infoMessage ?: return@LaunchedEffect
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         snackbarHostState.showSnackbar(
             message = message,
             withDismissAction = true,
@@ -201,99 +223,92 @@ fun AppRoot(
         )
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Box(modifier = Modifier.weight(1f)) {
-                    AppNavGraph(
-                        navController = navController,
-                        playerViewModel = playerViewModel
-                    )
-                }
+    SharedTransitionLayout {
+        val sharedTransitionScope = this
 
-                if (chromeState.showMiniPlayer) {
-                    MiniPlayerContainer(
-                        playerViewModel = playerViewModel,
-                        miniPlayerState = miniPlayerState,
-                        showResolvingIndicator = trackActionState.isResolving && chromeState.showResolvingIndicator,
-                        onClick = {
-                            navController.navigate(Routes.PlayerLyrics) { launchSingleTop = true }
-                        },
-                        modifier = Modifier.padding(
-                            start = AppSpacing.Small,
-                            end = AppSpacing.Small,
-                            top = AppSpacing.XSmall,
-                            bottom = if (chromeState.showBottomBar) AppSpacing.Small else AppSpacing.XSmall
-                        )
-                    )
-                }
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val useNavigationRail = maxWidth >= TABLET_NAV_RAIL_MIN_WIDTH && maxHeight > 480.dp
+                val showNavigationRail = useNavigationRail && chromeState.showBottomBar
+                val showBottomBar = chromeState.showBottomBar && !showNavigationRail
+                val snackbarBottomPadding = chromeState.resolvedSnackbarBottomPadding(showBottomBar)
 
-                if (chromeState.showBottomBar) {
-                    val navShape = RoundedCornerShape(
-                        topStart = AppShapes.XLarge,
-                        topEnd = AppShapes.XLarge
-                    )
-                    Surface(
-                        color = appSurfaceColor(AppSurfaceTone.Plain).copy(alpha = 0.97f),
-                        tonalElevation = AppElevation.Subtle,
-                        shadowElevation = AppElevation.Low,
-                        shape = navShape,
-                        modifier = Modifier
-                            .border(
-                                BorderStroke(0.5.dp, appSurfaceBorderColor(AppSurfaceTone.Plain)),
-                                navShape
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        if (showNavigationRail) {
+                            AppNavigationRail(
+                                items = bottomNavItems,
+                                currentRouteSelected = { route ->
+                                    navBackStackEntry?.destination?.hasRoute(route::class) == true
+                                },
+                                onNavigate = { route ->
+                                    navController.navigate(route) {
+                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
                             )
-                    ) {
-                        NavigationBar(
-                            containerColor = Color.Transparent,
-                            tonalElevation = 0.dp
-                        ) {
-                            bottomNavItems.forEach { item ->
-                                val selected = navBackStackEntry?.destination?.hasRoute(item.route::class) == true
-                                NavigationBarItem(
-                                    selected = selected,
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                AppNavGraph(
+                                    navController = navController,
+                                    playerViewModel = playerViewModel,
+                                    sharedTransitionScope = sharedTransitionScope
+                                )
+                            }
+
+                            AnimatedVisibility(visible = chromeState.showMiniPlayer) {
+                                MiniPlayerContainer(
+                                    playerViewModel = playerViewModel,
+                                    miniPlayerState = miniPlayerState,
+                                    showResolvingIndicator = trackActionState.isResolving && chromeState.showResolvingIndicator,
                                     onClick = {
-                                        navController.navigate(item.route) {
+                                        navController.navigate(Routes.PlayerLyrics) { launchSingleTop = true }
+                                    },
+                                    sharedTransitionScope = sharedTransitionScope,
+                                    sharedArtworkVisible = chromeState.showMiniPlayer,
+                                    modifier = Modifier.padding(
+                                        start = AppSpacing.Small,
+                                        end = AppSpacing.Small,
+                                        top = AppSpacing.XSmall,
+                                        bottom = if (showBottomBar) AppSpacing.Small else AppSpacing.XSmall
+                                    )
+                                )
+                            }
+
+                            if (showBottomBar) {
+                                AppBottomNavigationBar(
+                                    items = bottomNavItems,
+                                    currentRouteSelected = { route ->
+                                        navBackStackEntry?.destination?.hasRoute(route::class) == true
+                                    },
+                                    onNavigate = { route ->
+                                        navController.navigate(route) {
                                             popUpTo(navController.graph.startDestinationId) { saveState = true }
                                             launchSingleTop = true
                                             restoreState = true
                                         }
-                                    },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                                            contentDescription = item.label
-                                        )
-                                    },
-                                    label = {
-                                        Text(
-                                            text = item.label,
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                                        indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    }
                                 )
                             }
                         }
                     }
+
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(horizontal = AppSpacing.Medium)
+                            .padding(bottom = snackbarBottomPadding)
+                    )
                 }
             }
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(horizontal = AppSpacing.Medium)
-                    .padding(bottom = chromeState.snackbarBottomPadding)
-            )
 
             val update = updateState.availableUpdate
             if (updateState.showDialog && update != null) {
@@ -354,26 +369,187 @@ fun AppRoot(
 }
 
 @Composable
+private fun AppBottomNavigationBar(
+    items: List<BottomNavItem>,
+    currentRouteSelected: (Routes) -> Boolean,
+    onNavigate: (Routes) -> Unit
+) {
+    val navShape = RoundedCornerShape(
+        topStart = AppShapes.XLarge,
+        topEnd = AppShapes.XLarge
+    )
+    Surface(
+        color = appSurfaceColor(AppSurfaceTone.Plain).copy(alpha = 0.97f),
+        tonalElevation = AppElevation.Subtle,
+        shadowElevation = AppElevation.Low,
+        shape = navShape,
+        modifier = Modifier
+            .border(
+                BorderStroke(0.5.dp, appSurfaceBorderColor(AppSurfaceTone.Plain)),
+                navShape
+            )
+    ) {
+        NavigationBar(
+            containerColor = Color.Transparent,
+            tonalElevation = 0.dp
+        ) {
+            items.forEach { item ->
+                val selected = currentRouteSelected(item.route)
+                NavigationBarItem(
+                    selected = selected,
+                    onClick = { onNavigate(item.route) },
+                    icon = {
+                        Icon(
+                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                            contentDescription = item.label
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppNavigationRail(
+    items: List<BottomNavItem>,
+    currentRouteSelected: (Routes) -> Boolean,
+    onNavigate: (Routes) -> Unit
+) {
+    val railShape = RoundedCornerShape(
+        topEnd = AppShapes.XLarge,
+        bottomEnd = AppShapes.XLarge
+    )
+    Surface(
+        color = appSurfaceColor(AppSurfaceTone.Plain).copy(alpha = 0.97f),
+        tonalElevation = AppElevation.Subtle,
+        shadowElevation = AppElevation.Low,
+        shape = railShape,
+        modifier = Modifier
+            .width(88.dp)
+            .fillMaxHeight()
+            .border(
+                BorderStroke(0.5.dp, appSurfaceBorderColor(AppSurfaceTone.Plain)),
+                railShape
+            )
+    ) {
+        NavigationRail(
+            containerColor = Color.Transparent,
+            modifier = Modifier.fillMaxHeight()
+        ) {
+            items.forEach { item ->
+                val selected = currentRouteSelected(item.route)
+                NavigationRailItem(
+                    selected = selected,
+                    onClick = { onNavigate(item.route) },
+                    icon = {
+                        Icon(
+                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                            contentDescription = item.label
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    },
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+            }
+        }
+    }
+}
+
+private fun AppChromeState.resolvedSnackbarBottomPadding(showBottomBar: Boolean): Dp {
+    if (this.showBottomBar && !showBottomBar) {
+        return if (showMiniPlayer) 88.dp else 24.dp
+    }
+    return snackbarBottomPadding
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
 private fun MiniPlayerContainer(
     playerViewModel: PlayerViewModel,
     miniPlayerState: MiniPlayerUiState,
     showResolvingIndicator: Boolean,
     onClick: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    sharedArtworkVisible: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val miniProgress by playerViewModel.miniProgressState.collectAsStateWithLifecycle()
+    var quickActionTrack by remember { mutableStateOf<Track?>(null) }
+    var playlistTargetTrack by remember { mutableStateOf<Track?>(null) }
+
     MiniPlayerBar(
         track = miniPlayerState.currentTrack,
         isPlaying = miniPlayerState.isPlaying,
         quality = miniPlayerState.quality,
         onPlayPause = playerViewModel::togglePlayPause,
+        onPrevious = playerViewModel::skipPrevious,
         onNext = playerViewModel::skipNext,
         onToggleFavorite = playerViewModel::toggleFavorite,
         onClick = onClick,
+        onSwipeExpand = onClick,
+        onLongPress = { quickActionTrack = miniPlayerState.currentTrack },
         showResolvingIndicator = showResolvingIndicator,
         progressFraction = miniProgress,
+        sharedTransitionScope = sharedTransitionScope,
+        sharedArtworkVisible = sharedArtworkVisible,
         modifier = modifier
     )
+
+    quickActionTrack?.let { track ->
+        TrackMoreMenu(
+            onDismiss = { quickActionTrack = null },
+            onToggleFavorite = {
+                quickActionTrack = null
+                playerViewModel.toggleFavorite()
+            },
+            onAddToPlaylist = {
+                quickActionTrack = null
+                playlistTargetTrack = track
+            },
+            onDownload = {
+                quickActionTrack = null
+                playerViewModel.downloadTrack(track)
+            },
+            onShare = {
+                quickActionTrack = null
+                ShareUtils.shareTrack(context, track)
+            }
+        )
+    }
+
+    playlistTargetTrack?.let { track ->
+        AddTrackToPlaylistSheet(
+            track = track,
+            playerViewModel = playerViewModel,
+            onDismiss = { playlistTargetTrack = null }
+        )
+    }
 }
 
 internal fun shouldLaunchNotificationPermissionRequest(

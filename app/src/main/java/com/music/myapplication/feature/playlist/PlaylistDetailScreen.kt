@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +78,7 @@ fun PlaylistDetailScreen(
     title: String,
     source: String,
     onBack: () -> Unit,
+    onNavigateToSearch: () -> Unit = {},
     viewModel: PlaylistDetailViewModel = hiltViewModel(),
     playerViewModel: PlayerViewModel
 ) {
@@ -199,7 +202,22 @@ fun PlaylistDetailScreen(
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 24.dp, vertical = 40.dp)
+                                    .padding(horizontal = 24.dp, vertical = 40.dp),
+                                action = {
+                                    Button(onClick = onNavigateToSearch) {
+                                        Text("去搜索")
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    if (displayTracks.isNotEmpty() && !state.isEditMode && !state.isFavoritesSelectionMode) {
+                        item(key = "sort_bar", contentType = "toolbar") {
+                            PlaylistSortBar(
+                                sortOrder = state.sortOrder,
+                                trackCount = displayTracks.size,
+                                onSelectSort = viewModel::selectSort
                             )
                         }
                     }
@@ -300,6 +318,57 @@ fun PlaylistDetailScreen(
 }
 
 @Composable
+private fun PlaylistSortBar(
+    sortOrder: PlaylistTrackSort,
+    trackCount: Int,
+    onSelectSort: (PlaylistTrackSort) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "共 ${trackCount} 首",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Box {
+            TextButton(onClick = { expanded = true }) {
+                Text(text = "排序：${sortOrder.label()}")
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                PlaylistTrackSort.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = option.label(),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = if (option == sortOrder) FontWeight.Bold else FontWeight.Normal
+                                )
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelectSort(option)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PlaylistHeader(
     title: String,
     coverUrl: String,
@@ -375,6 +444,29 @@ private fun PlaylistHeader(
                     )
                 }
                 when {
+                    isFavoritesSelectionMode -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            HeaderActionButton(
+                                text = "取消",
+                                enabled = !isDeletingFavorites,
+                                onClick = onCancelFavoritesSelection
+                            )
+                            HeaderActionButton(
+                                text = if (areAllFavoritesSelected) "清空" else "全选",
+                                enabled = !isDeletingFavorites,
+                                onClick = onToggleSelectAllFavorites
+                            )
+                            HeaderActionButton(
+                                text = if (isDeletingFavorites) {
+                                    "删除中..."
+                                } else {
+                                    "删除($selectedFavoritesCount)"
+                                },
+                                enabled = selectedFavoritesCount > 0 && !isDeletingFavorites,
+                                onClick = onDeleteSelectedFavorites
+                            )
+                        }
+                    }
                     isEditable -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (isEditMode) {
@@ -399,33 +491,11 @@ private fun PlaylistHeader(
                     }
                     isFavoritesCollection && trackCount > 0 -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (isFavoritesSelectionMode) {
-                                HeaderActionButton(
-                                    text = "取消",
-                                    enabled = !isDeletingFavorites,
-                                    onClick = onCancelFavoritesSelection
-                                )
-                                HeaderActionButton(
-                                    text = if (areAllFavoritesSelected) "清空" else "全选",
-                                    enabled = !isDeletingFavorites,
-                                    onClick = onToggleSelectAllFavorites
-                                )
-                                HeaderActionButton(
-                                    text = if (isDeletingFavorites) {
-                                        "删除中..."
-                                    } else {
-                                        "删除($selectedFavoritesCount)"
-                                    },
-                                    enabled = selectedFavoritesCount > 0 && !isDeletingFavorites,
-                                    onClick = onDeleteSelectedFavorites
-                                )
-                            } else {
-                                HeaderActionButton(
-                                    text = "管理",
-                                    enabled = true,
-                                    onClick = onEnterFavoritesSelection
-                                )
-                            }
+                            HeaderActionButton(
+                                text = "管理",
+                                enabled = true,
+                                onClick = onEnterFavoritesSelection
+                            )
                         }
                     }
                 }
@@ -519,6 +589,14 @@ private fun PlaylistHeader(
             }
         }
     }
+}
+
+private fun PlaylistTrackSort.label(): String = when (this) {
+    PlaylistTrackSort.ORIGINAL -> "添加时间"
+    PlaylistTrackSort.TITLE -> "歌曲名"
+    PlaylistTrackSort.ARTIST -> "艺术家"
+    PlaylistTrackSort.ALBUM -> "专辑"
+    PlaylistTrackSort.DURATION -> "时长"
 }
 
 @Composable

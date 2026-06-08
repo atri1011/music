@@ -9,6 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -21,7 +23,10 @@ import coil.size.Scale
 import com.music.myapplication.core.common.normalizeCoverUrl
 
 @Composable
-internal fun BlurredCoverBackground(coverUrl: String) {
+internal fun BlurredCoverBackground(
+    coverUrl: String,
+    dominantColor: Color = Color.Transparent
+) {
     val context = LocalContext.current
     val normalizedUrl = remember(coverUrl) { normalizeCoverUrl(coverUrl) }
     val useNativeBlur = shouldUseNativeBlur(Build.VERSION.SDK_INT)
@@ -49,6 +54,21 @@ internal fun BlurredCoverBackground(coverUrl: String) {
                     if (useNativeBlur) Modifier.blur(60.dp) else Modifier
                 ),
             contentScale = ContentScale.Crop
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawWithCache {
+                    val brush = Brush.radialGradient(
+                        colors = blurredCoverTintColors(dominantColor),
+                        center = Offset(size.width * 0.5f, size.height * 0.18f),
+                        radius = size.maxDimension * 1.05f
+                    )
+                    onDrawBehind {
+                        drawRect(brush = brush)
+                    }
+                }
         )
 
         Box(

@@ -102,10 +102,19 @@ fun PlayerControlsSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            QualitySelector(
-                currentQuality = staticState.quality,
-                onQualitySelected = onQualityChange
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                QualitySelector(
+                    currentQuality = staticState.quality,
+                    onQualitySelected = onQualityChange
+                )
+                AudioQualityBadge(
+                    quality = staticState.quality,
+                    platform = track.platform
+                )
+            }
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(AppSpacing.XSmall),

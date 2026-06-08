@@ -31,12 +31,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.feature.components.AnimatedSheetContent
 import com.music.myapplication.feature.library.CreatePlaylistDialog
 import com.music.myapplication.feature.player.actions.buildPlayerMoreMenuItems
 import com.music.myapplication.feature.player.actions.buildTrackMoreMenuItems
@@ -47,6 +50,7 @@ data class MenuActionItem(
     val label: String,
     val enabled: Boolean = true,
     val disabledHint: String? = null,
+    val hapticFeedbackType: HapticFeedbackType? = HapticFeedbackType.TextHandleMove,
     val onClick: () -> Unit
 )
 
@@ -60,6 +64,7 @@ fun PlayerMoreMenu(
     onShare: () -> Unit,
     onSpeedPicker: () -> Unit,
     onEqualizer: () -> Unit,
+    onSimilarTracks: () -> Unit,
     currentSpeed: Float = 1.0f,
     modifier: Modifier = Modifier
 ) {
@@ -73,6 +78,7 @@ fun PlayerMoreMenu(
         onShare = onShare,
         onSpeedPicker = onSpeedPicker,
         onEqualizer = onEqualizer,
+        onSimilarTracks = onSimilarTracks,
         currentSpeed = currentSpeed
     )
 
@@ -82,19 +88,21 @@ fun PlayerMoreMenu(
         containerColor = MaterialTheme.colorScheme.surface,
         modifier = modifier
     ) {
-        Text(
-            text = "更多操作",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
+        AnimatedSheetContent(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "更多操作",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp)
-        ) {
-            menuItems.forEach { item ->
-                MenuRow(item)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp)
+            ) {
+                menuItems.forEach { item ->
+                    MenuRow(item)
+                }
             }
         }
     }
@@ -104,16 +112,22 @@ fun PlayerMoreMenu(
 @Composable
 fun TrackMoreMenu(
     onDismiss: () -> Unit,
+    onToggleFavorite: (() -> Unit)? = null,
     onAddToPlaylist: () -> Unit,
     onDownload: () -> Unit,
+    onArtist: (() -> Unit)? = null,
+    onAlbum: (() -> Unit)? = null,
     onShare: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val menuItems = buildTrackMoreMenuItems(
         onDismiss = onDismiss,
+        onToggleFavorite = onToggleFavorite,
         onAddToPlaylist = onAddToPlaylist,
         onDownload = onDownload,
+        onArtist = onArtist,
+        onAlbum = onAlbum,
         onShare = onShare
     )
 
@@ -123,19 +137,21 @@ fun TrackMoreMenu(
         containerColor = MaterialTheme.colorScheme.surface,
         modifier = modifier
     ) {
-        Text(
-            text = "歌曲操作",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
+        AnimatedSheetContent(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "歌曲操作",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+            )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp)
-        ) {
-            menuItems.forEach { item ->
-                MenuRow(item)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp)
+            ) {
+                menuItems.forEach { item ->
+                    MenuRow(item)
+                }
             }
         }
     }
@@ -152,6 +168,7 @@ fun AddTrackToPlaylistSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val playlists by playerViewModel.playlists.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     var showCreateDialog by remember { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -164,6 +181,7 @@ fun AddTrackToPlaylistSheet(
             errorMessage = null
             runCatching { action() }
                 .onSuccess { result ->
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
                     onDismiss()
                 }
@@ -180,100 +198,105 @@ fun AddTrackToPlaylistSheet(
         containerColor = MaterialTheme.colorScheme.surface,
         modifier = modifier
     ) {
-        Text(
-            text = "添加到歌单",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
-        Text(
-            text = track.title,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = 20.dp)
-        )
-        Text(
-            text = track.artist,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-        )
-
-        TextButton(
-            onClick = { showCreateDialog = true },
-            enabled = !isSubmitting,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
+        AnimatedSheetContent(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "添加到歌单",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("新建歌单并添加")
-        }
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+            Text(
+                text = track.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+            )
 
-        when {
-            isSubmitting -> {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "正在保存",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            playlists.isEmpty() -> {
-                Text(
-                    text = "你现在还没歌单，先建一个再说。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+            TextButton(
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    showCreateDialog = true
+                },
+                enabled = !isSubmitting,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("新建歌单并添加")
             }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp)
-                        .padding(bottom = 24.dp)
-                ) {
-                    items(playlists, key = { it.id }) { playlist ->
-                        PlaylistDestinationRow(
-                            playlist = playlist,
-                            enabled = !isSubmitting,
-                            onClick = {
-                                submit {
-                                    playerViewModel.addTrackToPlaylist(playlist, track)
-                                }
-                            }
+
+            when {
+                isSubmitting -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "正在保存",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
+                playlists.isEmpty() -> {
+                    Text(
+                        text = "你现在还没歌单，先建一个再说。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .padding(bottom = 24.dp)
+                    ) {
+                        items(playlists, key = { it.id }) { playlist ->
+                            PlaylistDestinationRow(
+                                playlist = playlist,
+                                enabled = !isSubmitting,
+                                onClick = {
+                                    submit {
+                                        playerViewModel.addTrackToPlaylist(playlist, track)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
             }
-        }
 
-        errorMessage?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-            )
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                )
+            }
         }
     }
 
     if (showCreateDialog) {
         CreatePlaylistDialog(
             onDismiss = { showCreateDialog = false },
-            onConfirm = { name ->
+                onConfirm = { name ->
                 showCreateDialog = false
                 submit {
                     playerViewModel.createPlaylistAndAddTrack(name, track)
@@ -288,9 +311,13 @@ fun AddTrackToPlaylistSheet(
 @Composable
 private fun MenuRow(item: MenuActionItem) {
     val alpha = if (item.enabled) 1f else 0.4f
+    val haptics = LocalHapticFeedback.current
 
     TextButton(
-        onClick = item.onClick,
+        onClick = {
+            item.hapticFeedbackType?.let(haptics::performHapticFeedback)
+            item.onClick()
+        },
         enabled = item.enabled,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -331,8 +358,13 @@ private fun PlaylistDestinationRow(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    val haptics = LocalHapticFeedback.current
+
     TextButton(
-        onClick = onClick,
+        onClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
         enabled = enabled,
         modifier = Modifier.fillMaxWidth()
     ) {

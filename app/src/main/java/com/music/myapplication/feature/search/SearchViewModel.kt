@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.music.myapplication.core.common.AppError
 import com.music.myapplication.core.common.Result
 import com.music.myapplication.core.datastore.PlayerPreferences
+import com.music.myapplication.core.datastore.SearchHistoryResultEntry
 import com.music.myapplication.core.datastore.SearchHistoryStore
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.SearchResultItem
@@ -40,6 +41,7 @@ data class SearchUiState(
     val hasMore: Boolean = true,
     val hotKeywords: List<String> = emptyList(),
     val searchHistory: List<String> = emptyList(),
+    val recentResultEntries: List<SearchHistoryResultEntry> = emptyList(),
     val suggestions: List<SearchSuggestion> = emptyList(),
     val showSuggestions: Boolean = false,
     val isHotLoading: Boolean = false,
@@ -92,6 +94,12 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             historyStore.history.collect { list ->
                 _state.update { it.copy(searchHistory = list) }
+            }
+        }
+
+        viewModelScope.launch {
+            historyStore.recentResults.collect { list ->
+                _state.update { it.copy(recentResultEntries = list) }
             }
         }
 
@@ -165,6 +173,23 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch { historyStore.remove(keyword) }
     }
 
+    fun recordResultOpen(item: SearchResultItem) {
+        if (item.type != SearchType.ARTIST && item.type != SearchType.ALBUM) return
+        viewModelScope.launch {
+            historyStore.recordResult(
+                SearchHistoryResultEntry(
+                    id = item.id,
+                    title = item.title,
+                    subtitle = item.subtitle,
+                    coverUrl = item.coverUrl,
+                    platformId = item.platform.id,
+                    type = item.type.name,
+                    trackCount = item.trackCount
+                )
+            )
+        }
+    }
+
     fun onPlatformChange(platform: Platform) {
         hasUserSelectedPlatform = true
         val currentState = _state.value
@@ -197,6 +222,12 @@ class SearchViewModel @Inject constructor(
         val s = _state.value
         if (s.isLoading || !s.hasMore || s.query.isBlank()) return
         performSearchByType(s.query, s.platform, s.page + 1, s.searchType)
+    }
+
+    fun refreshCurrentSearch() {
+        val s = _state.value
+        if (s.query.isBlank() || s.isLoading) return
+        performSearchByType(s.query, s.platform, 1, s.searchType, preserveCurrentResults = true)
     }
 
     fun onSearchTypeChange(type: SearchType) {
@@ -247,10 +278,16 @@ class SearchViewModel @Inject constructor(
         performSearchByType(normalizedQuery, currentState.platform, 1, currentState.searchType)
     }
 
-    private fun performSearchByType(query: String, platform: Platform, page: Int, type: SearchType) {
+    private fun performSearchByType(
+        query: String,
+        platform: Platform,
+        page: Int,
+        type: SearchType,
+        preserveCurrentResults: Boolean = false
+    ) {
         when (type) {
-            SearchType.SONG -> performSearch(query, platform, page)
-            else -> performGenericSearch(query, platform, page, type)
+            SearchType.SONG -> performSearch(query, platform, page, preserveCurrentResults)
+            else -> performGenericSearch(query, platform, page, type, preserveCurrentResults)
         }
     }
 
@@ -265,7 +302,12 @@ class SearchViewModel @Inject constructor(
             state.searchType == type
     }
 
-    private fun performSearch(query: String, platform: Platform, page: Int) {
+    private fun performSearch(
+        query: String,
+        platform: Platform,
+        page: Int,
+        preserveCurrentResults: Boolean = false
+    ) {
         val normalizedQuery = query.trim()
         val cacheKey = SearchCacheKey(
             platform = platform,
@@ -291,8 +333,9 @@ class SearchViewModel @Inject constructor(
             }
             _state.update { s ->
                 s.copy(
-                    isLoading = true, error = null,
-                    tracks = if (page == 1) emptyList() else s.tracks
+                    isLoading = true, error = null, page = page,
+                    hasMore = if (page == 1) true else s.hasMore,
+                    tracks = if (page == 1 && !preserveCurrentResults) emptyList() else s.tracks
                 )
             }
             when (val result = onlineRepo.search(platform, normalizedQuery, page)) {
@@ -314,7 +357,7 @@ class SearchViewModel @Inject constructor(
                         s.copy(
                             isLoading = false,
                             error = (result.error as AppError).message,
-                            tracks = if (page == 1) emptyList() else s.tracks
+                            tracks = if (page == 1 && !preserveCurrentResults) emptyList() else s.tracks
                         )
                     }
                 }
@@ -323,7 +366,13 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    private fun performGenericSearch(query: String, platform: Platform, page: Int, type: SearchType) {
+    private fun performGenericSearch(
+        query: String,
+        platform: Platform,
+        page: Int,
+        type: SearchType,
+        preserveCurrentResults: Boolean = false
+    ) {
         val normalizedQuery = query.trim()
         val cacheKey = SearchCacheKey(
             platform = platform,
@@ -348,8 +397,9 @@ class SearchViewModel @Inject constructor(
             }
             _state.update { s ->
                 s.copy(
-                    isLoading = true, error = null,
-                    genericResults = if (page == 1) emptyList() else s.genericResults
+                    isLoading = true, error = null, page = page,
+                    hasMore = if (page == 1) true else s.hasMore,
+                    genericResults = if (page == 1 && !preserveCurrentResults) emptyList() else s.genericResults
                 )
             }
             val result = when (type) {
@@ -376,7 +426,7 @@ class SearchViewModel @Inject constructor(
                         s.copy(
                             isLoading = false,
                             error = (result.error as AppError).message,
-                            genericResults = if (page == 1) emptyList() else s.genericResults
+                            genericResults = if (page == 1 && !preserveCurrentResults) emptyList() else s.genericResults
                         )
                     }
                 }

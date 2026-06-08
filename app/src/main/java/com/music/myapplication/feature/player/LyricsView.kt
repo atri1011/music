@@ -37,7 +37,9 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -70,6 +72,7 @@ fun LyricsView(
         return
     }
 
+    val haptics = LocalHapticFeedback.current
     val listState = rememberLazyListState()
     var userDragging by remember { mutableStateOf(false) }
     var autoScrolling by remember { mutableStateOf(false) }
@@ -220,6 +223,7 @@ fun LyricsView(
                             detectTapGestures(
                                 onLongPress = {
                                     if (line.text.isNotBlank()) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         onLineLongPress(line)
                                     }
                                 }

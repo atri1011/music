@@ -34,7 +34,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.music.myapplication.domain.model.Track
+import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.EmptyStateView
 import com.music.myapplication.feature.components.MediaListItem
 import com.music.myapplication.feature.player.PlayerViewModel
@@ -43,6 +43,7 @@ import com.music.myapplication.feature.player.PlayerViewModel
 @Composable
 fun DownloadedScreen(
     onBack: () -> Unit,
+    onNavigateToSearch: () -> Unit = {},
     playerViewModel: PlayerViewModel,
     viewModel: DownloadedViewModel = hiltViewModel()
 ) {
@@ -70,7 +71,12 @@ fun DownloadedScreen(
                 subtitle = "开始下载后，这里会按“正在下载 / 下载失败 / 已下载”帮你管起来。",
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
+                    .padding(padding),
+                action = {
+                    FilledTonalButton(onClick = onNavigateToSearch) {
+                        Text("去搜索")
+                    }
+                }
             )
         } else {
             LazyColumn(

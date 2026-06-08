@@ -1,8 +1,24 @@
 package com.music.myapplication.domain.repository
 
 import com.music.myapplication.domain.model.Playlist
+import com.music.myapplication.domain.model.PlaylistFolder
+import com.music.myapplication.domain.model.SmartPlaylist
 import com.music.myapplication.domain.model.Track
 import kotlinx.coroutines.flow.Flow
+
+data class RecentPlay(
+    val track: Track,
+    val playedAt: Long,
+    val positionMs: Long,
+    val playCount: Int
+)
+
+data class PlaybackEvent(
+    val track: Track,
+    val playedAt: Long,
+    val listenDurationMs: Long,
+    val playCount: Int
+)
 
 interface LocalLibraryRepository {
     fun getFavorites(): Flow<List<Track>>
@@ -10,7 +26,16 @@ interface LocalLibraryRepository {
     suspend fun applyFavoriteState(tracks: List<Track>): List<Track>
     suspend fun toggleFavorite(track: Track)
     fun getRecentPlays(limit: Int = 50): Flow<List<Track>>
+    fun getRecentPlayEntries(limit: Int = 100): Flow<List<RecentPlay>>
+    fun getPlaybackEvents(limit: Int = 500): Flow<List<PlaybackEvent>>
     suspend fun recordRecentPlay(track: Track, positionMs: Long = 0L)
+    fun getPlaylistFolders(): Flow<List<PlaylistFolder>>
+    suspend fun createPlaylistFolder(name: String): PlaylistFolder
+    suspend fun deletePlaylistFolder(folderId: String)
+    suspend fun renamePlaylistFolder(folderId: String, newName: String)
+    suspend fun movePlaylistToFolder(playlistId: String, folderId: String?)
+    fun getSmartPlaylists(): Flow<List<SmartPlaylist>>
+    fun getSmartPlaylistTracks(ruleId: String): Flow<List<Track>>
     fun getPlaylists(): Flow<List<Playlist>>
     suspend fun getPlaylistById(playlistId: String): Playlist?
     suspend fun createPlaylist(name: String): Playlist

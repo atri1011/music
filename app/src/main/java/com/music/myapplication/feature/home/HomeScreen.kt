@@ -21,6 +21,7 @@ import com.music.myapplication.ui.theme.appPremiumBackground
 @Composable
 fun HomeScreen(
     onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit,
+    onNavigateToArtist: (artistId: String, platform: String, artistName: String) -> Unit,
     onNavigateToSearch: () -> Unit,
     playerViewModel: PlayerViewModel,
     viewModel: HomeViewModel = hiltViewModel()
@@ -63,6 +64,7 @@ fun HomeScreen(
                 0 -> ForYouContent(
                     state = state,
                     onNavigateToPlaylist = onNavigateToPlaylist,
+                    onNavigateToArtist = onNavigateToArtist,
                     onRefreshGuessYouLike = viewModel::refreshGuessYouLike,
                     playerViewModel = playerViewModel
                 )
@@ -76,6 +78,7 @@ fun HomeScreen(
                     state = state,
                     onPlatformChange = viewModel::onPlaylistSquarePlatformChange,
                     onCategoryChange = viewModel::onPlaylistCategoryChange,
+                    onRefresh = viewModel::refreshPlaylistSquare,
                     onLoadMore = viewModel::loadMorePlaylistSquare,
                     onRetry = viewModel::retryPlaylistSquare,
                     onNavigateToPlaylist = onNavigateToPlaylist

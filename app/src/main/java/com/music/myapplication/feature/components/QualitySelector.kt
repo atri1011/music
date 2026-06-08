@@ -62,28 +62,30 @@ fun QualitySelector(
             onDismissRequest = { showSheet = false },
             sheetState = sheetState
         ) {
-            Column(modifier = Modifier.padding(bottom = 24.dp)) {
-                Text(
-                    text = "音质选择",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                )
-                QUALITIES.forEach { quality ->
-                    ListItem(
-                        headlineContent = { Text(QUALITY_LABELS[quality] ?: quality) },
-                        supportingContent = { Text(quality) },
-                        modifier = Modifier
-                            .clickable {
-                                onQualitySelected(quality)
-                                scope.launch {
-                                    sheetState.hide()
-                                    showSheet = false
-                                }
-                            },
-                        trailingContent = if (quality == currentQuality) {
-                            { Text("✓", color = MaterialTheme.colorScheme.primary) }
-                        } else null
+            AnimatedSheetContent {
+                Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                    Text(
+                        text = "音质选择",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                     )
+                    QUALITIES.forEach { quality ->
+                        ListItem(
+                            headlineContent = { Text(QUALITY_LABELS[quality] ?: quality) },
+                            supportingContent = { Text(quality) },
+                            modifier = Modifier
+                                .clickable {
+                                    onQualitySelected(quality)
+                                    scope.launch {
+                                        sheetState.hide()
+                                        showSheet = false
+                                    }
+                                },
+                            trailingContent = if (quality == currentQuality) {
+                                { Text("✓", color = MaterialTheme.colorScheme.primary) }
+                            } else null
+                        )
+                    }
                 }
             }
         }

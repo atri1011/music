@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.myapplication.feature.components.AnimatedSheetContent
 import com.music.myapplication.feature.player.state.sleepTimerCountdownOptions
 import com.music.myapplication.feature.player.state.statusText
 
@@ -46,72 +47,74 @@ fun SleepTimerPickerSheet(
         containerColor = MaterialTheme.colorScheme.surface,
         modifier = modifier
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        AnimatedSheetContent(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp)
             ) {
-                Text(
-                    text = "定时关闭",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                )
-                if (timerState.isActive) {
-                    IconButton(onClick = {
-                        playerViewModel.cancelSleepTimer()
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "取消定时"
-                        )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "定时关闭",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                    )
+                    if (timerState.isActive) {
+                        IconButton(onClick = {
+                            playerViewModel.cancelSleepTimer()
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "取消定时"
+                            )
+                        }
                     }
                 }
-            }
 
-            if (timerState.isActive) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = timerState.statusText(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                TextButton(onClick = {
-                    playerViewModel.cancelSleepTimer()
-                }) {
-                    Text("取消定时")
-                }
-            } else {
-                Spacer(modifier = Modifier.height(16.dp))
+                if (timerState.isActive) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = timerState.statusText(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(onClick = {
+                        playerViewModel.cancelSleepTimer()
+                    }) {
+                        Text("取消定时")
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    sleepTimerCountdownOptions.forEach { minutes ->
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        sleepTimerCountdownOptions.forEach { minutes ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    playerViewModel.startSleepTimer(minutes)
+                                    onDismiss()
+                                },
+                                label = { Text("${minutes} 分钟") }
+                            )
+                        }
                         FilterChip(
                             selected = false,
                             onClick = {
-                                playerViewModel.startSleepTimer(minutes)
+                                playerViewModel.startSleepTimerAfterTrack()
                                 onDismiss()
                             },
-                            label = { Text("${minutes} 分钟") }
+                            label = { Text("播完当前歌曲") }
                         )
                     }
-                    FilterChip(
-                        selected = false,
-                        onClick = {
-                            playerViewModel.startSleepTimerAfterTrack()
-                            onDismiss()
-                        },
-                        label = { Text("播完当前歌曲") }
-                    )
                 }
             }
         }

@@ -11,10 +11,14 @@ import com.music.myapplication.domain.model.NeteaseQrLoginPayload
 import com.music.myapplication.domain.model.NeteaseQrLoginState
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Playlist
+import com.music.myapplication.domain.model.PlaylistFolder
+import com.music.myapplication.domain.model.SmartPlaylist
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.domain.repository.PlaybackEvent
 import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.NeteaseAccountRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
+import com.music.myapplication.domain.repository.RecentPlay
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -30,7 +34,11 @@ import kotlinx.coroutines.launch
 data class LibraryUiState(
     val favorites: List<Track> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
+    val playlistFolders: List<PlaylistFolder> = emptyList(),
+    val smartPlaylists: List<SmartPlaylist> = emptyList(),
     val topPlayedTracks: List<Pair<Track, Int>> = emptyList(),
+    val recentPlayEntries: List<RecentPlay> = emptyList(),
+    val playbackEvents: List<PlaybackEvent> = emptyList(),
     val totalPlayCount: Int = 0,
     val totalListenDurationMs: Long = 0L,
     val downloadedCount: Int = 0,
@@ -38,6 +46,7 @@ data class LibraryUiState(
     val account: NeteaseAccountSession? = null,
     val isNeteaseConfigured: Boolean = false,
     val showCreateDialog: Boolean = false,
+    val showCreateFolderDialog: Boolean = false,
     val showImportDialog: Boolean = false,
     val showLoginSheet: Boolean = false,
     val isImporting: Boolean = false,
@@ -51,7 +60,8 @@ data class LibraryUiState(
     val syncMessage: String? = null,
     val qrPayload: NeteaseQrLoginPayload? = null,
     val qrStatusMessage: String? = null,
-    val importedPlaylist: ImportedPlaylistDestination? = null
+    val importedPlaylist: ImportedPlaylistDestination? = null,
+    val folderMoveTarget: Playlist? = null
 )
 
 data class ImportedPlaylistDestination(
@@ -82,7 +92,11 @@ class LibraryViewModel @Inject constructor(
     val state: StateFlow<LibraryUiState> = combine(
         localRepo.getFavorites(),
         localRepo.getTopPlayedTracks(),
+        localRepo.getRecentPlayEntries(limit = 100),
+        localRepo.getPlaybackEvents(limit = 500),
         localRepo.getPlaylists(),
+        localRepo.getPlaylistFolders(),
+        localRepo.getSmartPlaylists(),
         statsFlow,
         neteaseAccountRepository.session,
         neteaseAccountRepository.isConfigured,
@@ -93,15 +107,27 @@ class LibraryViewModel @Inject constructor(
         @Suppress("UNCHECKED_CAST")
         val topPlayed = values[1] as List<Pair<Track, Int>>
         @Suppress("UNCHECKED_CAST")
-        val playlists = values[2] as List<Playlist>
-        val stats = values[3] as StatsBundle
-        val account = values[4] as NeteaseAccountSession?
-        val isConfigured = values[5] as Boolean
-        val extras = values[6] as LibraryExtras
+        val recentEntries = values[2] as List<RecentPlay>
+        @Suppress("UNCHECKED_CAST")
+        val playbackEvents = values[3] as List<PlaybackEvent>
+        @Suppress("UNCHECKED_CAST")
+        val playlists = values[4] as List<Playlist>
+        @Suppress("UNCHECKED_CAST")
+        val playlistFolders = values[5] as List<PlaylistFolder>
+        @Suppress("UNCHECKED_CAST")
+        val smartPlaylists = values[6] as List<SmartPlaylist>
+        val stats = values[7] as StatsBundle
+        val account = values[8] as NeteaseAccountSession?
+        val isConfigured = values[9] as Boolean
+        val extras = values[10] as LibraryExtras
         LibraryUiState(
             favorites = favorites,
             playlists = playlists,
+            playlistFolders = playlistFolders,
+            smartPlaylists = smartPlaylists,
             topPlayedTracks = topPlayed,
+            recentPlayEntries = recentEntries,
+            playbackEvents = playbackEvents,
             totalPlayCount = stats.totalPlayCount,
             totalListenDurationMs = stats.totalListenDurationMs,
             downloadedCount = stats.downloadedCount,
@@ -109,6 +135,7 @@ class LibraryViewModel @Inject constructor(
             account = account,
             isNeteaseConfigured = isConfigured,
             showCreateDialog = extras.showCreateDialog,
+            showCreateFolderDialog = extras.showCreateFolderDialog,
             showImportDialog = extras.showImportDialog,
             showLoginSheet = extras.showLoginSheet,
             isImporting = extras.isImporting,
@@ -122,7 +149,8 @@ class LibraryViewModel @Inject constructor(
             syncMessage = extras.syncMessage,
             qrPayload = extras.qrPayload,
             qrStatusMessage = extras.qrStatusMessage,
-            importedPlaylist = extras.importedPlaylist
+            importedPlaylist = extras.importedPlaylist,
+            folderMoveTarget = extras.folderMoveTarget
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryUiState())
 
@@ -136,6 +164,12 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun showCreateDialog(show: Boolean) = uiExtras.update { it.copy(showCreateDialog = show) }
+
+    fun showCreateFolderDialog(show: Boolean) = uiExtras.update { it.copy(showCreateFolderDialog = show) }
+
+    fun showMovePlaylistFolderDialog(playlist: Playlist?) = uiExtras.update {
+        it.copy(folderMoveTarget = playlist)
+    }
 
     fun showImportDialog(show: Boolean) = uiExtras.update {
         it.copy(
@@ -164,6 +198,13 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             localRepo.createPlaylist(name)
             uiExtras.update { it.copy(showCreateDialog = false) }
+        }
+    }
+
+    fun createPlaylistFolder(name: String) {
+        viewModelScope.launch {
+            runCatching { localRepo.createPlaylistFolder(name) }
+            uiExtras.update { it.copy(showCreateFolderDialog = false) }
         }
     }
 
@@ -381,6 +422,17 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
     }
 
+    fun deletePlaylistFolder(folderId: String) {
+        viewModelScope.launch { localRepo.deletePlaylistFolder(folderId) }
+    }
+
+    fun movePlaylistToFolder(playlistId: String, folderId: String?) {
+        viewModelScope.launch {
+            localRepo.movePlaylistToFolder(playlistId, folderId)
+            uiExtras.update { it.copy(folderMoveTarget = null) }
+        }
+    }
+
     fun updatePlaylistCover(playlistId: String, sourceUri: String) {
         viewModelScope.launch {
             localRepo.updatePlaylistCover(playlistId, sourceUri)
@@ -513,6 +565,7 @@ class LibraryViewModel @Inject constructor(
 
     private data class LibraryExtras(
         val showCreateDialog: Boolean = false,
+        val showCreateFolderDialog: Boolean = false,
         val showImportDialog: Boolean = false,
         val showLoginSheet: Boolean = false,
         val isImporting: Boolean = false,
@@ -526,7 +579,8 @@ class LibraryViewModel @Inject constructor(
         val syncMessage: String? = null,
         val qrPayload: NeteaseQrLoginPayload? = null,
         val qrStatusMessage: String? = null,
-        val importedPlaylist: ImportedPlaylistDestination? = null
+        val importedPlaylist: ImportedPlaylistDestination? = null,
+        val folderMoveTarget: Playlist? = null
     )
 
     private data class StatsBundle(

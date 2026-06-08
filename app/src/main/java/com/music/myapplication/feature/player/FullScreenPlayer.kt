@@ -43,6 +43,7 @@ fun FullScreenPlayer(
     onToggleMode: () -> Unit,
     onToggleFavorite: () -> Unit,
     onQualityChange: (String) -> Unit,
+    onCoverLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val track = staticState.currentTrack ?: return
@@ -87,6 +88,7 @@ fun FullScreenPlayer(
                 coverUrl = track.coverUrl,
                 isPlaying = staticState.isPlaying,
                 glowColor = animatedDominant,
+                onLongPress = onCoverLongPress,
                 modifier = Modifier.size(272.dp)
             )
 

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.domain.repository.RecentPlay
 import com.music.myapplication.domain.repository.ToplistInfo
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.feature.components.PlaylistCard
@@ -59,6 +60,7 @@ import kotlinx.coroutines.launch
 fun ForYouContent(
     state: HomeUiState,
     onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit,
+    onNavigateToArtist: (artistId: String, platform: String, artistName: String) -> Unit,
     onRefreshGuessYouLike: () -> Unit,
     playerViewModel: PlayerViewModel
 ) {
@@ -94,6 +96,29 @@ fun ForYouContent(
         )
 
         Spacer(modifier = Modifier.height(AppSpacing.Large))
+
+        if (state.continueListeningEntries.isNotEmpty()) {
+            ContinueListeningSection(
+                entries = state.continueListeningEntries,
+                onPlayEntry = { index ->
+                    val queue = state.continueListeningEntries.map { it.track }
+                    if (index in queue.indices) {
+                        playerViewModel.playTrack(queue[index], queue, index)
+                    }
+                }
+            )
+            Spacer(modifier = Modifier.height(AppSpacing.Large))
+        }
+
+        if (state.recentArtists.isNotEmpty()) {
+            RecentArtistsSection(
+                artists = state.recentArtists,
+                onArtistClick = { artist ->
+                    onNavigateToArtist(artist.seedTrackId, artist.platform.id, artist.artistName)
+                }
+            )
+            Spacer(modifier = Modifier.height(AppSpacing.Large))
+        }
 
         if (state.dailyTracks.isNotEmpty()) {
             DailyRecommendCard(
@@ -150,6 +175,163 @@ fun ForYouContent(
         }
 
         Spacer(modifier = Modifier.height(AppSpacing.XLarge))
+    }
+}
+
+@Composable
+private fun ContinueListeningSection(
+    entries: List<RecentPlay>,
+    onPlayEntry: (Int) -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.Large)) {
+        Text(
+            text = "继续听",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier.padding(bottom = AppSpacing.Small)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .glassSurface(shape = RoundedCornerShape(AppShapes.Large))
+                .padding(vertical = 6.dp)
+        ) {
+            entries.take(3).forEachIndexed { index, entry ->
+                ContinueListeningItem(
+                    entry = entry,
+                    onClick = { onPlayEntry(index) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContinueListeningItem(
+    entry: RecentPlay,
+    onClick: () -> Unit
+) {
+    val track = entry.track
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(AppShapes.Small))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CoverImage(
+            url = track.coverUrl,
+            contentDescription = track.title,
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(AppShapes.ExtraSmall)),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = track.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = entry.continueListeningLabel(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        Icon(
+            imageVector = Icons.Default.PlayArrow,
+            contentDescription = "播放",
+            tint = QQMusicGreen,
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+@Composable
+private fun RecentArtistsSection(
+    artists: List<HomeRecentArtist>,
+    onArtistClick: (HomeRecentArtist) -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.Large)) {
+        Text(
+            text = "最近常听歌手",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            modifier = Modifier.padding(bottom = AppSpacing.Small)
+        )
+        artists.take(4).chunked(2).forEachIndexed { rowIndex, rowArtists ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)
+            ) {
+                rowArtists.forEach { artist ->
+                    RecentArtistEntry(
+                        artist = artist,
+                        onClick = { onArtistClick(artist) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (rowArtists.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+            if (rowIndex < artists.take(4).chunked(2).lastIndex) {
+                Spacer(modifier = Modifier.height(AppSpacing.Small))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentArtistEntry(
+    artist: HomeRecentArtist,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .glassSurface(shape = RoundedCornerShape(AppShapes.Medium), pressScale = true)
+            .clickable(onClick = onClick)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CoverImage(
+            url = artist.coverUrl,
+            contentDescription = artist.artistName,
+            modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = artist.artistName,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = artist.recentArtistLabel(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -485,4 +667,14 @@ private fun GuessYouLikeItemPlaceholder() {
             )
         }
     }
+}
+
+private fun RecentPlay.continueListeningLabel(): String = when {
+    playCount > 1 -> "最近听过 · $playCount 次"
+    else -> "最近听过"
+}
+
+private fun HomeRecentArtist.recentArtistLabel(): String = when {
+    listenCount > 1 -> "${platform.displayName} · $listenCount 次"
+    else -> platform.displayName
 }

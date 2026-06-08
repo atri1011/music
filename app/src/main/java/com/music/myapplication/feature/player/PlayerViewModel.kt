@@ -59,7 +59,10 @@ data class TrackActionUiState(
 data class TrackInfoUiState(
     val firstPlayDate: Long? = null,
     val totalPlayCount: Int = 0,
-    val similarTracks: List<Track> = emptyList()
+    val similarTracks: List<Track> = emptyList(),
+    val isLoadingSimilarTracks: Boolean = false,
+    val hasLoadedSimilarTracks: Boolean = false,
+    val similarTracksErrorMessage: String? = null
 )
 
 data class TrackCommentsUiState(
@@ -134,7 +137,7 @@ class PlayerViewModel @Inject constructor(
         comments.bind(viewModelScope)
         trackInfo.bind(viewModelScope)
         sleepTimer.bind(viewModelScope)
-        sleepTimer.onTimerExpired = playback::pausePlayback
+        sleepTimer.onTimerExpired = playback::fadeOutPausePlayback
     }
 
     fun playTrack(track: Track, queue: List<Track>, index: Int) = playback.playTrack(track, queue, index)

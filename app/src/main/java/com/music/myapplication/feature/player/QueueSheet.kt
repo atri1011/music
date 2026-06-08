@@ -1,7 +1,6 @@
 package com.music.myapplication.feature.player
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.myapplication.domain.model.Track
+import com.music.myapplication.feature.components.AnimatedSheetContent
+import com.music.myapplication.feature.components.appPressClick
 import com.music.myapplication.ui.theme.AppShapes
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,93 +108,95 @@ fun QueueSheet(
         containerColor = MaterialTheme.colorScheme.surface,
         modifier = modifier
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp)
-        ) {
-            Row(
+        AnimatedSheetContent(modifier = Modifier.fillMaxWidth()) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(bottom = 16.dp)
             ) {
-                Column {
-                    Text(
-                        text = "播放队列 (${queue.size})",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                    Text(
-                        text = queueStatusText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (queue.isNotEmpty()) {
-                    TextButton(
-                        onClick = {
-                            playerViewModel.clearQueue()
-                            onDismiss()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteSweep,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("清空")
-                    }
-                }
-            }
-
-            if (queue.isEmpty()) {
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 40.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Column {
                         Text(
-                            text = "播放队列为空",
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = "播放队列 (${queue.size})",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Text(
+                            text = queueStatusText,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    itemsIndexed(
-                        items = queue,
-                        key = { index, track -> "${track.platform.id}:${track.id}:${track.title}:${track.artist}:$index" }
-                    ) { index, track ->
-                        QueueItem(
-                            track = track,
-                            isCurrent = index == currentIndex,
-                            isDragging = index == draggingIndex,
-                            dragOffsetY = if (index == draggingIndex) dragOffsetY else 0f,
-                            onPlay = { playerViewModel.playQueueItem(index) },
-                            onRemove = { playerViewModel.removeFromQueue(index) },
-                            onMeasured = { heightPx -> itemHeights[index] = heightPx },
-                            onDragStart = {
-                                draggingIndex = index
-                                dragOffsetY = 0f
-                            },
-                            onDrag = { dragAmountY -> moveDraggingItem(index, dragAmountY) },
-                            onDragEnd = {
-                                draggingIndex = -1
-                                dragOffsetY = 0f
+                    if (queue.isNotEmpty()) {
+                        TextButton(
+                            onClick = {
+                                playerViewModel.clearQueue()
+                                onDismiss()
                             }
-                        )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("清空")
+                        }
+                    }
+                }
+
+                if (queue.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "播放队列为空",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                        itemsIndexed(
+                            items = queue,
+                            key = { index, track -> "${track.platform.id}:${track.id}:${track.title}:${track.artist}:$index" }
+                        ) { index, track ->
+                            QueueItem(
+                                track = track,
+                                isCurrent = index == currentIndex,
+                                isDragging = index == draggingIndex,
+                                dragOffsetY = if (index == draggingIndex) dragOffsetY else 0f,
+                                onPlay = { playerViewModel.playQueueItem(index) },
+                                onRemove = { playerViewModel.removeFromQueue(index) },
+                                onMeasured = { heightPx -> itemHeights[index] = heightPx },
+                                onDragStart = {
+                                    draggingIndex = index
+                                    dragOffsetY = 0f
+                                },
+                                onDrag = { dragAmountY -> moveDraggingItem(index, dragAmountY) },
+                                onDragEnd = {
+                                    draggingIndex = -1
+                                    dragOffsetY = 0f
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -230,7 +233,7 @@ private fun QueueItem(
             .clip(RoundedCornerShape(AppShapes.Medium))
             .background(bgColor)
             .onSizeChanged { onMeasured(it.height) }
-            .clickable(enabled = !isDragging, onClick = onPlay)
+            .appPressClick(enabled = !isDragging, pressedScale = 0.985f, onClick = onPlay)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

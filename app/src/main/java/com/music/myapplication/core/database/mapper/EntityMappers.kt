@@ -44,6 +44,31 @@ fun Track.toRecentPlayEntity(positionMs: Long = 0L): RecentPlayEntity = RecentPl
     positionMs = positionMs
 )
 
+fun PlaybackEventEntity.toTrack(): Track = Track(
+    id = songId,
+    platform = Platform.fromId(platform),
+    title = title,
+    artist = artist,
+    coverUrl = coverUrl,
+    durationMs = durationMs
+)
+
+fun Track.toPlaybackEventEntity(
+    playedAt: Long = System.currentTimeMillis(),
+    listenDurationMs: Long = durationMs,
+    playCount: Int = 1
+): PlaybackEventEntity = PlaybackEventEntity(
+    songId = id,
+    platform = platform.id,
+    title = title,
+    artist = artist,
+    coverUrl = coverUrl,
+    durationMs = durationMs,
+    playedAt = playedAt,
+    listenDurationMs = listenDurationMs,
+    playCount = playCount
+)
+
 fun PlaylistSongEntity.toTrack(): Track = Track(
     id = songId,
     platform = Platform.fromId(platform),

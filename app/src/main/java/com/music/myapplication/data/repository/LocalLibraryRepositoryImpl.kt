@@ -8,16 +8,25 @@ import com.music.myapplication.core.cache.CacheManager
 import com.music.myapplication.core.database.dao.*
 import com.music.myapplication.core.database.entity.FavoriteEntity
 import com.music.myapplication.core.database.entity.LyricsCacheEntity
+import com.music.myapplication.core.database.entity.PlaybackEventEntity
 import com.music.myapplication.core.database.entity.PlaylistEntity
+import com.music.myapplication.core.database.entity.PlaylistFolderEntity
+import com.music.myapplication.core.database.entity.RecentPlayEntity
 import com.music.myapplication.core.database.mapper.*
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.core.local.LocalMusicScanner
 import com.music.myapplication.core.network.retrofit.TuneHubApi
 import com.music.myapplication.domain.model.Playlist
+import com.music.myapplication.domain.model.PlaylistFolder
+import com.music.myapplication.domain.model.SmartPlaylist
+import com.music.myapplication.domain.model.SmartPlaylistRule
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.LocalLibraryRepository
+import com.music.myapplication.domain.repository.PlaybackEvent
+import com.music.myapplication.domain.repository.RecentPlay
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import java.io.File
 import java.util.UUID
@@ -29,6 +38,8 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val favoritesDao: FavoritesDao,
     private val recentPlaysDao: RecentPlaysDao,
+    private val playbackEventsDao: PlaybackEventsDao,
+    private val playlistFoldersDao: PlaylistFoldersDao,
     private val playlistsDao: PlaylistsDao,
     private val playlistSongsDao: PlaylistSongsDao,
     private val lyricsCacheDao: LyricsCacheDao,
@@ -77,7 +88,36 @@ class LocalLibraryRepositoryImpl @Inject constructor(
             rehydrateLocalPlayableUrls(list.map { it.toTrack() })
         }
 
+    override fun getRecentPlayEntries(limit: Int): Flow<List<RecentPlay>> =
+        recentPlaysDao.getRecent(limit).map { list ->
+            val tracks = rehydrateLocalPlayableUrls(list.map { it.toTrack() })
+            tracks.mapIndexed { index, track ->
+                val entity = list[index]
+                RecentPlay(
+                    track = track,
+                    playedAt = entity.playedAt,
+                    positionMs = entity.positionMs,
+                    playCount = entity.playCount
+                )
+            }
+        }
+
+    override fun getPlaybackEvents(limit: Int): Flow<List<PlaybackEvent>> =
+        playbackEventsDao.getRecentEvents(limit).map { list ->
+            val tracks = rehydrateLocalPlayableUrls(list.map { it.toTrack() })
+            tracks.mapIndexed { index, track ->
+                val entity = list[index]
+                PlaybackEvent(
+                    track = track,
+                    playedAt = entity.playedAt,
+                    listenDurationMs = entity.listenDurationMs,
+                    playCount = entity.playCount
+                )
+            }
+        }
+
     override suspend fun recordRecentPlay(track: Track, positionMs: Long) {
+        val playedAt = System.currentTimeMillis()
         recentPlaysDao.insertOrUpdate(
             songId = track.id,
             platform = track.platform.id,
@@ -85,11 +125,88 @@ class LocalLibraryRepositoryImpl @Inject constructor(
             artist = track.artist,
             coverUrl = track.coverUrl,
             durationMs = track.durationMs,
-            playedAt = System.currentTimeMillis(),
+            playedAt = playedAt,
             positionMs = positionMs
         )
+        playbackEventsDao.insert(
+            track.toPlaybackEventEntity(
+                playedAt = playedAt,
+                listenDurationMs = track.durationMs.coerceAtLeast(0L),
+                playCount = 1
+            )
+        )
         recentPlaysDao.trimOldEntries()
+        playbackEventsDao.trimOldEvents()
     }
+
+    override fun getPlaylistFolders(): Flow<List<PlaylistFolder>> =
+        playlistFoldersDao.getAllWithStats().map { list ->
+            list.map { entity ->
+                PlaylistFolder(
+                    id = entity.folderId,
+                    name = entity.name,
+                    playlistCount = entity.playlistCount,
+                    createdAt = entity.createdAt,
+                    updatedAt = entity.updatedAt
+                )
+            }
+        }
+
+    override suspend fun createPlaylistFolder(name: String): PlaylistFolder {
+        val folderName = name.trim()
+        require(folderName.isNotEmpty()) { "文件夹名称不能为空" }
+        val id = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        playlistFoldersDao.insert(
+            PlaylistFolderEntity(
+                folderId = id,
+                name = folderName,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        return PlaylistFolder(id = id, name = folderName, createdAt = now, updatedAt = now)
+    }
+
+    override suspend fun deletePlaylistFolder(folderId: String) {
+        val now = System.currentTimeMillis()
+        playlistsDao.clearFolder(folderId, now)
+        playlistFoldersDao.delete(folderId)
+    }
+
+    override suspend fun renamePlaylistFolder(folderId: String, newName: String) {
+        val folderName = newName.trim()
+        if (folderName.isEmpty()) return
+        val entity = playlistFoldersDao.getById(folderId) ?: return
+        playlistFoldersDao.update(entity.copy(name = folderName, updatedAt = System.currentTimeMillis()))
+    }
+
+    override suspend fun movePlaylistToFolder(playlistId: String, folderId: String?) {
+        val resolvedFolderId = folderId?.takeIf { playlistFoldersDao.getById(it) != null }
+        playlistsDao.updateFolder(
+            playlistId = playlistId,
+            folderId = resolvedFolderId,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
+    override fun getSmartPlaylists(): Flow<List<SmartPlaylist>> =
+        combineSmartPlaylistSources { favorites, recentPlays, playbackEvents ->
+            SmartPlaylistRule.entries.map { rule ->
+                val tracks = buildSmartPlaylistTracks(rule, favorites, recentPlays, playbackEvents)
+                SmartPlaylist(
+                    rule = rule,
+                    trackCount = tracks.size,
+                    previewTracks = tracks.take(SMART_PLAYLIST_PREVIEW_LIMIT)
+                )
+            }
+        }
+
+    override fun getSmartPlaylistTracks(ruleId: String): Flow<List<Track>> =
+        combineSmartPlaylistSources { favorites, recentPlays, playbackEvents ->
+            val rule = SmartPlaylistRule.fromId(ruleId) ?: return@combineSmartPlaylistSources emptyList()
+            buildSmartPlaylistTracks(rule, favorites, recentPlays, playbackEvents)
+        }
 
     override fun getPlaylists(): Flow<List<Playlist>> =
         playlistsDao.getAllWithStats().map { list ->
@@ -98,6 +215,7 @@ class LocalLibraryRepositoryImpl @Inject constructor(
                     id = entity.playlistId,
                     name = entity.name,
                     coverUrl = entity.coverUrl,
+                    folderId = entity.folderId,
                     trackCount = entity.trackCount,
                     createdAt = entity.createdAt,
                     updatedAt = entity.updatedAt
@@ -296,6 +414,61 @@ class LocalLibraryRepositoryImpl @Inject constructor(
     private fun favoriteKeyOf(track: Track): String = "${track.platform.id}:${track.id}"
     private fun favoriteKeyOf(songId: String, platform: String): String = "$platform:$songId"
 
+    private fun <T> combineSmartPlaylistSources(
+        transform: suspend (List<FavoriteEntity>, List<RecentPlayEntity>, List<PlaybackEventEntity>) -> T
+    ): Flow<T> = combine(
+        favoritesDao.getAll(),
+        recentPlaysDao.getRecent(SMART_PLAYLIST_RECENT_LIMIT),
+        playbackEventsDao.getRecentEvents(SMART_PLAYLIST_EVENT_LIMIT)
+    ) { favorites, recentPlays, playbackEvents ->
+        transform(favorites, recentPlays, playbackEvents)
+    }
+
+    private suspend fun buildSmartPlaylistTracks(
+        rule: SmartPlaylistRule,
+        favorites: List<FavoriteEntity>,
+        recentPlays: List<RecentPlayEntity>,
+        playbackEvents: List<PlaybackEventEntity>
+    ): List<Track> {
+        val favoriteKeys = favorites.map { favoriteKeyOf(it.songId, it.platform) }.toSet()
+        val weekAgo = System.currentTimeMillis() - SMART_PLAYLIST_WEEK_MS
+
+        fun Track.withFavoriteState(): Track = copy(isFavorite = favoriteKeyOf(this) in favoriteKeys)
+
+        val tracks = when (rule) {
+            SmartPlaylistRule.FREQUENT_UNFAVORITED -> recentPlays
+                .filter { it.playCount >= SMART_PLAYLIST_FREQUENT_PLAY_COUNT }
+                .filterNot { favoriteKeyOf(it.songId, it.platform) in favoriteKeys }
+                .sortedWith(compareByDescending<RecentPlayEntity> { it.playCount }.thenByDescending { it.playedAt })
+                .map { it.toTrack().withFavoriteState() }
+
+            SmartPlaylistRule.RECENT_WEEK_FAVORITES -> favorites
+                .filter { it.addedAt >= weekAgo }
+                .sortedByDescending { it.addedAt }
+                .map { it.toTrack().withFavoriteState() }
+
+            SmartPlaylistRule.RECENT_WEEK_REPLAY -> playbackEvents
+                .filter { it.playedAt >= weekAgo }
+                .groupBy { favoriteKeyOf(it.songId, it.platform) }
+                .mapNotNull { (_, events) ->
+                    val latest = events.maxByOrNull { it.playedAt } ?: return@mapNotNull null
+                    val count = events.sumOf { it.playCount.coerceAtLeast(1) }
+                    if (count < SMART_PLAYLIST_REPLAY_COUNT) return@mapNotNull null
+                    latest.toTrack().withFavoriteState() to count
+                }
+                .sortedByDescending { (_, count) -> count }
+                .map { (track, _) -> track }
+
+            SmartPlaylistRule.RECENTLY_PLAYED -> recentPlays
+                .sortedByDescending { it.playedAt }
+                .map { it.toTrack().withFavoriteState() }
+        }
+
+        return rehydrateLocalPlayableUrls(
+            tracks.distinctBy(::favoriteKeyOf).take(SMART_PLAYLIST_TRACK_LIMIT)
+        )
+    }
+
     private suspend fun rehydrateLocalPlayableUrls(tracks: List<Track>): List<Track> {
         if (tracks.isEmpty()) return tracks
 
@@ -338,6 +511,7 @@ class LocalLibraryRepositoryImpl @Inject constructor(
         id = playlistId,
         name = name,
         coverUrl = coverUrl,
+        folderId = folderId,
         createdAt = createdAt,
         updatedAt = updatedAt
     )
@@ -388,5 +562,12 @@ class LocalLibraryRepositoryImpl @Inject constructor(
         const val DEFAULT_PLAYLIST_COVER_EXTENSION = "jpg"
         const val NETEASE_DETAIL_BATCH_SIZE = 200
         const val UNKNOWN_ARTIST = "未知歌手"
+        const val SMART_PLAYLIST_PREVIEW_LIMIT = 3
+        const val SMART_PLAYLIST_RECENT_LIMIT = 200
+        const val SMART_PLAYLIST_EVENT_LIMIT = 500
+        const val SMART_PLAYLIST_TRACK_LIMIT = 100
+        const val SMART_PLAYLIST_FREQUENT_PLAY_COUNT = 50
+        const val SMART_PLAYLIST_REPLAY_COUNT = 2
+        const val SMART_PLAYLIST_WEEK_MS = 7L * 24L * 60L * 60L * 1000L
     }
 }

@@ -10,7 +10,18 @@ enum class LyricsPosterTemplate(
     internal val delegate: com.music.myapplication.feature.player.poster.LyricsPosterTemplate
 ) {
     AURORA("流光", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.AURORA),
-    PAPER("留白", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.PAPER)
+    PAPER("留白", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.PAPER),
+    VINYL("黑胶", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.VINYL),
+    MIDNIGHT("午夜", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.MIDNIGHT),
+    SUNSET("日落", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.SUNSET),
+    NEON("霓虹", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.NEON),
+    MONO("黑白", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.MONO),
+    FILM("胶片", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.FILM),
+    OCEAN("海盐", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.OCEAN),
+    FOREST("森屿", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.FOREST),
+    CLASSIC("唱片", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.CLASSIC),
+    MINIMAL("极简", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.MINIMAL),
+    CUSTOM("自定义", com.music.myapplication.feature.player.poster.LyricsPosterTemplate.CUSTOM)
 }
 
 object LyricsPosterGenerator {
@@ -20,6 +31,7 @@ object LyricsPosterGenerator {
         track: Track,
         lyricLine: LyricLine,
         template: LyricsPosterTemplate,
+        customBackgroundUri: String? = null,
         width: Int = 1080,
         height: Int = 1920
     ): Bitmap = com.music.myapplication.feature.player.poster.LyricsPosterGenerator.generate(
@@ -27,6 +39,7 @@ object LyricsPosterGenerator {
         track = track,
         lyricLine = lyricLine,
         template = template.delegate,
+        customBackgroundUri = customBackgroundUri,
         width = width,
         height = height
     )
