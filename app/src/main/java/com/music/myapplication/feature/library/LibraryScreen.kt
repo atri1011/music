@@ -1,9 +1,5 @@
 package com.music.myapplication.feature.library
 
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,7 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -25,18 +20,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.CloudDownload
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,42 +49,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.rememberAsyncImagePainter
-import coil.request.CachePolicy
-import coil.request.ImageRequest
-import coil.size.Scale
-import com.music.myapplication.core.common.normalizeCoverUrl
 import com.music.myapplication.domain.model.Platform
-import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.model.Playlist
 import com.music.myapplication.domain.model.PlaylistFolder
-import com.music.myapplication.domain.model.SmartPlaylist
 import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.QQMusicGreen
-import com.music.myapplication.ui.theme.appPremiumBackground
-import com.music.myapplication.ui.theme.glassSurface
-import kotlin.math.abs
 
-// Accent colors for quick-access tiles
-private val FavoriteAccent = Color(0xFFFF6B8A)
-private val LocalAccent = Color(0xFF5B8DEF)
+private val StitchBackground = Color(0xFFFCFCFC)
+private val StitchCard = Color.White
+private val StitchText = Color(0xFF1A1A1A)
+private val StitchMutedText = Color(0xFF8F8F8F)
+private val StitchBorder = Color(0xFFE5E7EB)
+private val StitchAccentGreen = Color(0xFF4CAF50)
+private val StitchBannerStart = Color(0xFFF0FDF4)
 
 @Composable
 fun LibraryScreen(
@@ -98,20 +83,9 @@ fun LibraryScreen(
     onNavigateToMusicYearReport: () -> Unit = {},
     onNavigateToDownloaded: () -> Unit = {},
     onNavigateToLocalMusic: () -> Unit = {},
-    onNavigateToSmartPlaylist: (id: String, name: String) -> Unit = { _, _ -> },
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var pendingPlaylistCoverId by remember { mutableStateOf<String?>(null) }
-    val playlistCoverPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        val playlistId = pendingPlaylistCoverId
-        pendingPlaylistCoverId = null
-        if (playlistId != null && uri != null) {
-            viewModel.updatePlaylistCover(playlistId, uri.toString())
-        }
-    }
 
     LaunchedEffect(state.importedPlaylist) {
         state.importedPlaylist?.let { destination ->
@@ -123,15 +97,8 @@ fun LibraryScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .appPremiumBackground()
+            .background(StitchBackground)
     ) {
-        // Layer 1: Blurred cover background (top portion, fades downward)
-        val topCoverUrl = state.topPlayedTracks.firstOrNull()?.first?.coverUrl.orEmpty()
-        if (topCoverUrl.isNotEmpty()) {
-            LibraryBlurredBackground(coverUrl = topCoverUrl)
-        }
-
-        // Layer 2: Content
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -139,7 +106,7 @@ fun LibraryScreen(
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             item {
-                NeteaseAccountHeaderCard(
+                LibraryProfileSection(
                     state = state,
                     onClick = { viewModel.showLoginSheet(true) },
                     onSyncClick = viewModel::syncNeteaseData
@@ -175,28 +142,11 @@ fun LibraryScreen(
                 )
             }
 
-            item(key = "smart_playlist_header") {
-                SmartPlaylistSectionHeader()
-            }
-            items(
-                count = state.smartPlaylists.size,
-                key = { index -> "smart:${state.smartPlaylists[index].rule.id}" }
-            ) { index ->
-                val smartPlaylist = state.smartPlaylists[index]
-                SmartPlaylistRow(
-                    playlist = smartPlaylist,
-                    onClick = {
-                        onNavigateToSmartPlaylist(smartPlaylist.rule.id, smartPlaylist.rule.title)
-                    }
-                )
-            }
-
             // Playlist section header with import/create actions
             item {
                 PlaylistSectionHeader(
-                    onImportClick = { viewModel.showImportDialog(true) },
-                    onCreateFolderClick = { viewModel.showCreateFolderDialog(true) },
-                    onCreateClick = { viewModel.showCreateDialog(true) }
+                    onCreateClick = { viewModel.showCreateDialog(true) },
+                    onManageClick = { viewModel.showCreateFolderDialog(true) }
                 )
             }
 
@@ -207,10 +157,10 @@ fun LibraryScreen(
             folders.forEach { folder ->
                 val folderPlaylists = playlists.filter { it.folderId == folder.id }
                 item(key = "folder:${folder.id}") {
-                    PlaylistFolderHeader(
+                    PlaylistFolderRow(
                         folder = folder,
                         playlistCount = folderPlaylists.size,
-                        onDelete = { viewModel.deletePlaylistFolder(folder.id) }
+                        onClick = { viewModel.showCreateFolderDialog(true) }
                     )
                 }
                 items(
@@ -221,13 +171,7 @@ fun LibraryScreen(
                     PlaylistRow(
                         playlist = playlist,
                         folderName = folder.name,
-                        onClick = { onNavigateToPlaylist(playlist.id, playlist.name) },
-                        onEditCover = {
-                            pendingPlaylistCoverId = playlist.id
-                            playlistCoverPicker.launch("image/*")
-                        },
-                        onMoveToFolder = { viewModel.showMovePlaylistFolderDialog(playlist) },
-                        onDelete = { viewModel.deletePlaylist(playlist.id) }
+                        onClick = { onNavigateToPlaylist(playlist.id, playlist.name) }
                     )
                 }
             }
@@ -246,13 +190,7 @@ fun LibraryScreen(
                     PlaylistRow(
                         playlist = playlist,
                         folderName = null,
-                        onClick = { onNavigateToPlaylist(playlist.id, playlist.name) },
-                        onEditCover = {
-                            pendingPlaylistCoverId = playlist.id
-                            playlistCoverPicker.launch("image/*")
-                        },
-                        onMoveToFolder = { viewModel.showMovePlaylistFolderDialog(playlist) },
-                        onDelete = { viewModel.deletePlaylist(playlist.id) }
+                        onClick = { onNavigateToPlaylist(playlist.id, playlist.name) }
                     )
                 }
             }
@@ -311,151 +249,84 @@ fun LibraryScreen(
     }
 }
 
-// ── Blurred Cover Background ────────────────────────────────────────────────────
+// ── Stats Capsules ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun LibraryBlurredBackground(coverUrl: String) {
-    val context = LocalContext.current
-    val normalizedUrl = remember(coverUrl) { normalizeCoverUrl(coverUrl) }
-    val useNativeBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val bgColor = MaterialTheme.colorScheme.background
-    val primary = MaterialTheme.colorScheme.primary
-    val isDark = bgColor.luminance() < 0.5f
-
-    Box(
+private fun LibraryProfileSection(
+    state: LibraryUiState,
+    onClick: () -> Unit,
+    onSyncClick: () -> Unit
+) {
+    val account = state.account
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(320.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        val imageRequest = remember(normalizedUrl, useNativeBlur) {
-            ImageRequest.Builder(context)
-                .data(normalizedUrl.ifEmpty { null })
-                .size(if (useNativeBlur) 256 else 32)
-                .scale(Scale.FILL)
-                .crossfade(800)
-                .memoryCachePolicy(CachePolicy.ENABLED)
-                .diskCachePolicy(CachePolicy.ENABLED)
-                .build()
-        }
-
-        val painter = rememberAsyncImagePainter(model = imageRequest)
-
-        Image(
-            painter = painter,
-            contentDescription = null,
-            modifier = Modifier
-                .fillMaxSize()
-                .then(if (useNativeBlur) Modifier.blur(60.dp) else Modifier),
-            contentScale = ContentScale.Crop
-        )
-
-        // Gradient: semi-transparent at top -> fully opaque theme bg at bottom
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            primary.copy(alpha = if (isDark) 0.14f else 0.08f),
-                            bgColor.copy(alpha = 0.62f),
-                            bgColor.copy(alpha = 0.94f)
-                        )
-                    )
-                )
-        )
-    }
-}
-
-// ── Top 5 Covers ────────────────────────────────────────────────────────────────
-
-@Composable
-private fun TopCoversHeader(topTracks: List<Pair<Track, Int>>) {
-    if (topTracks.isEmpty()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(140.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Outlined.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                )
-                Text(
-                    "听些音乐，这里会展示你的 Top 5",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        }
-        return
-    }
-
-    val tracks = topTracks.take(5)
-    val count = tracks.size
-    val coverSize = 80.dp
-    val spacing = 56.dp
-
-    val angles = when (count) {
-        1 -> listOf(0f)
-        2 -> listOf(-6f, 6f)
-        3 -> listOf(-10f, 0f, 10f)
-        4 -> listOf(-12f, -4f, 4f, 12f)
-        else -> listOf(-12f, -6f, 0f, 6f, 12f)
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(160.dp)
-            .padding(vertical = 16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        val centerIndex = (count - 1) / 2f
-        tracks.forEachIndexed { index, (track, _) ->
-            val offsetFromCenter = index - centerIndex
-            val zIdx = count.toFloat() - abs(index - count / 2).toFloat()
-            val distFromCenter = abs(offsetFromCenter).toInt()
-            val coverScale = when (distFromCenter) {
-                0 -> 1.0f
-                1 -> 0.90f
-                else -> 0.80f
-            }
-            val blurAmount = when (distFromCenter) {
-                0 -> 0.dp
-                1 -> 4.dp
-                else -> 8.dp
-            }
-
-            CoverImage(
-                url = track.coverUrl,
-                contentDescription = track.title,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
                 modifier = Modifier
-                    .zIndex(zIdx)
-                    .offset(x = spacing * offsetFromCenter)
-                    .graphicsLayer {
-                        rotationZ = angles[index]
-                        scaleX = coverScale
-                        scaleY = coverScale
-                        shadowElevation = if (distFromCenter == 0) 8f else 2f
-                    }
-                    .then(
-                        if (blurAmount > 0.dp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                            Modifier.blur(blurAmount)
-                        else Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE5E7EB))
+                    .border(2.dp, StitchCard, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!account?.avatarUrl.isNullOrBlank()) {
+                    CoverImage(
+                        url = account?.avatarUrl.orEmpty(),
+                        contentDescription = account?.nickname ?: "头像",
+                        modifier = Modifier.fillMaxSize()
                     )
-                    .size(coverSize)
-                    .clip(RoundedCornerShape(AppShapes.Small))
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.AccountCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF6B7280),
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = account?.nickname ?: "听音乐的人",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = StitchText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = when {
+                        state.isSyncingNeteaseData -> "同步中"
+                        account != null -> "已连接同步"
+                        state.isNeteaseConfigured -> "点击连接同步"
+                        else -> "本地资料库"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StitchMutedText
+                )
+            }
+        }
+
+        IconButton(
+            onClick = onSyncClick,
+            enabled = account != null && !state.isSyncingNeteaseData,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Sync,
+                contentDescription = "同步",
+                tint = StitchAccentGreen,
+                modifier = Modifier.size(26.dp)
             )
         }
     }
 }
-
-// ── Stats Capsules ──────────────────────────────────────────────────────────────
 
 @Composable
 private fun StatsCapsules(
@@ -471,15 +342,13 @@ private fun StatsCapsules(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         StatCapsule(
-            icon = Icons.Outlined.Timer,
             value = formatDuration(totalListenDurationMs),
             label = "聆听时长",
             onClick = onListenDurationClick,
             modifier = Modifier.weight(1f)
         )
         StatCapsule(
-            icon = Icons.Filled.PlayArrow,
-            value = "$totalPlayCount",
+            value = "${totalPlayCount}次",
             label = "播放次数",
             onClick = onPlayCountClick,
             modifier = Modifier.weight(1f)
@@ -489,7 +358,6 @@ private fun StatsCapsules(
 
 @Composable
 private fun StatCapsule(
-    icon: ImageVector,
     value: String,
     label: String,
     onClick: (() -> Unit)? = null,
@@ -497,33 +365,25 @@ private fun StatCapsule(
 ) {
     Column(
         modifier = modifier
-            .glassSurface(
-                shape = RoundedCornerShape(AppShapes.Medium),
-                pressScale = onClick != null
-            )
+            .stitchCard()
             .then(
                 if (onClick != null) Modifier.clickable(onClick = onClick)
                 else Modifier
             )
-            .padding(vertical = 16.dp, horizontal = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(16.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-        )
-        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Color(0xFF9CA3AF)
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = StitchText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -533,50 +393,61 @@ private fun YearReportBanner(
     totalPlayCount: Int,
     onClick: () -> Unit
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 6.dp)
-            .glassSurface(shape = RoundedCornerShape(AppShapes.Medium), pressScale = true)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                Brush.horizontalGradient(
+                    colors = listOf(StitchBannerStart, StitchCard)
+                )
+            )
+            .border(0.5.dp, StitchBorder.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(end = 16.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(72.dp)
+                    .background(StitchAccentGreen)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
             Icon(
-                imageVector = Icons.Outlined.Timer,
+                imageVector = Icons.Default.AutoAwesome,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(21.dp)
+                tint = Color(0xFF34D399),
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "2024 音乐年度报告",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    color = StitchText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = if (totalPlayCount > 0) "生成你的本地听歌旅程" else "播放几首歌后这里会有内容",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StitchMutedText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = "查看",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = Color(0xFF059669)
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "音乐年度报告",
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = if (totalPlayCount > 0) "生成你的本地听歌旅程" else "播放几首歌后这里会有内容",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Text(
-            text = "查看",
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.primary
-        )
     }
 }
 
@@ -598,27 +469,27 @@ private fun QuickAccessGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         QuickAccessTile(
-            icon = Icons.Outlined.FavoriteBorder,
+            icon = Icons.Default.Favorite,
             title = "收藏",
             count = favoritesCount,
             onClick = onFavoritesClick,
-            accentColor = FavoriteAccent,
+            accentColor = Color(0xFFF87171),
             modifier = Modifier.weight(1f)
         )
         QuickAccessTile(
-            icon = Icons.Outlined.MusicNote,
+            icon = Icons.Default.Download,
             title = "下载",
             count = downloadedCount,
             onClick = onDownloadedClick,
-            accentColor = MaterialTheme.colorScheme.primary,
+            accentColor = StitchAccentGreen,
             modifier = Modifier.weight(1f)
         )
         QuickAccessTile(
-            icon = Icons.AutoMirrored.Outlined.QueueMusic,
+            icon = Icons.AutoMirrored.Filled.ListAlt,
             title = "本地",
             count = localTrackCount,
             onClick = onLocalMusicClick,
-            accentColor = LocalAccent,
+            accentColor = Color(0xFF60A5FA),
             modifier = Modifier.weight(1f)
         )
     }
@@ -635,35 +506,28 @@ private fun QuickAccessTile(
 ) {
     Column(
         modifier = modifier
-            .glassSurface(shape = RoundedCornerShape(AppShapes.Medium), pressScale = true)
+            .stitchCard()
             .clickable(onClick = onClick)
-            .padding(vertical = 16.dp, horizontal = 8.dp),
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(accentColor.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(10.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = accentColor,
+            modifier = Modifier.size(26.dp)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+            color = StitchText
         )
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(1.dp))
         Text(
-            text = "$count 首",
+            text = "$count",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = Color(0xFF9CA3AF)
         )
     }
 }
@@ -671,206 +535,110 @@ private fun QuickAccessTile(
 // ── Section Headers ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun SmartPlaylistSectionHeader() {
+private fun PlaylistSectionHeader(
+    onCreateClick: () -> Unit,
+    onManageClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .height(16.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(QQMusicGreen)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(
-            text = "智能歌单",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        StitchSectionTitle(
+            title = "我的歌单",
             modifier = Modifier.weight(1f)
         )
-        Text(
-            text = "本地规则自动更新",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        PlaylistHeaderTextAction(
+            onClick = onCreateClick,
+            icon = Icons.Default.Add,
+            text = "新建"
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        PlaylistHeaderTextAction(
+            onClick = onManageClick,
+            icon = Icons.Default.Settings,
+            text = "管理"
         )
     }
 }
 
 @Composable
-private fun SmartPlaylistRow(
-    playlist: SmartPlaylist,
+private fun PlaylistHeaderTextAction(
+    onClick: () -> Unit,
+    icon: ImageVector,
+    text: String
+) {
+    Row(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color(0xFF4B5563),
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(3.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+            color = Color(0xFF4B5563)
+        )
+    }
+}
+
+@Composable
+private fun PlaylistFolderRow(
+    folder: PlaylistFolder,
+    playlistCount: Int,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 6.dp)
-            .glassSurface(shape = RoundedCornerShape(AppShapes.Medium), pressScale = true)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        SmartPlaylistPreviewCovers(playlist.previewTracks)
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = playlist.rule.title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "${playlist.rule.description} · ${playlist.trackCount} 首",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun SmartPlaylistPreviewCovers(tracks: List<Track>) {
-    Box(
-        modifier = Modifier.size(52.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        if (tracks.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.PlayArrow,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            return
-        }
-
-        tracks.take(3).forEachIndexed { index, track ->
-            CoverImage(
-                url = track.coverUrl,
-                contentDescription = track.title,
-                modifier = Modifier
-                    .zIndex((3 - index).toFloat())
-                    .offset(x = (index * 8).dp)
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlaylistSectionHeader(
-    onImportClick: () -> Unit,
-    onCreateFolderClick: () -> Unit,
-    onCreateClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 4.dp),
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .width(3.dp)
-                .height(16.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.primary)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(
-            text = "我的歌单",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.weight(1f)
-        )
-        SectionHeaderActionButton(
-            onClick = onImportClick,
-            icon = Icons.Outlined.CloudDownload,
-            contentDescription = "导入歌单",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        SectionHeaderActionButton(
-            onClick = onCreateFolderClick,
-            icon = Icons.Default.CreateNewFolder,
-            contentDescription = "新建文件夹",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        SectionHeaderActionButton(
-            onClick = onCreateClick,
-            icon = Icons.Filled.AddCircle,
-            contentDescription = "新建歌单",
-            tint = MaterialTheme.colorScheme.primary
-        )
-    }
-}
-
-@Composable
-private fun PlaylistFolderHeader(
-    folder: PlaylistFolder,
-    playlistCount: Int,
-    onDelete: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, end = 8.dp, top = 14.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                .size(56.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFFF9FAFB))
+                .border(0.5.dp, StitchBorder, RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
+                tint = Color(0xFF4B5563),
+                modifier = Modifier.size(30.dp)
             )
         }
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = folder.name,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = StitchText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "$playlistCount 个歌单",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color(0xFF9CA3AF)
             )
         }
-        IconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "删除文件夹",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.46f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = Color(0xFF9CA3AF),
+            modifier = Modifier.size(24.dp)
+        )
     }
 }
 
@@ -895,38 +663,13 @@ private fun UngroupedPlaylistHeader(count: Int) {
     }
 }
 
-@Composable
-private fun SectionHeaderActionButton(
-    onClick: () -> Unit,
-    icon: ImageVector,
-    contentDescription: String,
-    tint: Color
-) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier
-            .size(38.dp)
-            .glassSurface(shape = RoundedCornerShape(999.dp), pressScale = true)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
-
 // ── Playlist Row ────────────────────────────────────────────────────────────────
 
 @Composable
 private fun PlaylistRow(
     playlist: Playlist,
     folderName: String?,
-    onClick: () -> Unit,
-    onEditCover: () -> Unit,
-    onMoveToFolder: () -> Unit,
-    onDelete: () -> Unit
+    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -954,7 +697,7 @@ private fun PlaylistRow(
                 Icon(
                     Icons.AutoMirrored.Outlined.QueueMusic,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    tint = Color.White,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -964,42 +707,25 @@ private fun PlaylistRow(
             Text(
                 text = playlist.name,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = StitchText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = buildPlaylistSubtitle(playlist.trackCount, folderName),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF9CA3AF),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        IconButton(onClick = onEditCover, modifier = Modifier.size(36.dp)) {
-            Icon(
-                Icons.Outlined.Image,
-                contentDescription = "更换封面",
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-        IconButton(onClick = onMoveToFolder, modifier = Modifier.size(36.dp)) {
-            Icon(
-                Icons.AutoMirrored.Filled.DriveFileMove,
-                contentDescription = "移动到文件夹",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "删除",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(18.dp)
-            )
-        }
+        Icon(
+            imageVector = Icons.Default.MoreVert,
+            contentDescription = null,
+            tint = Color(0xFF9CA3AF),
+            modifier = Modifier.size(24.dp)
+        )
     }
 }
 
@@ -1229,6 +955,39 @@ fun CreatePlaylistDialog(
 }
 
 // ── Utility ─────────────────────────────────────────────────────────────────────
+
+private fun Modifier.stitchCard(
+    shape: RoundedCornerShape = RoundedCornerShape(16.dp)
+): Modifier = this
+    .shadow(elevation = 4.dp, shape = shape, ambientColor = Color.Black.copy(alpha = 0.04f), spotColor = Color.Black.copy(alpha = 0.05f))
+    .clip(shape)
+    .background(StitchCard)
+    .border(0.5.dp, StitchBorder.copy(alpha = 0.45f), shape)
+
+@Composable
+private fun StitchSectionTitle(
+    title: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(StitchAccentGreen)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = StitchText
+        )
+    }
+}
 
 private fun formatDuration(ms: Long): String {
     val totalSeconds = ms / 1000

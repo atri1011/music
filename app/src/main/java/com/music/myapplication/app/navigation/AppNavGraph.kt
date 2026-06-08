@@ -176,9 +176,6 @@ fun AppNavGraph(
                 },
                 onNavigateToLocalMusic = {
                     navController.navigate(Routes.LocalMusic)
-                },
-                onNavigateToSmartPlaylist = { id, name ->
-                    navController.navigate(Routes.PlaylistDetail(id, "local", name, "smart"))
                 }
             )
         }

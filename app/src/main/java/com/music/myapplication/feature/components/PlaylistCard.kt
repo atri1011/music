@@ -31,9 +31,9 @@ fun PlaylistCard(
     coverUrl: String,
     trackCount: Int = 0,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    shape: RoundedCornerShape = RoundedCornerShape(AppShapes.Medium)
 ) {
-    val shape = RoundedCornerShape(AppShapes.Medium)
 
     Box(
         modifier = modifier
