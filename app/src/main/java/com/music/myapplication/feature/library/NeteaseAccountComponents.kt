@@ -125,7 +125,7 @@ fun NeteaseAccountHeaderCard(
 
         state.syncMessage?.takeIf { it.isNotBlank() }?.let { message ->
             Spacer(modifier = Modifier.height(12.dp))
-            InfoBadge(text = message, color = Color(0xFF1B8F4C))
+            InfoBadge(text = message, color = MaterialTheme.colorScheme.primary)
         }
         state.syncError?.takeIf { it.isNotBlank() }?.let { error ->
             Spacer(modifier = Modifier.height(12.dp))

@@ -3,6 +3,7 @@ package com.music.myapplication.feature.library
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,13 +67,20 @@ import com.music.myapplication.feature.components.CoverImage
 import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.QQMusicGreen
 
-private val StitchBackground = Color(0xFFFCFCFC)
-private val StitchCard = Color.White
-private val StitchText = Color(0xFF1A1A1A)
-private val StitchMutedText = Color(0xFF8F8F8F)
-private val StitchBorder = Color(0xFFE5E7EB)
-private val StitchAccentGreen = Color(0xFF4CAF50)
-private val StitchBannerStart = Color(0xFFF0FDF4)
+private val StitchBackground: Color
+    @Composable get() = MaterialTheme.colorScheme.background
+private val StitchCard: Color
+    @Composable get() = MaterialTheme.colorScheme.surfaceContainer
+private val StitchText: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurface
+private val StitchMutedText: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val StitchBorder: Color
+    @Composable get() = MaterialTheme.colorScheme.outline
+private val StitchAccentGreen: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
+private val StitchBannerStart: Color
+    @Composable get() = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
 
 @Composable
 fun LibraryScreen(
@@ -271,7 +279,7 @@ private fun LibraryProfileSection(
                 modifier = Modifier
                     .size(64.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFE5E7EB))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     .border(2.dp, StitchCard, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -285,7 +293,7 @@ private fun LibraryProfileSection(
                     Icon(
                         imageVector = Icons.Default.AccountCircle,
                         contentDescription = null,
-                        tint = Color(0xFF6B7280),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(44.dp)
                     )
                 }
@@ -375,7 +383,7 @@ private fun StatCapsule(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFF9CA3AF)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -421,7 +429,7 @@ private fun YearReportBanner(
             Icon(
                 imageVector = Icons.Default.AutoAwesome,
                 contentDescription = null,
-                tint = Color(0xFF34D399),
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(32.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -445,7 +453,7 @@ private fun YearReportBanner(
             Text(
                 text = "查看",
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color(0xFF059669)
+                color = MaterialTheme.colorScheme.primary
             )
         }
     }
@@ -473,7 +481,7 @@ private fun QuickAccessGrid(
             title = "收藏",
             count = favoritesCount,
             onClick = onFavoritesClick,
-            accentColor = Color(0xFFF87171),
+            accentColor = MaterialTheme.colorScheme.error,
             modifier = Modifier.weight(1f)
         )
         QuickAccessTile(
@@ -489,7 +497,7 @@ private fun QuickAccessGrid(
             title = "本地",
             count = localTrackCount,
             onClick = onLocalMusicClick,
-            accentColor = Color(0xFF60A5FA),
+            accentColor = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.weight(1f)
         )
     }
@@ -527,7 +535,7 @@ private fun QuickAccessTile(
         Text(
             text = "$count",
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFF9CA3AF)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -578,14 +586,14 @@ private fun PlaylistHeaderTextAction(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = Color(0xFF4B5563),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp)
         )
         Spacer(modifier = Modifier.width(3.dp))
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-            color = Color(0xFF4B5563)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -607,14 +615,14 @@ private fun PlaylistFolderRow(
             modifier = Modifier
                 .size(56.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFFF9FAFB))
-                .border(0.5.dp, StitchBorder, RoundedCornerShape(10.dp)),
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .border(0.5.dp, StitchBorder.copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = null,
-                tint = Color(0xFF4B5563),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(30.dp)
             )
         }
@@ -630,13 +638,13 @@ private fun PlaylistFolderRow(
             Text(
                 text = "$playlistCount 个歌单",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF9CA3AF)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,
-            tint = Color(0xFF9CA3AF),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(24.dp)
         )
     }
@@ -697,7 +705,7 @@ private fun PlaylistRow(
                 Icon(
                     Icons.AutoMirrored.Outlined.QueueMusic,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -715,7 +723,7 @@ private fun PlaylistRow(
             Text(
                 text = buildPlaylistSubtitle(playlist.trackCount, folderName),
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF9CA3AF),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -723,7 +731,7 @@ private fun PlaylistRow(
         Icon(
             imageVector = Icons.Default.MoreVert,
             contentDescription = null,
-            tint = Color(0xFF9CA3AF),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(24.dp)
         )
     }
@@ -956,13 +964,22 @@ fun CreatePlaylistDialog(
 
 // ── Utility ─────────────────────────────────────────────────────────────────────
 
+@Composable
 private fun Modifier.stitchCard(
     shape: RoundedCornerShape = RoundedCornerShape(16.dp)
-): Modifier = this
-    .shadow(elevation = 4.dp, shape = shape, ambientColor = Color.Black.copy(alpha = 0.04f), spotColor = Color.Black.copy(alpha = 0.05f))
-    .clip(shape)
-    .background(StitchCard)
-    .border(0.5.dp, StitchBorder.copy(alpha = 0.45f), shape)
+): Modifier {
+    val darkTheme = isSystemInDarkTheme()
+    return this
+        .shadow(
+            elevation = 4.dp,
+            shape = shape,
+            ambientColor = Color.Black.copy(alpha = if (darkTheme) 0.08f else 0.04f),
+            spotColor = Color.Black.copy(alpha = if (darkTheme) 0.10f else 0.05f)
+        )
+        .clip(shape)
+        .background(StitchCard)
+        .border(0.5.dp, StitchBorder.copy(alpha = 0.45f), shape)
+}
 
 @Composable
 private fun StitchSectionTitle(
