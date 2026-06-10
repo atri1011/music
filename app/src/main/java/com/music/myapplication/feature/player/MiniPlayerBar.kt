@@ -77,7 +77,8 @@ fun MiniPlayerBar(
     var playPulseTrigger by remember { mutableStateOf(0) }
     val trackKey = "${currentTrack.platform.id}:${currentTrack.id}"
     val favoritePopTrigger = rememberRisingEdgeTrigger(value = currentTrack.isFavorite, resetKey = trackKey)
-    val shape = RoundedCornerShape(AppShapes.Large)
+    val shape = RoundedCornerShape(AppShapes.XLarge)
+    val progress = progressFraction.coerceIn(0f, 1f)
 
     Column(
         modifier = modifier
@@ -105,26 +106,43 @@ fun MiniPlayerBar(
                     .height(2.dp)
                     .clip(
                         RoundedCornerShape(
-                            topStart = AppShapes.Large,
-                            topEnd = AppShapes.Large
+                            topStart = AppShapes.XLarge,
+                            topEnd = AppShapes.XLarge
                         )
                     ),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
             )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+            ) {
+                if (progress > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .height(2.dp)
+                            .clip(RoundedCornerShape(topEnd = AppShapes.Tiny, bottomEnd = AppShapes.Tiny))
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                }
+            }
         }
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = AppSpacing.Small, vertical = AppSpacing.Small),
+                .padding(horizontal = AppSpacing.Small, vertical = AppSpacing.XSmall),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .defaultMinSize(minHeight = 44.dp)
-                    .clip(RoundedCornerShape(AppShapes.Medium))
+                    .defaultMinSize(minHeight = 52.dp)
+                    .clip(RoundedCornerShape(AppShapes.Large))
                     .pointerInput(trackKey, onClick, onLongPress) {
                         detectTapGestures(
                             onTap = { onClick() },
@@ -137,25 +155,47 @@ fun MiniPlayerBar(
                     .padding(end = AppSpacing.XSmall),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                CoverImage(
-                    url = currentTrack.coverUrl,
-                    contentDescription = currentTrack.title,
+                Box(
                     modifier = Modifier
-                        .sharedTrackArtwork(
-                            sharedTransitionScope = sharedTransitionScope,
-                            track = currentTrack,
-                            visible = sharedArtworkVisible
-                        )
-                        .size(48.dp)
+                        .size(52.dp)
                         .clip(RoundedCornerShape(AppShapes.Small))
-                )
+                ) {
+                    CoverImage(
+                        url = currentTrack.coverUrl,
+                        contentDescription = currentTrack.title,
+                        modifier = Modifier
+                            .sharedTrackArtwork(
+                                sharedTransitionScope = sharedTransitionScope,
+                                track = currentTrack,
+                                visible = sharedArtworkVisible
+                            )
+                            .fillMaxSize()
+                    )
+                    if (currentTrack.isFavorite) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .clip(RoundedCornerShape(topStart = AppShapes.ExtraSmall))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
+                                .padding(2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = "已收藏",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(10.dp)
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.width(AppSpacing.Small))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = currentTrack.title,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         modifier = Modifier.basicMarquee()
@@ -227,7 +267,7 @@ fun MiniPlayerBar(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f))
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -245,7 +285,7 @@ fun MiniPlayerBar(
                             Icon(
                                 imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (playing) "暂停" else "播放",
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -264,24 +304,6 @@ fun MiniPlayerBar(
                     )
                 }
             }
-        }
-
-        val progress = progressFraction
-        if (progress > 0f) {
-            LinearProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .clip(
-                        RoundedCornerShape(
-                            bottomStart = AppShapes.Large,
-                            bottomEnd = AppShapes.Large
-                        )
-                    ),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.Transparent
-            )
         }
     }
 }

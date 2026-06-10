@@ -11,7 +11,9 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +21,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -374,14 +379,11 @@ private fun AppBottomNavigationBar(
     currentRouteSelected: (Routes) -> Boolean,
     onNavigate: (Routes) -> Unit
 ) {
-    val navShape = RoundedCornerShape(
-        topStart = AppShapes.XLarge,
-        topEnd = AppShapes.XLarge
-    )
+    val navShape = RoundedCornerShape(0.dp)
     Surface(
-        color = appSurfaceColor(AppSurfaceTone.Plain).copy(alpha = 0.97f),
+        color = appSurfaceColor(AppSurfaceTone.Plain).copy(alpha = 0.92f),
         tonalElevation = AppElevation.Subtle,
-        shadowElevation = AppElevation.Low,
+        shadowElevation = AppElevation.Subtle,
         shape = navShape,
         modifier = Modifier
             .border(
@@ -399,10 +401,28 @@ private fun AppBottomNavigationBar(
                     selected = selected,
                     onClick = { onNavigate(item.route) },
                     icon = {
-                        Icon(
-                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                            contentDescription = item.label
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                contentDescription = item.label
+                            )
+                            Spacer(modifier = Modifier.size(AppSpacing.XXSmall))
+                            Box(
+                                modifier = Modifier
+                                    .size(4.dp)
+                                    .background(
+                                        color = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                        shape = CircleShape
+                                    )
+                            )
+                        }
                     },
                     label = {
                         Text(
@@ -413,7 +433,7 @@ private fun AppBottomNavigationBar(
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                        indicatorColor = Color.Transparent,
                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )

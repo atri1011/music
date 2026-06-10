@@ -3,9 +3,11 @@ package com.music.myapplication.feature.home
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -23,6 +26,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
@@ -35,8 +41,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,7 +55,6 @@ import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.RecentPlay
 import com.music.myapplication.domain.repository.ToplistInfo
 import com.music.myapplication.feature.components.CoverImage
-import com.music.myapplication.feature.components.PlaylistCard
 import com.music.myapplication.feature.player.PlayerViewModel
 import com.music.myapplication.ui.theme.AppShapes
 import com.music.myapplication.ui.theme.AppSpacing
@@ -71,23 +78,56 @@ fun ForYouContent(
             .fillMaxSize()
             .verticalScroll(scrollState)
     ) {
-        if (state.dailyTracks.isNotEmpty()) {
-            DailyRecommendCard(
-                tracks = state.dailyTracks,
-                onPlay = {
-                    val track = state.dailyTracks.firstOrNull() ?: return@DailyRecommendCard
+        if (state.dailyTracks.isNotEmpty() || state.fmTrack != null) {
+            val daily30Track = state.dailyTracks.getOrNull(1) ?: state.fmTrack
+            RecommendationFeatureRow(
+                dailyTracks = state.dailyTracks,
+                daily30Track = daily30Track,
+                onPlayDaily = daily@{
+                    val track = state.dailyTracks.firstOrNull() ?: return@daily
                     playerViewModel.playTrack(track, state.dailyTracks, 0)
                 },
-                modifier = Modifier.padding(horizontal = AppSpacing.Large)
+                onPlayDaily30 = daily30@{
+                    val queue = state.dailyTracks.ifEmpty {
+                        state.fmTrack?.let(::listOf).orEmpty()
+                    }
+                    val track = queue.firstOrNull() ?: return@daily30
+                    playerViewModel.playTrack(track, queue, 0)
+                }
             )
-            Spacer(modifier = Modifier.height(AppSpacing.Medium))
+            Spacer(modifier = Modifier.height(AppSpacing.Large))
         }
 
-        state.fmTrack?.let { fmTrack ->
-            PersonalFmCard(
-                track = fmTrack,
-                onPlay = { playerViewModel.playTrack(fmTrack, listOf(fmTrack), 0) },
-                modifier = Modifier.padding(horizontal = AppSpacing.Large)
+        if (state.guessYouLikeTracks.isNotEmpty() || state.isGuessYouLikeLoading) {
+            GuessYouLikeSection(
+                label = state.guessYouLikeLabel,
+                tracks = state.guessYouLikeTracks,
+                isLoading = state.isGuessYouLikeLoading,
+                onRefresh = onRefreshGuessYouLike,
+                onPlayAll = {
+                    if (state.guessYouLikeTracks.isNotEmpty()) {
+                        playerViewModel.playTrack(
+                            state.guessYouLikeTracks.first(),
+                            state.guessYouLikeTracks,
+                            0
+                        )
+                    }
+                },
+                onPlayTrack = { index ->
+                    playerViewModel.playTrack(
+                        state.guessYouLikeTracks[index],
+                        state.guessYouLikeTracks,
+                        index
+                    )
+                }
+            )
+            Spacer(modifier = Modifier.height(AppSpacing.Large))
+        }
+
+        if (state.recommendedPlaylists.isNotEmpty()) {
+            RecommendedPlaylistRow(
+                playlists = state.recommendedPlaylists,
+                onNavigateToPlaylist = onNavigateToPlaylist
             )
             Spacer(modifier = Modifier.height(AppSpacing.Large))
         }
@@ -115,40 +155,42 @@ fun ForYouContent(
             Spacer(modifier = Modifier.height(AppSpacing.Large))
         }
 
-        if (state.recommendedPlaylists.isNotEmpty()) {
-            RecommendedPlaylistRow(
-                playlists = state.recommendedPlaylists,
-                onNavigateToPlaylist = onNavigateToPlaylist
-            )
-            Spacer(modifier = Modifier.height(AppSpacing.XLarge))
-        }
+        Spacer(modifier = Modifier.height(AppSpacing.XLarge))
+    }
+}
 
-        if (state.guessYouLikeTracks.isNotEmpty() || state.isGuessYouLikeLoading) {
-            GuessYouLikeSection(
-                label = state.guessYouLikeLabel,
-                tracks = state.guessYouLikeTracks,
-                isLoading = state.isGuessYouLikeLoading,
-                onRefresh = onRefreshGuessYouLike,
-                onPlayAll = {
-                    if (state.guessYouLikeTracks.isNotEmpty()) {
-                        playerViewModel.playTrack(
-                            state.guessYouLikeTracks.first(),
-                            state.guessYouLikeTracks,
-                            0
-                        )
-                    }
-                },
-                onPlayTrack = { index ->
-                    playerViewModel.playTrack(
-                        state.guessYouLikeTracks[index],
-                        state.guessYouLikeTracks,
-                        index
+@Composable
+private fun RecommendationFeatureRow(
+    dailyTracks: List<Track>,
+    daily30Track: Track?,
+    onPlayDaily: () -> Unit,
+    onPlayDaily30: () -> Unit
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val cardWidth = ((maxWidth - 56.dp) / 2).coerceIn(150.dp, 220.dp)
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = AppSpacing.Large),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)
+        ) {
+            if (dailyTracks.isNotEmpty()) {
+                item(key = "daily") {
+                    DailyRecommendCard(
+                        tracks = dailyTracks,
+                        onPlay = onPlayDaily,
+                        modifier = Modifier.width(cardWidth)
                     )
                 }
-            )
+            }
+            item(key = "daily30") {
+                DailyThirtyCard(
+                    track = daily30Track,
+                    onPlay = onPlayDaily30,
+                    modifier = Modifier.width(cardWidth)
+                )
+            }
         }
-
-        Spacer(modifier = Modifier.height(AppSpacing.XLarge))
     }
 }
 
@@ -158,16 +200,12 @@ private fun ContinueListeningSection(
     onPlayEntry: (Int) -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = AppSpacing.Large)) {
-        Text(
-            text = "继续听",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        HomeSectionTitle(
+            title = "继续听, 接着刚才的节奏",
             modifier = Modifier.padding(bottom = AppSpacing.Small)
         )
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .glassSurface(shape = RoundedCornerShape(AppShapes.Large))
-                .padding(vertical = 6.dp)
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)
         ) {
             entries.take(3).forEachIndexed { index, entry ->
                 ContinueListeningItem(
@@ -191,25 +229,30 @@ private fun ContinueListeningItem(
             .fillMaxWidth()
             .clip(RoundedCornerShape(AppShapes.Small))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CoverImage(
             url = track.coverUrl,
             contentDescription = track.title,
             modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(AppShapes.ExtraSmall)),
+                .size(56.dp)
+                .clip(RoundedCornerShape(AppShapes.Small)),
             contentScale = ContentScale.Crop
         )
         Spacer(modifier = Modifier.width(AppSpacing.Small))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(modifier = Modifier.width(AppSpacing.XSmall))
+                HomeTinyBadge(text = entry.continueListeningLabel())
+            }
             Text(
                 text = track.artist,
                 style = MaterialTheme.typography.bodySmall,
@@ -217,20 +260,69 @@ private fun ContinueListeningItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = entry.continueListeningLabel(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp)
+        }
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
+        Icon(
+            imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            contentDescription = if (track.isFavorite) "已收藏" else "收藏状态",
+            tint = if (track.isFavorite) Color(0xFFF43F5E) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+            modifier = Modifier.size(21.dp)
+        )
+    }
+}
+
+@Composable
+private fun HomeSectionTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+    showAccentIcon: Boolean = false
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        if (showAccentIcon) {
+            Spacer(modifier = Modifier.width(AppSpacing.XSmall))
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                tint = QQMusicGreen,
+                modifier = Modifier.size(18.dp)
             )
         }
-        Icon(
-            imageVector = Icons.Default.PlayArrow,
-            contentDescription = "播放",
-            tint = QQMusicGreen,
-            modifier = Modifier.size(22.dp)
+    }
+}
+
+@Composable
+private fun HomeTinyBadge(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(AppShapes.Tiny)
+    Box(
+        modifier = modifier
+            .widthIn(max = 96.dp)
+            .border(
+                width = 0.5.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f),
+                shape = shape
+            )
+            .padding(horizontal = AppSpacing.XXSmall, vertical = 1.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -315,136 +407,168 @@ private fun DailyRecommendCard(
     onPlay: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val coverUrl = tracks.firstOrNull()?.coverUrl
+    val featuredTrack = tracks.firstOrNull()
     val artistNames = tracks.take(5).joinToString(" · ") { it.artist }
+
+    RecommendationFeatureCard(
+        title = "For\nYou",
+        subtitle = "猜你喜欢",
+        trackTitle = featuredTrack?.title ?: "每日推荐",
+        artist = featuredTrack?.artist?.takeIf { it.isNotBlank() } ?: artistNames,
+        coverUrl = featuredTrack?.coverUrl.orEmpty(),
+        lightGradient = listOf(Color(0xFFFFE4E6), Color(0xFFFFCDD5)),
+        darkGradient = listOf(Color(0xFF4A1424), Color(0xFF32101A)),
+        accentColor = Color(0xFFE11D48),
+        onPlay = onPlay,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun DailyThirtyCard(
+    track: Track?,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val songLine = track?.let { "${it.title}-${it.artist}" } ?: "推送 API 待接入"
+
+    RecommendationFeatureCard(
+        title = "Daily\n30",
+        subtitle = "每日30首",
+        trackTitle = "每日30首",
+        artist = songLine,
+        coverUrl = track?.coverUrl.orEmpty(),
+        lightGradient = listOf(Color(0xFFFF8EA1), Color(0xFFFF7F93)),
+        darkGradient = listOf(Color(0xFF6A1F32), Color(0xFF4A1828)),
+        accentColor = Color.White,
+        onPlay = onPlay,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun RecommendationFeatureCard(
+    title: String,
+    subtitle: String,
+    trackTitle: String,
+    artist: String,
+    coverUrl: String,
+    lightGradient: List<Color>,
+    darkGradient: List<Color>,
+    accentColor: Color,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val textColor = if (isDark) Color.White else Color(0xFF1E293B)
+    val subtleTextColor = if (isDark) Color.White.copy(alpha = 0.68f) else Color(0xFF64748B)
+    val cardShape = RoundedCornerShape(AppShapes.Large)
 
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .height(220.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .height(180.dp)
+            .clip(cardShape)
+            .background(Brush.linearGradient(if (isDark) darkGradient else lightGradient))
+            .border(0.5.dp, Color.White.copy(alpha = if (isDark) 0.10f else 0.55f), cardShape)
+            .clickable(onClick = onPlay)
+            .padding(AppSpacing.Medium)
     ) {
-        if (coverUrl != null) {
-            CoverImage(
-                url = coverUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalGradientScrim(
-                    color = Color.Black.copy(alpha = 0.60f),
-                    startY = 0.35f,
-                    endY = 1f
-                )
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.Bottom
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
         ) {
-            Text(
-                text = "每日推荐",
-                style = MaterialTheme.typography.headlineLarge.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 32.sp,
-                    lineHeight = 40.sp
-                ),
-                color = Color.White
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            if (artistNames.isNotBlank()) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = artistNames,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.80f),
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 24.sp
+                    ),
+                    color = accentColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accentColor.copy(alpha = if (isDark) 0.78f else 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
+            FeatureCover(
+                coverUrl = coverUrl,
+                contentDescription = trackTitle,
+                accentColor = accentColor
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(end = 56.dp)
+        ) {
+            Text(
+                text = trackTitle,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = artist,
+                style = MaterialTheme.typography.labelSmall,
+                color = subtleTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
         IconButton(
             onClick = onPlay,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 16.dp)
-                .size(48.dp)
+                .size(42.dp)
                 .clip(CircleShape)
-                .background(QQMusicGreen)
+                .background(Color.White.copy(alpha = if (isDark) 0.20f else 0.90f))
         ) {
             Icon(
                 imageVector = Icons.Default.PlayArrow,
                 contentDescription = "播放",
-                tint = Color.White,
-                modifier = Modifier.size(28.dp)
+                tint = QQMusicGreen,
+                modifier = Modifier.size(26.dp)
             )
         }
     }
 }
 
 @Composable
-private fun PersonalFmCard(
-    track: Track,
-    onPlay: () -> Unit,
-    modifier: Modifier = Modifier
+private fun FeatureCover(
+    coverUrl: String,
+    contentDescription: String,
+    accentColor: Color
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .glassSurface(shape = RoundedCornerShape(AppShapes.Large), pressScale = true)
-            .clickable(onClick = onPlay)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Box(
+        modifier = Modifier
+            .size(88.dp)
+            .clip(RoundedCornerShape(AppShapes.Small))
+            .background(accentColor.copy(alpha = 0.16f)),
+        contentAlignment = Alignment.Center
     ) {
-        CoverImage(
-            url = track.coverUrl,
-            contentDescription = track.title,
-            modifier = Modifier
-                .size(72.dp)
-                .clip(RoundedCornerShape(AppShapes.Small)),
-            contentScale = ContentScale.Crop
-        )
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "私人FM",
-                style = MaterialTheme.typography.labelMedium,
-                color = QQMusicGreen,
-                modifier = Modifier.padding(bottom = 4.dp)
+        if (coverUrl.isNotBlank()) {
+            CoverImage(
+                url = coverUrl,
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
             )
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        IconButton(
-            onClick = onPlay,
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(QQMusicGreen.copy(alpha = 0.14f))
-        ) {
+        } else {
             Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "播放",
-                tint = QQMusicGreen,
-                modifier = Modifier.size(24.dp)
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(34.dp)
             )
         }
     }
@@ -456,26 +580,92 @@ private fun RecommendedPlaylistRow(
     onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit
 ) {
     Column {
-        Text(
-            text = "推荐歌单",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(start = AppSpacing.Large, bottom = AppSpacing.Small)
+        HomeSectionTitle(
+            title = "热门歌单, 听点不一样的",
+            showAccentIcon = true,
+            modifier = Modifier.padding(
+                start = AppSpacing.Large,
+                end = AppSpacing.Large,
+                bottom = AppSpacing.Small
+            )
         )
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium),
             contentPadding = PaddingValues(horizontal = AppSpacing.Large)
         ) {
             items(items = playlists, key = { it.id }) { playlist ->
-                PlaylistCard(
-                    name = playlist.name,
-                    coverUrl = playlist.coverUrl,
+                HomeProgramPlaylistCard(
+                    playlist = playlist,
                     onClick = {
                         onNavigateToPlaylist(playlist.id, Platform.NETEASE.id, playlist.name, "playlist")
-                    },
-                    shape = RoundedCornerShape(24.dp)
+                    }
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun HomeProgramPlaylistCard(
+    playlist: ToplistInfo,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(160.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(112.dp)
+                .clip(RoundedCornerShape(AppShapes.Medium))
+                .border(
+                    width = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(AppShapes.Medium)
+                )
+        ) {
+            CoverImage(
+                url = playlist.coverUrl,
+                contentDescription = playlist.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalGradientScrim(
+                        color = Color.Black.copy(alpha = 0.28f),
+                        startY = 0.10f,
+                        endY = 1f
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(AppSpacing.XSmall)
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.32f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(AppSpacing.XSmall))
+        Text(
+            text = playlist.name,
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -519,22 +709,22 @@ private fun GuessYouLikeSection(
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "刷新",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = QQMusicGreen,
                         modifier = Modifier
                             .size(20.dp)
                             .graphicsLayer { rotationZ = refreshRotation.value }
                     )
                 }
                 Spacer(modifier = Modifier.width(AppSpacing.XXSmall))
-                Text(
-                    text = if (label.isNotBlank()) "猜你喜欢 · $label" else "猜你喜欢",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                HomeSectionTitle(
+                    title = if (label.isNotBlank()) "周三的声音, $label" else "周三的声音, 不远不近",
+                    showAccentIcon = true
                 )
             }
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .background(QQMusicGreen.copy(alpha = 0.10f))
                     .clickable(onClick = onPlayAll)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center
@@ -544,19 +734,19 @@ private fun GuessYouLikeSection(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "播放",
                         modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = QQMusicGreen
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
                         text = "播放",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = QQMusicGreen
                     )
                 }
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)) {
             if (isLoading) {
                 repeat(3) { GuessYouLikeItemPlaceholder() }
             } else {
@@ -576,48 +766,48 @@ private fun GuessYouLikeItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(AppShapes.Small))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CoverImage(
             url = track.coverUrl,
             contentDescription = track.title,
             modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(8.dp)),
+                .size(56.dp)
+                .clip(RoundedCornerShape(AppShapes.Small)),
             contentScale = ContentScale.Crop
         )
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (track.album.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(AppSpacing.XSmall))
+                    HomeTinyBadge(text = track.album)
+                }
+            }
             Text(
                 text = track.artist,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                ),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
+        Spacer(modifier = Modifier.width(AppSpacing.Small))
         Icon(
-            imageVector = Icons.Default.PlayArrow,
-            contentDescription = "播放",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.50f),
-            modifier = Modifier.size(20.dp)
+            imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            contentDescription = if (track.isFavorite) "已收藏" else "收藏状态",
+            tint = if (track.isFavorite) Color(0xFFF43F5E) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+            modifier = Modifier.size(21.dp)
         )
     }
 }

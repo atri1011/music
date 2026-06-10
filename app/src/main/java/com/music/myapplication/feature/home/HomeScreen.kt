@@ -3,19 +3,14 @@ package com.music.myapplication.feature.home
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.music.myapplication.feature.components.SegmentedChoiceRow
 import com.music.myapplication.feature.player.PlayerViewModel
-import com.music.myapplication.ui.theme.AppSpacing
 import com.music.myapplication.ui.theme.appPremiumBackground
 
 @Composable
@@ -27,12 +22,16 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val tabs = listOf("为你推荐", "榜单", "歌单广场")
+    val tabs = listOf("推荐", "榜单", "歌单")
+    val backgroundColor = MaterialTheme.colorScheme.background
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .appPremiumBackground()
+            .appPremiumBackground(
+                primary = backgroundColor,
+                secondary = backgroundColor
+            )
     ) {
         Column(
             modifier = Modifier
@@ -44,21 +43,11 @@ fun HomeScreen(
                 onRefresh = {
                     viewModel.loadToplists()
                     viewModel.loadRecommendations()
-                }
+                },
+                tabs = tabs,
+                selectedTab = state.selectedTab,
+                onTabSelected = viewModel::onTabChange
             )
-
-            SegmentedChoiceRow(
-                items = tabs.indices.toList(),
-                selectedItem = state.selectedTab,
-                onItemSelected = viewModel::onTabChange,
-                modifier = Modifier.padding(horizontal = AppSpacing.Large, vertical = AppSpacing.XXSmall)
-            ) { index, selected ->
-                Text(
-                    text = tabs[index],
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                )
-            }
 
             when (state.selectedTab) {
                 0 -> ForYouContent(
