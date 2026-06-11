@@ -20,6 +20,8 @@ import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
+internal const val QQ_DAILY_RECOMMENDATION_URL = "https://qq.050415.xyz/recommend/daily"
+
 @Singleton
 class RecommendationRepositoryImpl @Inject constructor(
     private val api: TuneHubApi,
@@ -29,6 +31,11 @@ class RecommendationRepositoryImpl @Inject constructor(
 ) : RecommendationRepository {
 
     override suspend fun getDailyRecommendedTracks(limit: Int): List<Track> {
+        val qqDailyTracks = fetchQqDailyRecommendedTracks(limit)
+        if (qqDailyTracks.isNotEmpty()) {
+            return localRepo.applyFavoriteState(qqDailyTracks)
+        }
+
         val favorites = localRepo.getFavorites().firstOrNull().orEmpty()
         val recentTracks = localRepo.getRecentPlays(limit = RECENT_HISTORY_LIMIT).firstOrNull().orEmpty()
         val tasteSeeds = buildTasteSeeds(favorites, recentTracks)
@@ -185,6 +192,14 @@ class RecommendationRepositoryImpl @Inject constructor(
         }
     }
 
+    private suspend fun fetchQqDailyRecommendedTracks(limit: Int): List<Track> {
+        if (limit <= 0) return emptyList()
+        val response = runCatching {
+            api.fetchJsonElement(QQ_DAILY_RECOMMENDATION_URL)
+        }.getOrNull()
+        return extractQqDailyRecommendedTracks(response).take(limit)
+    }
+
     private suspend fun buildTasteSeeds(
         favorites: List<Track>,
         recentTracks: List<Track>
@@ -280,6 +295,51 @@ private data class TasteSeed(
     val score: Double
 )
 
+internal fun extractQqDailyRecommendedTracks(data: JsonElement?): List<Track> {
+    val root = data as? JsonObject ?: return emptyList()
+    val result = (root.getIgnoreCase("result") as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+    if (result != null && result != 100) return emptyList()
+
+    val songs = listOf(root.getIgnoreCase("data"), root)
+        .firstNotNullOfOrNull { node ->
+            extractNestedArray(node, "songlist", "songList", "list")
+        } ?: return emptyList()
+
+    return songs
+        .mapNotNull { extractQqDailyRecommendedTrack(it as? JsonObject) }
+        .distinctBy { it.uniqueKey() }
+}
+
+private fun extractQqDailyRecommendedTrack(song: JsonObject?): Track? {
+    val item = ((song?.getIgnoreCase("songInfo")) ?: song) as? JsonObject ?: return null
+    val parsed = extractQqArtistSong(item)
+    if (parsed != null && parsed.title.isNotBlank()) {
+        return parsed.copy(
+            artist = parsed.artist.ifBlank { item.extractQqArtistName() },
+            album = parsed.album.ifBlank { item.extractQqAlbumName() },
+            albumId = parsed.albumId.ifBlank { item.extractQqAlbumId() },
+            coverUrl = parsed.coverUrl.ifBlank { item.extractQqCoverUrl() },
+            durationMs = parsed.durationMs.takeIf { it > 0 } ?: item.extractQqDurationMs()
+        )
+    }
+
+    val id = item.firstStringOf("mid", "songmid", "songMid", "strMediaMid", "id", "songid", "songId")
+        ?: return null
+    val title = item.firstStringOf("name", "title", "songname", "songName")?.trim().orEmpty()
+    if (title.isBlank()) return null
+
+    return Track(
+        id = id,
+        platform = Platform.QQ,
+        title = title,
+        artist = item.extractQqArtistName(),
+        album = item.extractQqAlbumName(),
+        albumId = item.extractQqAlbumId(),
+        coverUrl = item.extractQqCoverUrl(),
+        durationMs = item.extractQqDurationMs()
+    )
+}
+
 internal fun extractNeteaseRecommendedPlaylists(data: JsonElement?): List<ToplistInfo> {
     val root = data as? JsonObject ?: return emptyList()
     val code = (root["code"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
@@ -299,6 +359,49 @@ internal fun extractNeteaseRecommendedPlaylists(data: JsonElement?): List<Toplis
             description = item.firstStringOf("copywriter").orEmpty()
         )
     }
+}
+
+private fun JsonObject.extractQqArtistName(): String {
+    return extractJoinedNames(
+        getIgnoreCase("singer")
+            ?: getIgnoreCase("singerList")
+            ?: getIgnoreCase("singers")
+            ?: getIgnoreCase("artist")
+    ).ifBlank {
+        firstStringOf("singerName", "artistName", "artist").orEmpty()
+    }
+}
+
+private fun JsonObject.extractQqAlbumName(): String {
+    val album = getIgnoreCase("album") as? JsonObject
+    return album?.firstStringOf("name", "title", "albumName")
+        ?: firstStringOf("albumname", "albumName")
+        ?: ""
+}
+
+private fun JsonObject.extractQqAlbumId(): String {
+    val album = getIgnoreCase("album") as? JsonObject
+    return album?.firstStringOf("id", "albumID", "albumId", "mid", "albumMID", "albumMid", "albummid")
+        ?: firstStringOf("albumid", "albumId", "albumID", "albummid", "albumMid", "albumMID")
+        ?: ""
+}
+
+private fun JsonObject.extractQqCoverUrl(): String {
+    val directCover = normalizeQqImageUrl(
+        firstStringOf("pic", "picUrl", "coverUrl", "cover", "imgurl").orEmpty()
+    )
+    if (directCover.isNotBlank()) return directCover
+
+    val album = getIgnoreCase("album") as? JsonObject
+    val albumMid = album?.firstStringOf("mid", "albumMID", "albumMid", "albummid")
+        ?: firstStringOf("albummid", "albumMid", "albumMID")
+    return buildQqAlbumCoverUrl(albumMid.orEmpty())
+}
+
+private fun JsonObject.extractQqDurationMs(): Long {
+    firstLongOf("durationMs", "duration_ms")?.let { return it }
+    val duration = firstLongOf("duration", "interval") ?: return 0L
+    return if (duration > 1000L) duration else duration * 1000
 }
 
 private fun Track.uniqueKey(): String = "${platform.id}:$id"

@@ -76,6 +76,98 @@ class RecommendationRepositoryImplTest {
     }
 
     @Test
+    fun extractQqDailyRecommendedTracks_readsSonglist() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "result": 100,
+              "data": {
+                "songlist": [
+                  {
+                    "songmid": "0039MnYb0qxYhV",
+                    "songname": "晴天",
+                    "singer": [
+                      {"name": "周杰伦"}
+                    ],
+                    "album": {
+                      "id": 8220,
+                      "mid": "000MkMni19ClKG",
+                      "name": "叶惠美"
+                    },
+                    "interval": 269
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val tracks = extractQqDailyRecommendedTracks(payload)
+
+        assertEquals(1, tracks.size)
+        assertEquals("0039MnYb0qxYhV", tracks.first().id)
+        assertEquals(Platform.QQ, tracks.first().platform)
+        assertEquals("晴天", tracks.first().title)
+        assertEquals("周杰伦", tracks.first().artist)
+        assertEquals("叶惠美", tracks.first().album)
+        assertEquals(269_000L, tracks.first().durationMs)
+        assertTrue(tracks.first().coverUrl.contains("000MkMni19ClKG"))
+    }
+
+    @Test
+    fun extractQqDailyRecommendedTracks_returnsEmptyWhenLoginRequired() {
+        val payload = json.parseToJsonElement("""{"result":301,"errMsg":"未登录"}""")
+
+        val tracks = extractQqDailyRecommendedTracks(payload)
+
+        assertTrue(tracks.isEmpty())
+    }
+
+    @Test
+    fun getDailyRecommendedTracks_prefersQqDailyApi() = runTest {
+        val api = mockk<TuneHubApi>()
+        val onlineRepo = mockk<OnlineMusicRepository>(relaxed = true)
+        val localRepo = mockk<LocalLibraryRepository>()
+        val cacheStore = mockk<HomeContentCacheStore>(relaxed = true)
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "result": 100,
+              "data": {
+                "songlist": [
+                  {
+                    "songmid": "daily-1",
+                    "songname": "每日歌曲",
+                    "singer": [{"name": "每日歌手"}],
+                    "albummid": "album-mid-1",
+                    "albumname": "每日专辑",
+                    "interval": 180
+                  },
+                  {
+                    "songmid": "daily-2",
+                    "songname": "第二首",
+                    "singer": [{"name": "歌手二"}]
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        coEvery { api.fetchJsonElement(QQ_DAILY_RECOMMENDATION_URL) } returns payload
+        coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
+
+        val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo, cacheStore)
+
+        val tracks = repository.getDailyRecommendedTracks(limit = 1)
+
+        assertEquals(listOf("daily-1"), tracks.map { it.id })
+        assertEquals(Platform.QQ, tracks.first().platform)
+        coVerify(exactly = 0) { localRepo.getFavorites() }
+        coVerify(exactly = 0) { onlineRepo.search(any(), any(), any(), any()) }
+    }
+
+    @Test
     fun getDailyRecommendedTracks_prefersLocalTasteAndFiltersKnownSongs() = runTest {
         val api = mockk<TuneHubApi>(relaxed = true)
         val onlineRepo = mockk<OnlineMusicRepository>()
@@ -92,6 +184,9 @@ class RecommendationRepositoryImplTest {
         coEvery { localRepo.getTrackPlayCount(recent.id, recent.platform.id) } returns 3
         coEvery { localRepo.getFirstPlayDate(any(), any()) } returns System.currentTimeMillis() - (40L * 24 * 60 * 60 * 1000)
         coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
+        coEvery { api.fetchJsonElement(QQ_DAILY_RECOMMENDATION_URL) } returns json.parseToJsonElement(
+            """{"result":301,"errMsg":"未登录"}"""
+        )
         coEvery { onlineRepo.search(Platform.NETEASE, "周杰伦", 1, any()) } returns Result.Success(
             listOf(favorite, recommendation)
         )
@@ -123,6 +218,9 @@ class RecommendationRepositoryImplTest {
         coEvery { localRepo.getTrackPlayCount(any(), any()) } returns 2
         coEvery { localRepo.getFirstPlayDate(any(), any()) } returns null
         coEvery { localRepo.applyFavoriteState(any()) } answers { firstArg() }
+        coEvery { api.fetchJsonElement(QQ_DAILY_RECOMMENDATION_URL) } returns json.parseToJsonElement(
+            """{"result":301,"errMsg":"未登录"}"""
+        )
         coEvery { onlineRepo.search(any(), any(), any(), any()) } returns Result.Success(emptyList())
 
         val repository = RecommendationRepositoryImpl(api, onlineRepo, localRepo, cacheStore)
@@ -143,6 +241,9 @@ class RecommendationRepositoryImplTest {
 
         every { localRepo.getFavorites() } returns flowOf(emptyList())
         every { localRepo.getRecentPlays(any()) } returns flowOf(emptyList())
+        coEvery { api.fetchJsonElement(QQ_DAILY_RECOMMENDATION_URL) } returns json.parseToJsonElement(
+            """{"result":301,"errMsg":"未登录"}"""
+        )
         coEvery { onlineRepo.getToplists(Platform.NETEASE) } returns Result.Success(
             listOf(ToplistInfo(id = "19723756", name = "飙升榜"))
         )

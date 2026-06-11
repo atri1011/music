@@ -91,8 +91,9 @@ fun ForYouContent(
                     val queue = state.dailyTracks.ifEmpty {
                         state.fmTrack?.let(::listOf).orEmpty()
                     }
-                    val track = queue.firstOrNull() ?: return@daily30
-                    playerViewModel.playTrack(track, queue, 0)
+                    val trackIndex = if (queue.size > 1) 1 else 0
+                    val track = queue.getOrNull(trackIndex) ?: return@daily30
+                    playerViewModel.playTrack(track, queue, trackIndex)
                 }
             )
             Spacer(modifier = Modifier.height(AppSpacing.Large))
