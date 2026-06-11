@@ -6,6 +6,8 @@ interface RecommendationRepository {
     suspend fun getDailyRecommendedTracks(limit: Int = 30): List<Track>
     suspend fun getFmTrack(): Track?
     suspend fun getRecommendedPlaylists(): List<ToplistInfo>
+    suspend fun getQqRecommendedPlaylists(limit: Int = 12): List<ToplistInfo>
+    suspend fun getQqNewSongs(limit: Int = 8): List<Track>
     suspend fun getGuessYouLikeTracks(refreshCount: Int = 0, limit: Int = 6): GuessYouLikeResult
     suspend fun getSimilarTracks(track: Track, limit: Int = 5): List<Track>
 }

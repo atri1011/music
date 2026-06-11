@@ -1,13 +1,16 @@
 package com.music.myapplication.feature.home
 
 import com.music.myapplication.core.common.Result
+import com.music.myapplication.core.datastore.HomeContentCacheStore
 import com.music.myapplication.core.datastore.PlayerPreferences
 import com.music.myapplication.core.network.NetworkMonitor
 import com.music.myapplication.domain.model.Platform
 import com.music.myapplication.domain.model.Track
 import com.music.myapplication.domain.repository.GuessYouLikeResult
+import com.music.myapplication.domain.repository.LocalLibraryRepository
 import com.music.myapplication.domain.repository.OnlineMusicRepository
 import com.music.myapplication.domain.repository.RecommendationRepository
+import io.mockk.any
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -34,7 +37,9 @@ class HomeViewModelTest {
         try {
             val onlineRepo = mockk<OnlineMusicRepository>()
             val recommendationRepo = mockk<RecommendationRepository>()
+            val localLibraryRepo = mockk<LocalLibraryRepository>()
             val preferences = mockk<PlayerPreferences>()
+            val homeContentCacheStore = mockk<HomeContentCacheStore>(relaxed = true)
             val networkMonitor = mockk<NetworkMonitor>()
             val firstTracks = listOf(
                 testTrack("guess-1"),
@@ -43,17 +48,28 @@ class HomeViewModelTest {
 
             every { preferences.wifiOnly } returns flowOf(false)
             every { networkMonitor.isUnmeteredConnection() } returns true
+            every { localLibraryRepo.getRecentPlayEntries(any()) } returns flowOf(emptyList())
+            coEvery { homeContentCacheStore.getCachedFirstPaint() } returns null
             coEvery { onlineRepo.getToplists(any()) } returns Result.Success(emptyList())
             coEvery { onlineRepo.getToplistDetailFast(any(), any()) } returns Result.Success(emptyList())
             coEvery { recommendationRepo.getDailyRecommendedTracks(any()) } returns emptyList()
             coEvery { recommendationRepo.getFmTrack() } returns null
             coEvery { recommendationRepo.getRecommendedPlaylists() } returns emptyList()
+            coEvery { recommendationRepo.getQqRecommendedPlaylists(any()) } returns emptyList()
+            coEvery { recommendationRepo.getQqNewSongs(any()) } returns emptyList()
             coEvery { recommendationRepo.getGuessYouLikeTracks(any(), any()) } returnsMany listOf(
                 GuessYouLikeResult(label = "周杰伦", tracks = firstTracks),
                 GuessYouLikeResult(label = "热门推荐", tracks = emptyList())
             )
 
-            val viewModel = HomeViewModel(onlineRepo, recommendationRepo, preferences, networkMonitor)
+            val viewModel = HomeViewModel(
+                onlineRepo,
+                recommendationRepo,
+                localLibraryRepo,
+                preferences,
+                homeContentCacheStore,
+                networkMonitor
+            )
             advanceUntilIdle()
 
             assertEquals("周杰伦", viewModel.state.value.guessYouLikeLabel)
@@ -77,11 +93,15 @@ class HomeViewModelTest {
         try {
             val onlineRepo = mockk<OnlineMusicRepository>()
             val recommendationRepo = mockk<RecommendationRepository>()
+            val localLibraryRepo = mockk<LocalLibraryRepository>()
             val preferences = mockk<PlayerPreferences>()
+            val homeContentCacheStore = mockk<HomeContentCacheStore>(relaxed = true)
             val networkMonitor = mockk<NetworkMonitor>()
 
             every { preferences.wifiOnly } returns flowOf(true)
             every { networkMonitor.isUnmeteredConnection() } returns false
+            every { localLibraryRepo.getRecentPlayEntries(any()) } returns flowOf(emptyList())
+            coEvery { homeContentCacheStore.getCachedFirstPaint() } returns null
             coEvery { onlineRepo.getToplists(Platform.NETEASE) } returns Result.Success(
                 listOf(
                     com.music.myapplication.domain.repository.ToplistInfo(
@@ -93,12 +113,21 @@ class HomeViewModelTest {
             coEvery { recommendationRepo.getDailyRecommendedTracks(any()) } returns emptyList()
             coEvery { recommendationRepo.getFmTrack() } returns null
             coEvery { recommendationRepo.getRecommendedPlaylists() } returns emptyList()
+            coEvery { recommendationRepo.getQqRecommendedPlaylists(any()) } returns emptyList()
+            coEvery { recommendationRepo.getQqNewSongs(any()) } returns emptyList()
             coEvery { recommendationRepo.getGuessYouLikeTracks(any(), any()) } returns GuessYouLikeResult(
                 label = "",
                 tracks = emptyList()
             )
 
-            val viewModel = HomeViewModel(onlineRepo, recommendationRepo, preferences, networkMonitor)
+            val viewModel = HomeViewModel(
+                onlineRepo,
+                recommendationRepo,
+                localLibraryRepo,
+                preferences,
+                homeContentCacheStore,
+                networkMonitor
+            )
             advanceUntilIdle()
 
             assertTrue(viewModel.state.value.toplistPreviews.isEmpty())

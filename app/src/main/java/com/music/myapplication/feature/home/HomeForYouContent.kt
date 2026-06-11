@@ -99,6 +99,24 @@ fun ForYouContent(
             Spacer(modifier = Modifier.height(AppSpacing.Large))
         }
 
+        if (state.qqNewSongs.isNotEmpty()) {
+            HomeTrackListSection(
+                title = "QQ 新歌速递",
+                tracks = state.qqNewSongs,
+                onPlayAll = {
+                    playerViewModel.playTrack(state.qqNewSongs.first(), state.qqNewSongs, 0)
+                },
+                onPlayTrack = { index ->
+                    playerViewModel.playTrack(
+                        state.qqNewSongs[index],
+                        state.qqNewSongs,
+                        index
+                    )
+                }
+            )
+            Spacer(modifier = Modifier.height(AppSpacing.Large))
+        }
+
         if (state.guessYouLikeTracks.isNotEmpty() || state.isGuessYouLikeLoading) {
             GuessYouLikeSection(
                 label = state.guessYouLikeLabel,
@@ -125,8 +143,20 @@ fun ForYouContent(
             Spacer(modifier = Modifier.height(AppSpacing.Large))
         }
 
+        if (state.qqRecommendedPlaylists.isNotEmpty()) {
+            RecommendedPlaylistRow(
+                title = "QQ 精选歌单, 换个口味",
+                platform = Platform.QQ,
+                playlists = state.qqRecommendedPlaylists,
+                onNavigateToPlaylist = onNavigateToPlaylist
+            )
+            Spacer(modifier = Modifier.height(AppSpacing.Large))
+        }
+
         if (state.recommendedPlaylists.isNotEmpty()) {
             RecommendedPlaylistRow(
+                title = "热门歌单, 听点不一样的",
+                platform = Platform.NETEASE,
                 playlists = state.recommendedPlaylists,
                 onNavigateToPlaylist = onNavigateToPlaylist
             )
@@ -576,13 +606,116 @@ private fun FeatureCover(
 }
 
 @Composable
+private fun HomeTrackListSection(
+    title: String,
+    tracks: List<Track>,
+    onPlayAll: () -> Unit,
+    onPlayTrack: (Int) -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = AppSpacing.Large)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = AppSpacing.Small),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            HomeSectionTitle(
+                title = title,
+                showAccentIcon = true,
+                modifier = Modifier.weight(1f)
+            )
+            HomePlayPill(onClick = onPlayAll)
+        }
+
+        HomeTrackColumnCarousel(
+            tracks = tracks,
+            onPlayTrack = onPlayTrack
+        )
+    }
+}
+
+@Composable
+private fun HomeTrackColumnCarousel(
+    tracks: List<Track>,
+    onPlayTrack: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val trackColumns = remember(tracks) {
+        tracks.withIndex().chunked(HOME_TRACK_COLUMN_SIZE)
+    }
+
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val columnWidth = (maxWidth - 56.dp)
+            .coerceAtLeast(240.dp)
+            .coerceAtMost(maxWidth)
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Medium)
+        ) {
+            items(
+                items = trackColumns,
+                key = { column ->
+                    column.firstOrNull()
+                        ?.let { "${it.index}-${it.value.platform.id}-${it.value.id}" }
+                        ?: "empty"
+                }
+            ) { column ->
+                Column(
+                    modifier = Modifier.width(columnWidth),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)
+                ) {
+                    column.forEach { indexedTrack ->
+                        GuessYouLikeItem(
+                            track = indexedTrack.value,
+                            onClick = { onPlayTrack(indexedTrack.index) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomePlayPill(
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(QQMusicGreen.copy(alpha = 0.10f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = "播放",
+                modifier = Modifier.size(14.dp),
+                tint = QQMusicGreen
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+            Text(
+                text = "播放",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = QQMusicGreen
+            )
+        }
+    }
+}
+
+@Composable
 private fun RecommendedPlaylistRow(
+    title: String,
+    platform: Platform,
     playlists: List<ToplistInfo>,
     onNavigateToPlaylist: (id: String, platform: String, name: String, source: String) -> Unit
 ) {
     Column {
         HomeSectionTitle(
-            title = "热门歌单, 听点不一样的",
+            title = title,
             showAccentIcon = true,
             modifier = Modifier.padding(
                 start = AppSpacing.Large,
@@ -598,7 +731,7 @@ private fun RecommendedPlaylistRow(
                 HomeProgramPlaylistCard(
                     playlist = playlist,
                     onClick = {
-                        onNavigateToPlaylist(playlist.id, Platform.NETEASE.id, playlist.name, "playlist")
+                        onNavigateToPlaylist(playlist.id, platform.id, playlist.name, "playlist")
                     }
                 )
             }
@@ -722,39 +855,18 @@ private fun GuessYouLikeSection(
                     showAccentIcon = true
                 )
             }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(QQMusicGreen.copy(alpha = 0.10f))
-                    .clickable(onClick = onPlayAll)
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "播放",
-                        modifier = Modifier.size(14.dp),
-                        tint = QQMusicGreen
-                    )
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text(
-                        text = "播放",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = QQMusicGreen
-                    )
-                }
-            }
+            HomePlayPill(onClick = onPlayAll)
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)) {
-            if (isLoading) {
-                repeat(3) { GuessYouLikeItemPlaceholder() }
-            } else {
-                tracks.forEachIndexed { index, track ->
-                    GuessYouLikeItem(track = track, onClick = { onPlayTrack(index) })
-                }
+        if (isLoading) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.XSmall)) {
+                repeat(HOME_TRACK_COLUMN_SIZE) { GuessYouLikeItemPlaceholder() }
             }
+        } else {
+            HomeTrackColumnCarousel(
+                tracks = tracks,
+                onPlayTrack = onPlayTrack
+            )
         }
     }
 }
@@ -855,3 +967,5 @@ private fun HomeRecentArtist.recentArtistLabel(): String = when {
     listenCount > 1 -> "${platform.displayName} · $listenCount 次"
     else -> platform.displayName
 }
+
+private const val HOME_TRACK_COLUMN_SIZE = 3
