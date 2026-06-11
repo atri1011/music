@@ -21,6 +21,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 internal const val QQ_DAILY_RECOMMENDATION_URL = "https://qq.050415.xyz/recommend/daily"
+private const val QQ_RECOMMENDED_PLAYLIST_URL = "https://qq.050415.xyz/recommend/playlist/u"
+private const val QQ_RECOMMENDED_PLAYLIST_CATEGORY_URL = "https://qq.050415.xyz/recommend/playlist"
+private const val QQ_NEW_SONGS_URL = "https://qq.050415.xyz/new/songs?type=0"
 
 @Singleton
 class RecommendationRepositoryImpl @Inject constructor(
@@ -100,6 +103,47 @@ class RecommendationRepositoryImpl @Inject constructor(
             homeContentCacheStore.cacheRecommendedPlaylists(playlists)
         }
         return playlists
+    }
+
+    override suspend fun getQqRecommendedPlaylists(limit: Int): List<ToplistInfo> {
+        if (limit <= 0) return emptyList()
+        homeContentCacheStore.getCachedQqRecommendedPlaylists()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return it.take(limit) }
+
+        val personalizedResponse = runCatching {
+            api.fetchJsonElement(QQ_RECOMMENDED_PLAYLIST_URL)
+        }.getOrNull()
+        var playlists = extractQqRecommendedPlaylists(personalizedResponse)
+
+        if (playlists.isEmpty()) {
+            val categoryResponse = runCatching {
+                api.fetchJsonElement("$QQ_RECOMMENDED_PLAYLIST_CATEGORY_URL?pageSize=$limit")
+            }.getOrNull()
+            playlists = extractQqRecommendedPlaylists(categoryResponse)
+        }
+
+        playlists = playlists.take(limit)
+        if (playlists.isNotEmpty()) {
+            homeContentCacheStore.cacheQqRecommendedPlaylists(playlists)
+        }
+        return playlists
+    }
+
+    override suspend fun getQqNewSongs(limit: Int): List<Track> {
+        if (limit <= 0) return emptyList()
+        homeContentCacheStore.getCachedQqNewSongs()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return localRepo.applyFavoriteState(it.take(limit)) }
+
+        val response = runCatching {
+            api.fetchJsonElement(QQ_NEW_SONGS_URL)
+        }.getOrNull()
+        val tracks = extractQqNewSongs(response).take(limit)
+        if (tracks.isNotEmpty()) {
+            homeContentCacheStore.cacheQqNewSongs(tracks)
+        }
+        return localRepo.applyFavoriteState(tracks)
     }
 
     override suspend fun getGuessYouLikeTracks(refreshCount: Int, limit: Int): GuessYouLikeResult {
@@ -359,6 +403,64 @@ internal fun extractNeteaseRecommendedPlaylists(data: JsonElement?): List<Toplis
             description = item.firstStringOf("copywriter").orEmpty()
         )
     }
+}
+
+internal fun extractQqRecommendedPlaylists(data: JsonElement?): List<ToplistInfo> {
+    val root = data as? JsonObject ?: return emptyList()
+    val result = (root.getIgnoreCase("result") as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+    if (result != null && result != 100) return emptyList()
+
+    val items = listOf(root.getIgnoreCase("data"), root)
+        .firstNotNullOfOrNull { node ->
+            extractNestedArray(node, "list", "items")
+        } ?: return emptyList()
+
+    return items
+        .mapNotNull { extractQqRecommendedPlaylist(it as? JsonObject) }
+        .distinctBy { it.id }
+}
+
+private fun extractQqRecommendedPlaylist(playlist: JsonObject?): ToplistInfo? {
+    val item = playlist ?: return null
+    val id = item.firstStringOf("content_id", "tid", "dissid")
+        ?: item.firstStringOf("id", "dirid")?.takeUnless { it == "0" }
+        ?: return null
+    val name = item.firstStringOf("title", "dissname", "diss_name", "name")?.trim().orEmpty()
+    if (name.isBlank()) return null
+
+    val creator = item.getIgnoreCase("creator_info") as? JsonObject
+    return ToplistInfo(
+        id = id,
+        name = name,
+        coverUrl = normalizeQqImageUrl(
+            item.firstStringOf(
+                "cover",
+                "cover_url_big",
+                "cover_url_medium",
+                "coverUrl",
+                "imgurl",
+                "logo"
+            ).orEmpty()
+        ),
+        description = item.firstStringOf("rcmdtemplate", "rcmdcontent", "desc", "introduction").orEmpty()
+            .ifBlank { creator?.firstStringOf("nick").orEmpty() }
+            .ifBlank { item.firstStringOf("username").orEmpty() }
+    )
+}
+
+internal fun extractQqNewSongs(data: JsonElement?): List<Track> {
+    val root = data as? JsonObject ?: return emptyList()
+    val result = (root.getIgnoreCase("result") as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+    if (result != null && result != 100) return emptyList()
+
+    val songs = listOf(root.getIgnoreCase("data"), root)
+        .firstNotNullOfOrNull { node ->
+            extractNestedArray(node, "songlist", "songList", "list")
+        } ?: return emptyList()
+
+    return songs
+        .mapNotNull { extractQqDailyRecommendedTrack(it as? JsonObject) }
+        .distinctBy { it.uniqueKey() }
 }
 
 private fun JsonObject.extractQqArtistName(): String {

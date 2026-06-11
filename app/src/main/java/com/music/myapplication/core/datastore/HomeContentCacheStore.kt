@@ -90,6 +90,36 @@ class HomeContentCacheStore @Inject constructor(
         )
     }
 
+    suspend fun getCachedQqRecommendedPlaylists(): List<ToplistInfo>? =
+        getDailyValue(
+            dateKey = stringPreferencesKey("qq_recommended_playlists_date"),
+            dataKey = stringPreferencesKey("qq_recommended_playlists_data")
+        )
+
+    suspend fun cacheQqRecommendedPlaylists(playlists: List<ToplistInfo>) {
+        if (playlists.isEmpty()) return
+        putDailyValue(
+            dateKey = stringPreferencesKey("qq_recommended_playlists_date"),
+            dataKey = stringPreferencesKey("qq_recommended_playlists_data"),
+            value = playlists
+        )
+    }
+
+    suspend fun getCachedQqNewSongs(): List<Track>? =
+        getDailyValue(
+            dateKey = stringPreferencesKey("qq_new_songs_date"),
+            dataKey = stringPreferencesKey("qq_new_songs_data")
+        )
+
+    suspend fun cacheQqNewSongs(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        putDailyValue(
+            dateKey = stringPreferencesKey("qq_new_songs_date"),
+            dataKey = stringPreferencesKey("qq_new_songs_data"),
+            value = tracks
+        )
+    }
+
     private suspend inline fun <reified T> getDailyValue(
         dateKey: Preferences.Key<String>,
         dataKey: Preferences.Key<String>
@@ -142,6 +172,8 @@ data class HomeFirstPaintCache(
     val dailyTracks: List<Track> = emptyList(),
     val fmTrack: Track? = null,
     val recommendedPlaylists: List<ToplistInfo> = emptyList(),
+    val qqRecommendedPlaylists: List<ToplistInfo> = emptyList(),
+    val qqNewSongs: List<Track> = emptyList(),
     val guessYouLikeLabel: String = "",
     val guessYouLikeTracks: List<Track> = emptyList()
 ) {
@@ -150,5 +182,7 @@ data class HomeFirstPaintCache(
             dailyTracks.isNotEmpty() ||
             fmTrack != null ||
             recommendedPlaylists.isNotEmpty() ||
+            qqRecommendedPlaylists.isNotEmpty() ||
+            qqNewSongs.isNotEmpty() ||
             guessYouLikeTracks.isNotEmpty()
 }

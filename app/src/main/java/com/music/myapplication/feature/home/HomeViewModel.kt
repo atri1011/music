@@ -45,6 +45,8 @@ data class HomeUiState(
     val dailyTracks: List<Track> = emptyList(),
     val fmTrack: Track? = null,
     val recommendedPlaylists: List<ToplistInfo> = emptyList(),
+    val qqRecommendedPlaylists: List<ToplistInfo> = emptyList(),
+    val qqNewSongs: List<Track> = emptyList(),
     val isRecommendationLoading: Boolean = false,
     val guessYouLikeLabel: String = "",
     val guessYouLikeTracks: List<Track> = emptyList(),
@@ -167,6 +169,20 @@ class HomeViewModel @Inject constructor(
             } finally {
                 _state.update { it.copy(isRecommendationLoading = false) }
             }
+        }
+        viewModelScope.launch {
+            try {
+                val playlists = recommendationRepo.getQqRecommendedPlaylists()
+                _state.update { it.copy(qqRecommendedPlaylists = playlists) }
+                cacheFirstPaintSnapshot()
+            } catch (_: Exception) {}
+        }
+        viewModelScope.launch {
+            try {
+                val tracks = recommendationRepo.getQqNewSongs()
+                _state.update { it.copy(qqNewSongs = tracks) }
+                cacheFirstPaintSnapshot()
+            } catch (_: Exception) {}
         }
         loadGuessYouLike()
     }
@@ -358,6 +374,8 @@ class HomeViewModel @Inject constructor(
                 dailyTracks = cache.dailyTracks,
                 fmTrack = cache.fmTrack,
                 recommendedPlaylists = cache.recommendedPlaylists,
+                qqRecommendedPlaylists = cache.qqRecommendedPlaylists,
+                qqNewSongs = cache.qqNewSongs,
                 guessYouLikeLabel = cache.guessYouLikeLabel,
                 guessYouLikeTracks = cache.guessYouLikeTracks
             )
@@ -373,6 +391,8 @@ class HomeViewModel @Inject constructor(
                     dailyTracks = state.dailyTracks,
                     fmTrack = state.fmTrack,
                     recommendedPlaylists = state.recommendedPlaylists,
+                    qqRecommendedPlaylists = state.qqRecommendedPlaylists,
+                    qqNewSongs = state.qqNewSongs,
                     guessYouLikeLabel = state.guessYouLikeLabel,
                     guessYouLikeTracks = state.guessYouLikeTracks
                 )

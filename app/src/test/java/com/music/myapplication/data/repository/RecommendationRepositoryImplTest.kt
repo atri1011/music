@@ -76,6 +76,74 @@ class RecommendationRepositoryImplTest {
     }
 
     @Test
+    fun extractQqRecommendedPlaylists_readsPersonalizedCards() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "result": 100,
+              "data": {
+                "list": [
+                  {
+                    "content_id": 8075336924,
+                    "id": 0,
+                    "title": "90后回忆 | MP3时代的流行歌曲",
+                    "cover": "http://qpic.y.qq.com/music_cover/cover/300?n=1",
+                    "rcmdtemplate": "编辑推荐",
+                    "username": "听风"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val playlists = extractQqRecommendedPlaylists(payload)
+
+        assertEquals(1, playlists.size)
+        assertEquals("8075336924", playlists.first().id)
+        assertEquals("90后回忆 | MP3时代的流行歌曲", playlists.first().name)
+        assertEquals("https://qpic.y.qq.com/music_cover/cover/300?n=1", playlists.first().coverUrl)
+        assertEquals("编辑推荐", playlists.first().description)
+    }
+
+    @Test
+    fun extractQqNewSongs_readsSongList() {
+        val payload = json.parseToJsonElement(
+            """
+            {
+              "result": 100,
+              "data": {
+                "list": [
+                  {
+                    "mid": "004BV00w11Ysvm",
+                    "name": "我想",
+                    "singer": [{"name": "刘宇宁"}],
+                    "album": {
+                      "id": 94236744,
+                      "mid": "002lkcEK0ztfwR",
+                      "name": "我想"
+                    },
+                    "interval": 212
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val tracks = extractQqNewSongs(payload)
+
+        assertEquals(1, tracks.size)
+        assertEquals("004BV00w11Ysvm", tracks.first().id)
+        assertEquals(Platform.QQ, tracks.first().platform)
+        assertEquals("我想", tracks.first().title)
+        assertEquals("刘宇宁", tracks.first().artist)
+        assertEquals("我想", tracks.first().album)
+        assertTrue(tracks.first().coverUrl.contains("002lkcEK0ztfwR"))
+        assertEquals(212_000L, tracks.first().durationMs)
+    }
+
+    @Test
     fun extractQqDailyRecommendedTracks_readsSonglist() {
         val payload = json.parseToJsonElement(
             """
