@@ -198,7 +198,11 @@ private fun RecommendationFeatureRow(
     onPlayDaily30: () -> Unit
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val cardWidth = ((maxWidth - 56.dp) / 2).coerceIn(150.dp, 220.dp)
+        val maxCardWidth = maxWidth - (AppSpacing.Large * 2f)
+        val expandedCardWidth = (maxWidth * 0.78f)
+            .coerceIn(280.dp, 336.dp)
+            .coerceAtMost(maxCardWidth)
+        val cardWidth = expandedCardWidth * (1f - RECOMMENDATION_FOLD_WIDTH_RATIO)
 
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -469,8 +473,8 @@ private fun DailyThirtyCard(
         trackTitle = "每日30首",
         artist = songLine,
         coverUrl = track?.coverUrl.orEmpty(),
-        lightGradient = listOf(Color(0xFFFF8EA1), Color(0xFFFF7F93)),
-        darkGradient = listOf(Color(0xFF6A1F32), Color(0xFF4A1828)),
+        lightGradient = listOf(Color(0xFFF9B24D), Color(0xFFF4A340)),
+        darkGradient = listOf(Color(0xFF6A3A12), Color(0xFF4A2A10)),
         accentColor = Color.White,
         onPlay = onPlay,
         modifier = modifier
@@ -493,83 +497,88 @@ private fun RecommendationFeatureCard(
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val textColor = if (isDark) Color.White else Color(0xFF1E293B)
     val subtleTextColor = if (isDark) Color.White.copy(alpha = 0.68f) else Color(0xFF64748B)
-    val cardShape = RoundedCornerShape(AppShapes.Large)
+    val cardShape = RoundedCornerShape(AppShapes.Medium)
 
     Box(
         modifier = modifier
-            .height(180.dp)
+            .height(166.dp)
             .clip(cardShape)
             .background(Brush.linearGradient(if (isDark) darkGradient else lightGradient))
             .border(0.5.dp, Color.White.copy(alpha = if (isDark) 0.10f else 0.55f), cardShape)
             .clickable(onClick = onPlay)
-            .padding(AppSpacing.Medium)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(AppSpacing.Medium)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 24.sp
+                        ),
+                        color = accentColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accentColor.copy(alpha = if (isDark) 0.78f else 0.72f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                FeatureCover(
+                    coverUrl = coverUrl,
+                    contentDescription = trackTitle,
+                    accentColor = accentColor
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(end = 56.dp)
+            ) {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 24.sp
-                    ),
-                    color = accentColor,
-                    maxLines = 2,
+                    text = trackTitle,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = textColor,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = subtitle,
+                    text = artist,
                     style = MaterialTheme.typography.labelSmall,
-                    color = accentColor.copy(alpha = if (isDark) 0.78f else 0.72f),
+                    color = subtleTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            FeatureCover(
-                coverUrl = coverUrl,
-                contentDescription = trackTitle,
-                accentColor = accentColor
-            )
-        }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(end = 56.dp)
-        ) {
-            Text(
-                text = trackTitle,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = artist,
-                style = MaterialTheme.typography.labelSmall,
-                color = subtleTextColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        IconButton(
-            onClick = onPlay,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = if (isDark) 0.20f else 0.90f))
-        ) {
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "播放",
-                tint = QQMusicGreen,
-                modifier = Modifier.size(26.dp)
-            )
+            IconButton(
+                onClick = onPlay,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = if (isDark) 0.20f else 0.90f))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "播放",
+                    tint = QQMusicGreen,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
         }
     }
 }
@@ -968,4 +977,5 @@ private fun HomeRecentArtist.recentArtistLabel(): String = when {
     else -> platform.displayName
 }
 
+private const val RECOMMENDATION_FOLD_WIDTH_RATIO = 0.34f
 private const val HOME_TRACK_COLUMN_SIZE = 3

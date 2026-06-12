@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -282,7 +283,7 @@ fun AppRoot(
                                         start = AppSpacing.Small,
                                         end = AppSpacing.Small,
                                         top = AppSpacing.XSmall,
-                                        bottom = if (showBottomBar) AppSpacing.Small else AppSpacing.XSmall
+                                        bottom = if (showBottomBar) 2.dp else AppSpacing.XSmall
                                     )
                                 )
                             }
@@ -392,6 +393,9 @@ private fun AppBottomNavigationBar(
             )
     ) {
         NavigationBar(
+            modifier = Modifier
+                .height(76.dp)
+                .padding(top = 4.dp),
             containerColor = Color.Transparent,
             tonalElevation = 0.dp
         ) {
